@@ -559,14 +559,62 @@ export const DriverDashboard: React.FC = () => {
                 <MapAutoCenter position={driverPos} />
                 
                 {/* Route Polyline */}
-                {tripStops.length > 0 && (
-                  <Polyline 
-                    positions={tripStops.map(s => [s.stops.lat, s.stops.lng])} 
-                    color="#7847CB" 
-                    weight={5} 
-                    opacity={0.8}
-                  />
-                )}
+                {(() => {
+                  const pathPoints = (selectedRouteDetails?.route_path && selectedRouteDetails.route_path.length > 0)
+                    ? selectedRouteDetails.route_path.map((p: any) => L.latLng(p.lat, p.lng))
+                    : tripStops.map(s => L.latLng(s.stops.lat, s.stops.lng));
+                  
+                  if (pathPoints.length < 2) return null;
+
+                  let splitIndex = -1;
+                  if (driverPos) {
+                    const driverLatLng = L.latLng(driverPos.lat, driverPos.lng);
+                    let minDistance = Infinity;
+                    for (let i = 0; i < pathPoints.length; i++) {
+                      const dist = driverLatLng.distanceTo(pathPoints[i]);
+                      if (dist < minDistance) {
+                        minDistance = dist;
+                        splitIndex = i;
+                      }
+                    }
+                  }
+
+                  if (splitIndex !== -1) {
+                    const travelledPoints = pathPoints.slice(0, splitIndex + 1);
+                    const remainingPoints = pathPoints.slice(splitIndex);
+
+                    return (
+                      <>
+                        {travelledPoints.length > 1 && (
+                          <Polyline 
+                            positions={travelledPoints} 
+                            color="#94a3b8" 
+                            weight={5} 
+                            opacity={0.6}
+                            dashArray="8, 8"
+                          />
+                        )}
+                        {remainingPoints.length > 1 && (
+                          <Polyline 
+                            positions={remainingPoints} 
+                            color="#7847CB" 
+                            weight={6} 
+                            opacity={1}
+                          />
+                        )}
+                      </>
+                    );
+                  }
+
+                  return (
+                    <Polyline 
+                      positions={pathPoints} 
+                      color="#7847CB" 
+                      weight={6} 
+                      opacity={1}
+                    />
+                  );
+                })()}
 
                 {/* Stop Markers */}
                 {tripStops.map((s, i) => {
