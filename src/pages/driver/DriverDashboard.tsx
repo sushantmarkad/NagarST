@@ -161,7 +161,7 @@ export const DriverDashboard: React.FC = () => {
           await updateLiveLocation(trip.id, currentLat, currentLng, 35);
         }, 3000) as unknown as number;
       },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
     );
   };
 
