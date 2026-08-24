@@ -192,27 +192,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             : []
         }));
         setRoutes(prev => [...prev, ...formattedRoutes as unknown as Route[]]);
-      }
-    };
-
-    const fetchSupabaseStops = async () => {
-      const { data, error } = await supabase.from('stops').select('*');
-      if (!error && data) {
-        const formattedStops = data.map((s: any) => ({
-          id: s.id,
-          name: s.stop_name,
-          lat: s.lat,
-          lng: s.lng,
-          isMajor: true,
-          connections: []
-        }));
-        setStops(formattedStops as unknown as BusStop[]);
+        
+        // Derive unique stops from active routes so orphaned stops are ignored
+        const allStopsMap = new Map();
+        formattedRoutes.forEach((route: any) => {
+          route.stops?.forEach((stop: any) => {
+            if (!allStopsMap.has(stop.id)) {
+              allStopsMap.set(stop.id, stop);
+            }
+          });
+        });
+        setStops(Array.from(allStopsMap.values()) as unknown as BusStop[]);
       }
     };
 
     fetchInitialLocations();
     fetchSupabaseRoutes();
-    fetchSupabaseStops();
 
     // 2. Connect to Socket.IO Server for live location updates
     const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
