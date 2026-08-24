@@ -1,0 +1,35 @@
+import type { BusPass } from '../types';
+
+export const MOCK_PASSES: BusPass[] = [
+  {
+    id: 'pass-monthly-student-01',
+    passCode: 'ANC-PASS-STU-9942',
+    passType: 'monthly_student',
+    title: 'Monthly Student Unlimited Pass',
+    titleMarathi: 'मासिक विद्यार्थी अमर्याद पास',
+    holderName: 'Aditya Rahul Pawar',
+    holderId: 'STU-2026-ARTS-88',
+    institutionOrOrg: 'New Arts & Commerce College, Ahilyanagar',
+    validFrom: '01 Aug 2026',
+    validUntil: '31 Aug 2026',
+    fare: 400,
+    qrData: 'AHILYANAGAR-PASS-STU-9942-ADITYA-PAWAR-VALID-AUG2026',
+    status: 'active',
+    daysRemaining: 12,
+  },
+  {
+    id: 'pass-daily-02',
+    passCode: 'ANC-PASS-DLY-1102',
+    passType: 'daily',
+    title: 'Daily City Transit Pass',
+    titleMarathi: 'दैनिक शहर प्रवास पास',
+    holderName: 'Aditya Pawar',
+    holderId: 'CITIZEN-9912',
+    validFrom: '18 Aug 2026',
+    validUntil: '18 Aug 2026',
+    fare: 50,
+    qrData: 'AHILYANAGAR-PASS-DLY-1102-EXPIRED',
+    status: 'expired',
+    daysRemaining: 0,
+  },
+];
