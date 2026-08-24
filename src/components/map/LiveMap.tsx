@@ -156,10 +156,17 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       if (!markersRef.current[key]) {
         const marker = L.marker([stop.lat, stop.lng], { icon: stopIcon }).addTo(map);
         marker.on('click', () => onSelectStop?.(stop));
+        marker.bindTooltip(
+          `<div style="font-weight: 600; color: #0f3c5c;">${stop.name}</div>`, 
+          { direction: 'top', offset: [0, -10], className: 'custom-tooltip' }
+        );
         markersRef.current[key] = marker;
       } else {
         markersRef.current[key].setIcon(stopIcon);
         markersRef.current[key].setLatLng([stop.lat, stop.lng]);
+        markersRef.current[key].setTooltipContent(
+          `<div style="font-weight: 600; color: #0f3c5c;">${stop.name}</div>`
+        );
       }
     });
   }, [stops, selectedStopId, onSelectStop]);
@@ -266,7 +273,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       )}
 
       {/* Map Legend Overlay */}
-      <div className="absolute bottom-4 left-4 z-20 bg-white/90 backdrop-blur-md p-2.5 rounded-xl border border-slate-200 shadow-md text-xs space-y-1.5 hidden sm:block">
+      <div className="absolute top-4 left-4 z-[400] bg-white/90 backdrop-blur-md p-2.5 rounded-xl border border-slate-200 shadow-md text-xs space-y-1.5 block">
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-[#0f3c5c] inline-block" />
           <span className="font-semibold text-slate-800">
