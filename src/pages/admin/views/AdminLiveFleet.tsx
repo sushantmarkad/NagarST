@@ -10,13 +10,16 @@ import {
   Gauge,
   Users
 } from 'lucide-react';
+import { io } from 'socket.io-client';
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
 
 export const AdminLiveFleet: React.FC = () => {
   const { buses, stops, routes } = useApp();
   const [selectedBus, setSelectedBus] = useState<BusType | null>(buses.length > 0 ? buses[0] : null);
 
   return (
-    <div className="space-y-4 max-w-7xl mx-auto h-[calc(100vh-140px)] flex flex-col">
+    <div className="space-y-4 max-w-7xl mx-auto h-[calc(100dvh-100px)] flex flex-col">
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-xs font-semibold">
           <span className="text-slate-500 uppercase tracking-wider font-bold">Active Buses:</span>
@@ -132,7 +135,17 @@ export const AdminLiveFleet: React.FC = () => {
             </div>
 
             <button
-              onClick={() => alert(`Direct dispatch instruction sent to Bus ${selectedBus.busNumber}`)}
+              onClick={() => {
+                const msg = prompt(`Enter dispatch message for Bus ${selectedBus.busNumber}:`);
+                if (msg) {
+                  const socket = io(SOCKET_URL);
+                  socket.emit('sendDispatchMessage', {
+                    busId: selectedBus.id,
+                    message: msg
+                  });
+                  alert('Broadcast sent!');
+                }
+              }}
               className="w-full mt-4 py-3 rounded-xl bg-[#7847CB] text-white font-bold text-xs hover:bg-[#0a2a42] transition shadow-xs"
             >
               Send Dispatch Broadcast

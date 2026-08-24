@@ -43,6 +43,12 @@ io.on('connection', (socket) => {
     io.emit('busOffline', busId);
   });
 
+  // Handle direct dispatch messages from City Admin to Driver
+  socket.on('sendDispatchMessage', (data) => {
+    // data: { busId, message }
+    io.emit('dispatchMessage', data);
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });

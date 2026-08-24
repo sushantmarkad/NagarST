@@ -82,6 +82,7 @@ export const DriverDashboard: React.FC = () => {
 
   const [isTripActive, setIsTripActive] = useState(false);
   const [isStartingTrip, setIsStartingTrip] = useState(false);
+  const [isNavigatingToOrigin, setIsNavigatingToOrigin] = useState(false);
   const [currentTripId, setCurrentTripId] = useState<string | null>(null);
   const [driverPos, setDriverPos] = useState<{lat: number, lng: number} | null>(null);
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(true);
@@ -96,10 +97,17 @@ export const DriverDashboard: React.FC = () => {
     const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
     import('socket.io-client').then(({ io }) => {
       socketRef.current = io(SOCKET_URL);
+      
+      socketRef.current.on('dispatchMessage', (data: { busId: string, message: string }) => {
+        if (data.busId === user?.assignedBusId) {
+          alert(`🚨 MESSAGE FROM CITY ADMIN 🚨\n\n${data.message}`);
+        }
+      });
     });
 
     return () => {
       if (socketRef.current) {
+        socketRef.current.off('dispatchMessage');
         socketRef.current.disconnect();
       }
     };
@@ -149,6 +157,76 @@ export const DriverDashboard: React.FC = () => {
     if (data) setTripStops(data);
   };
 
+  const beginActualTrip = async (latitude: number, longitude: number, speedKmh: number) => {
+    // 1. Create Trip in DB
+    const { data: trip, error: tripErr } = await supabase.from('trips').insert([{
+      bus_id: busDetails.id,
+      route_id: selectedRouteId,
+      status: 'Active',
+      start_time: new Date().toISOString()
+    }]).select().single();
+
+    if (tripErr || !trip) {
+      alert("Failed to start trip: " + tripErr?.message);
+      setIsStartingTrip(false);
+      return;
+    }
+
+    setCurrentTripId(trip.id);
+    setIsTripActive(true);
+    setIsNavigatingToOrigin(false);
+    setActiveTab('trip');
+    setCurrentStopIndex(0);
+    setIsStartingTrip(false);
+
+    const routePathCoords = selectedRouteDetails?.route_path || [];
+
+    // 2. Start Real GPS Tracking
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+    
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      async (position) => {
+        const { latitude, longitude, speed } = position.coords;
+        const currentSpeed = speed ? Math.round(speed * 3.6) : 0;
+        setDriverPos({ lat: latitude, lng: longitude });
+
+        let currentStatus = 'on_time';
+        if (routePathCoords.length > 0) {
+          const distToRoute = getDistanceToPolyline({ lat: latitude, lng: longitude }, routePathCoords);
+          if (distToRoute > 150) {
+            currentStatus = 'off_route';
+          }
+        }
+
+        if (socketRef.current) {
+          socketRef.current.emit('updateLocation', {
+            id: busDetails.id,
+            busId: busDetails.id,
+            busNumber: busDetails.bus_number,
+            plateNumber: busDetails.plate_number,
+            routeId: selectedRouteId,
+            routeNumber: selectedRouteDetails?.route_number || '',
+            routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} - ${selectedRouteDetails.destination}` : '',
+            lat: latitude,
+            lng: longitude,
+            speedKmh: currentSpeed,
+            status: currentStatus,
+            occupancy: 'moderate',
+            nextStopName: tripStops[0]?.stops?.stop_name || 'Unknown',
+            driverName: user?.name || 'Driver',
+            lastUpdated: new Date().toISOString()
+          });
+        }
+      },
+      (error) => {
+        console.error(`Failed to get real GPS: ${error.message}`);
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
+    );
+  };
+
   const handleStartTrip = async () => {
     if (!selectedRouteId || !busDetails) {
       alert("Please select a route first.");
@@ -166,55 +244,25 @@ export const DriverDashboard: React.FC = () => {
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const driverLatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       
-      // Proximity check to the first stop (bypass in dev mode if they check override)
+      let needsNavigation = false;
       if (tripStops.length > 0 && !isDevOverride) {
         const firstStop = { lat: tripStops[0].stops.lat, lng: tripStops[0].stops.lng };
         const dist = getDistance(driverLatLng, firstStop);
-        if (dist > 500) { // 500 meters threshold
-          alert(`You are too far from the starting stop (${dist.toFixed(0)} meters). You must be at the origin to start the trip.`);
-          setIsStartingTrip(false);
-          return;
+        if (dist > 50) {
+          needsNavigation = true;
+          alert(`You are ${dist.toFixed(0)} meters from the origin stop. Tracking started. Move to the origin to begin the trip.`);
         }
       }
 
-      // 1. Create Trip in DB
-      const { data: trip, error: tripErr } = await supabase.from('trips').insert([{
-        bus_id: busDetails.id,
-        route_id: selectedRouteId,
-        status: 'Active',
-        start_time: new Date().toISOString()
-      }]).select().single();
-
-      if (tripErr || !trip) {
-        alert("Failed to start trip: " + tripErr?.message);
+      if (needsNavigation) {
+        setIsNavigatingToOrigin(true);
         setIsStartingTrip(false);
-        return;
-      }
-
-      setCurrentTripId(trip.id);
-      setIsTripActive(true);
-      setActiveTab('trip');
-      setCurrentStopIndex(0);
-      setIsStartingTrip(false);
-
-      const routePathCoords = selectedRouteDetails?.route_path || [];
-
-      // 2. Start Real GPS Tracking
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        async (position) => {
+        
+        watchIdRef.current = navigator.geolocation.watchPosition((position) => {
           const { latitude, longitude, speed } = position.coords;
-          const speedKmh = speed ? Math.round(speed * 3.6) : 0;
+          const currentSpeed = speed ? Math.round(speed * 3.6) : 0;
           setDriverPos({ lat: latitude, lng: longitude });
-
-          let currentStatus = 'on_time';
-          // Off-route check
-          if (routePathCoords.length > 0) {
-            const distToRoute = getDistanceToPolyline({ lat: latitude, lng: longitude }, routePathCoords);
-            if (distToRoute > 150) { // 150 meters off route
-              currentStatus = 'off_route';
-            }
-          }
-
+          
           if (socketRef.current) {
             socketRef.current.emit('updateLocation', {
               id: busDetails.id,
@@ -226,23 +274,35 @@ export const DriverDashboard: React.FC = () => {
               routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} - ${selectedRouteDetails.destination}` : '',
               lat: latitude,
               lng: longitude,
-              speedKmh,
-              status: currentStatus,
+              speedKmh: currentSpeed,
+              status: 'navigating_to_origin',
               occupancy: 'moderate',
-              nextStopName: tripStops[0]?.stops?.stop_name || 'Unknown',
+              nextStopName: tripStops[0]?.stops?.stop_name || 'Origin',
               driverName: user?.name || 'Driver',
               lastUpdated: new Date().toISOString()
             });
           }
-        },
-        (error) => {
-          console.error(`Failed to get real GPS: ${error.message}`);
-          alert(`GPS Error: ${error.message}. Please ensure location services are enabled.`);
-        },
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
-      );
+
+          const currentLatLng = { lat: latitude, lng: longitude };
+          const firstStop = { lat: tripStops[0].stops.lat, lng: tripStops[0].stops.lng };
+          const currentDist = getDistance(currentLatLng, firstStop);
+          
+          if (currentDist <= 50) {
+            navigator.geolocation.clearWatch(watchIdRef.current!);
+            watchIdRef.current = null;
+            if (window.confirm("You are at the start destination. Start Journey?")) {
+              beginActualTrip(latitude, longitude, currentSpeed);
+            } else {
+              setIsNavigatingToOrigin(false);
+            }
+          }
+        }, undefined, { enableHighAccuracy: true });
+      } else {
+        beginActualTrip(pos.coords.latitude, pos.coords.longitude, pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0);
+      }
     }, (err) => {
       alert(`Could not get your location to verify starting position: ${err.message}`);
+      setIsStartingTrip(false);
     });
   };
 
@@ -424,7 +484,7 @@ export const DriverDashboard: React.FC = () => {
                 )}
               </div>
 
-              {!isTripActive ? (
+              {!isTripActive && !isNavigatingToOrigin && (
                 <button
                   onClick={handleStartTrip}
                   disabled={!selectedRouteId || tripStops.length === 0 || isStartingTrip}
@@ -433,15 +493,40 @@ export const DriverDashboard: React.FC = () => {
                   {isStartingTrip ? (
                     <>
                       <div className="w-4 h-4 border-2 border-slate-500/30 border-t-slate-500 rounded-full animate-spin" />
-                      Acquiring GPS & Starting...
+                      Acquiring GPS...
                     </>
                   ) : (
                     <>
-                      <Play className="w-4 h-4 fill-current" /> Start Trip
+                      <Navigation className="w-4 h-4" /> Start Route
                     </>
                   )}
                 </button>
-              ) : (
+              )}
+
+              {isNavigatingToOrigin && !isTripActive && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-3">
+                  <div className="flex items-center gap-2 font-bold">
+                    <div className="w-4 h-4 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+                    Navigating to Origin...
+                  </div>
+                  <p className="text-xs">
+                    Please drive to <strong>{tripStops[0]?.stops?.stop_name}</strong>. The trip will automatically start when you arrive.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setIsNavigatingToOrigin(false);
+                      if (watchIdRef.current !== null) {
+                        navigator.geolocation.clearWatch(watchIdRef.current);
+                        watchIdRef.current = null;
+                      }
+                    }}
+                    className="w-full py-2.5 rounded-lg bg-amber-200/50 hover:bg-amber-200 text-amber-900 font-bold text-xs transition-colors"
+                  >
+                    Cancel Navigation
+                  </button>
+                </div>
+              )}
+              {isTripActive && (
                 <button
                   onClick={() => setActiveTab('trip')}
                   className="w-full py-3 rounded-xl bg-[#7847CB] hover:bg-[#0a2a42] text-white font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-2"

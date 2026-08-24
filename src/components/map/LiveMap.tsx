@@ -118,18 +118,61 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
       if (pathPoints.length > 1) {
         const isSelected = selectedRouteId === route.id;
+        
+        let splitIndex = -1;
 
-        const polyline = L.polyline(pathPoints, {
-          color: route.color || '#0f3c5c',
-          weight: isSelected ? 5 : 3,
-          opacity: isSelected ? 0.9 : 0.6,
-          dashArray: (!route.route_path || route.route_path.length === 0) ? '10, 10' : (route.status === 'detour' ? '6, 6' : undefined),
-        }).addTo(map);
+        // If this route is selected, AND a specific bus is selected on this route, split the path
+        if (isSelected && selectedBusId) {
+          const selectedBus = buses.find(b => b.id === selectedBusId && b.routeId === route.id);
+          if (selectedBus) {
+            const busLatLng = L.latLng(selectedBus.lat, selectedBus.lng);
+            let minDistance = Infinity;
+            for (let i = 0; i < pathPoints.length; i++) {
+              const dist = busLatLng.distanceTo(L.latLng(pathPoints[i]));
+              if (dist < minDistance) {
+                minDistance = dist;
+                splitIndex = i;
+              }
+            }
+          }
+        }
 
-        polylinesRef.current.push(polyline);
+        if (splitIndex !== -1) {
+          // Travelled path (greyed out)
+          const travelledPoints = pathPoints.slice(0, splitIndex + 1);
+          if (travelledPoints.length > 1) {
+            const travelledLine = L.polyline(travelledPoints, {
+              color: '#94a3b8', // slate-400
+              weight: 5,
+              opacity: 0.6,
+              dashArray: '8, 8',
+            }).addTo(map);
+            polylinesRef.current.push(travelledLine);
+          }
+
+          // Remaining path (bold)
+          const remainingPoints = pathPoints.slice(splitIndex);
+          if (remainingPoints.length > 1) {
+            const remainingLine = L.polyline(remainingPoints, {
+              color: route.color || '#7847CB',
+              weight: 6,
+              opacity: 1,
+            }).addTo(map);
+            polylinesRef.current.push(remainingLine);
+          }
+        } else {
+          // Normal rendering
+          const polyline = L.polyline(pathPoints, {
+            color: route.color || '#0f3c5c',
+            weight: isSelected ? 5 : 3,
+            opacity: isSelected ? 0.9 : 0.6,
+            dashArray: (!route.route_path || route.route_path.length === 0) ? '10, 10' : (route.status === 'detour' ? '6, 6' : undefined),
+          }).addTo(map);
+          polylinesRef.current.push(polyline);
+        }
       }
     });
-  }, [routes, selectedRouteId]);
+  }, [routes, selectedRouteId, selectedBusId, buses]);
 
   // Update Bus Stop Markers
   useEffect(() => {
