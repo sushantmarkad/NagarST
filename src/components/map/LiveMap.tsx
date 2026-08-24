@@ -214,7 +214,16 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       }
 
       if (isSelected) {
-        map.panTo([bus.lat, bus.lng], { animate: true, duration: 0.5 });
+        // Only pan if it's explicitly selected by the user recently, though tracking it can be done via bounds
+      }
+    });
+
+    // Cleanup stale bus markers
+    const activeBusKeys = new Set(buses.map(b => `bus-${b.id}`));
+    Object.keys(markersRef.current).forEach(key => {
+      if (key.startsWith('bus-') && !activeBusKeys.has(key)) {
+        markersRef.current[key].remove();
+        delete markersRef.current[key];
       }
     });
   }, [buses, selectedBusId, onSelectBus]);

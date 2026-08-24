@@ -55,7 +55,7 @@ export const LiveTracking: React.FC = () => {
         <LiveMap
           buses={filteredBuses}
           stops={stops}
-          routes={routes}
+          routes={selectedRoute ? [selectedRoute] : filterRoute !== 'all' ? routes.filter(r => r.id === filterRoute) : []}
           selectedBusId={selectedBusId}
           selectedStopId={selectedStopId}
           onSelectBus={(bus) => setSelectedBusId(bus.id)}
