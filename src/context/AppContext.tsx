@@ -158,7 +158,54 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     };
 
+    const fetchSupabaseRoutes = async () => {
+      const { data, error } = await supabase
+        .from('routes')
+        .select(`
+          id,
+          route_number,
+          origin,
+          destination,
+          route_path,
+          route_stops (
+            id,
+            stop_order,
+            estimated_minutes_from_origin,
+            stops (
+              id,
+              stop_name,
+              lat,
+              lng
+            )
+          )
+        `);
+      
+      if (!error && data) {
+        const formattedRoutes = data.map((r: any) => ({
+          id: r.id,
+          routeNumber: r.route_number,
+          origin: r.origin,
+          destination: r.destination,
+          route_path: r.route_path,
+          stops: r.route_stops
+            ? r.route_stops
+                .sort((a: any, b: any) => a.stop_order - b.stop_order)
+                .map((rs: any) => ({
+                  id: rs.stops.id,
+                  name: rs.stops.stop_name,
+                  lat: rs.stops.lat,
+                  lng: rs.stops.lng,
+                  sequence: rs.stop_order,
+                  isTimingPoint: false
+                }))
+            : []
+        }));
+        setRoutes(prev => [...prev, ...formattedRoutes]);
+      }
+    };
+
     fetchInitialLocations();
+    fetchSupabaseRoutes();
 
     // 2. Connect to Socket.IO Server for live location updates
     const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';

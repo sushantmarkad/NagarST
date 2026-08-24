@@ -94,15 +94,18 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     polylinesRef.current = [];
 
     routes.forEach((route) => {
-      if (route.stops && route.stops.length > 1) {
-        const points: [number, number][] = route.stops.map((s) => [s.lat, s.lng]);
+      const pathPoints = (route.route_path && route.route_path.length > 0) 
+        ? route.route_path.map((p) => [p.lat, p.lng] as [number, number])
+        : (route.stops ? route.stops.map((s) => [s.lat, s.lng] as [number, number]) : []);
+
+      if (pathPoints.length > 1) {
         const isSelected = selectedRouteId === route.id;
 
-        const polyline = L.polyline(points, {
+        const polyline = L.polyline(pathPoints, {
           color: route.color || '#0f3c5c',
           weight: isSelected ? 5 : 3,
           opacity: isSelected ? 0.9 : 0.6,
-          dashArray: route.status === 'detour' ? '6, 6' : undefined,
+          dashArray: (!route.route_path || route.route_path.length === 0) ? '10, 10' : (route.status === 'detour' ? '6, 6' : undefined),
         }).addTo(map);
 
         polylinesRef.current.push(polyline);

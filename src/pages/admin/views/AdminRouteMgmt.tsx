@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Polyline, Tooltip
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useApp } from '../../../context/AppContext';
+import { fetchOSRMRoute } from '../../../utils/routing';
 import {
   Route as RouteIcon,
   Plus,
@@ -143,6 +144,16 @@ export const AdminRouteMgmt: React.FC = () => {
     setCreationStep('idle');
     setNewRoute({ routeNumber: '', origin: '', destination: '' });
     setCreationPins({});
+    
+    // Automatically generate and save the route path
+    if (routeData.id && originStop && destStop) {
+      const path = await fetchOSRMRoute([
+        { lat: creationPins.origin!.lat, lng: creationPins.origin!.lng },
+        { lat: creationPins.dest!.lat, lng: creationPins.dest!.lng }
+      ]);
+      await supabase.from('routes').update({ route_path: path }).eq('id', routeData.id);
+    }
+    
     fetchRoutes();
   };
 
@@ -206,12 +217,28 @@ export const AdminRouteMgmt: React.FC = () => {
     if (!linkErr) {
       setAddingStopLoc(null);
       setNewStopName('');
+      
+      // Update OSRM route path
+      const allStops = [...stops, { stops: { lat: stopData.lat, lng: stopData.lng } }];
+      const path = await fetchOSRMRoute(allStops.map(s => ({ lat: s.stops.lat, lng: s.stops.lng })));
+      await supabase.from('routes').update({ route_path: path }).eq('id', selectedRoute.id);
+      
       handleSelectRoute(selectedRoute); // refresh stops
     }
   };
 
   const removeStop = async (routeStopId: string) => {
     await supabase.from('route_stops').delete().eq('id', routeStopId);
+    
+    // Update OSRM route path
+    const remainingStops = stops.filter(s => s.id !== routeStopId);
+    if (remainingStops.length >= 2) {
+      const path = await fetchOSRMRoute(remainingStops.map(s => ({ lat: s.stops.lat, lng: s.stops.lng })));
+      await supabase.from('routes').update({ route_path: path }).eq('id', selectedRoute.id);
+    } else {
+      await supabase.from('routes').update({ route_path: [] }).eq('id', selectedRoute.id);
+    }
+    
     handleSelectRoute(selectedRoute); // refresh stops
   };
 
@@ -234,7 +261,9 @@ export const AdminRouteMgmt: React.FC = () => {
     ? liveBuses.filter(b => b.routeId === selectedRoute.id)
     : [];
 
-  const routePositions: [number, number][] = stops.map(s => [s.stops.lat, s.stops.lng]);
+  const routePositions: [number, number][] = selectedRoute?.route_path && selectedRoute.route_path.length > 0
+    ? selectedRoute.route_path.map((p: any) => [p.lat, p.lng])
+    : stops.map(s => [s.stops.lat, s.stops.lng]);
 
   const getBusIcon = (busNumber: string) => {
     return L.divIcon({

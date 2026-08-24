@@ -18,6 +18,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { SharedLayout } from '../../components/layout/SharedLayout';
+import { getDistance, getDistanceToPolyline } from '../../utils/routing';
 
 // Fix for default leaflet icons in React
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -92,8 +93,10 @@ export const DriverDashboard: React.FC = () => {
   useEffect(() => {
     if (selectedRouteId) {
       fetchRouteStops(selectedRouteId);
+      const details = availableRoutes.find(r => r.id === selectedRouteId);
+      setSelectedRouteDetails(details || null);
     }
-  }, [selectedRouteId]);
+  }, [selectedRouteId, availableRoutes]);
 
   const fetchRouteStops = async (routeId: string) => {
     const { data } = await supabase
@@ -126,38 +129,85 @@ export const DriverDashboard: React.FC = () => {
       return;
     }
 
-    // 1. Create Trip in DB
-    const { data: trip, error: tripErr } = await supabase.from('trips').insert([{
-      bus_id: busDetails.id,
-      route_id: selectedRouteId,
-      status: 'Active',
-      start_time: new Date().toISOString()
-    }]).select().single();
+    // Get current position first to validate distance
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const driverLatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      
+      // Proximity check to the first stop (bypass in dev mode if they check override)
+      if (tripStops.length > 0 && !isDevOverride) {
+        const firstStop = { lat: tripStops[0].stops.lat, lng: tripStops[0].stops.lng };
+        const dist = getDistance(driverLatLng, firstStop);
+        if (dist > 500) { // 500 meters threshold
+          alert(`You are too far from the starting stop (${dist.toFixed(0)} meters). You must be at the origin to start the trip.`);
+          return;
+        }
+      }
 
-    if (tripErr || !trip) {
-      alert("Failed to start trip: " + tripErr?.message);
-      return;
-    }
+      // 1. Create Trip in DB
+      const { data: trip, error: tripErr } = await supabase.from('trips').insert([{
+        bus_id: busDetails.id,
+        route_id: selectedRouteId,
+        status: 'Active',
+        start_time: new Date().toISOString()
+      }]).select().single();
 
-    setCurrentTripId(trip.id);
-    setIsTripActive(true);
-    setActiveTab('trip');
-    setCurrentStopIndex(0);
+      if (tripErr || !trip) {
+        alert("Failed to start trip: " + tripErr?.message);
+        return;
+      }
 
-    // 2. Start Real GPS Tracking
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      async (position) => {
-        const { latitude, longitude, speed } = position.coords;
-        const speedKmh = speed ? Math.round(speed * 3.6) : 0;
-        setDriverPos({ lat: latitude, lng: longitude });
-        await updateLiveLocation(trip.id, latitude, longitude, speedKmh);
-      },
-      (error) => {
-        console.error(`Failed to get real GPS: ${error.message}`);
-        alert(`GPS Error: ${error.message}. Please ensure location services are enabled.`);
-      },
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
-    );
+      setCurrentTripId(trip.id);
+      setIsTripActive(true);
+      setActiveTab('trip');
+      setCurrentStopIndex(0);
+
+      const routePathCoords = selectedRouteDetails?.route_path || [];
+
+      // 2. Start Real GPS Tracking
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        async (position) => {
+          const { latitude, longitude, speed } = position.coords;
+          const speedKmh = speed ? Math.round(speed * 3.6) : 0;
+          setDriverPos({ lat: latitude, lng: longitude });
+
+          let currentStatus = 'on_time';
+          // Off-route check
+          if (routePathCoords.length > 0) {
+            const distToRoute = getDistanceToPolyline({ lat: latitude, lng: longitude }, routePathCoords);
+            if (distToRoute > 150) { // 150 meters off route
+              currentStatus = 'off_route';
+            }
+          }
+
+          if (socketRef.current) {
+            socketRef.current.emit('updateLocation', {
+              id: busDetails.id,
+              busId: busDetails.id,
+              busNumber: busDetails.bus_number,
+              plateNumber: busDetails.plate_number,
+              routeId: selectedRouteId,
+              routeNumber: selectedRouteDetails?.route_number || '',
+              routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} - ${selectedRouteDetails.destination}` : '',
+              lat: latitude,
+              lng: longitude,
+              speedKmh,
+              status: currentStatus,
+              occupancy: 'moderate',
+              nextStopName: tripStops[0]?.stops?.stop_name || 'Unknown',
+              driverName: user?.name || 'Driver',
+              lastUpdated: new Date().toISOString()
+            });
+          }
+        },
+        (error) => {
+          console.error(`Failed to get real GPS: ${error.message}`);
+          alert(`GPS Error: ${error.message}. Please ensure location services are enabled.`);
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
+      );
+    }, (err) => {
+      alert(`Could not get your location to verify starting position: ${err.message}`);
+    });
   };
 
 
@@ -212,7 +262,6 @@ export const DriverDashboard: React.FC = () => {
     // Emit location instantly for passenger map via persistent Socket.IO connection
     if (socketRef.current) {
       const nextStop = tripStops[currentStopIndex]?.stops?.stop_name || 'Destination Reached';
-      const routeDetails = availableRoutes.find(r => r.id === selectedRouteId);
       
       socketRef.current.emit('updateLocation', {
         id: busDetails.id,
@@ -220,8 +269,8 @@ export const DriverDashboard: React.FC = () => {
         busNumber: busDetails.bus_number,
         plateNumber: busDetails.plate_number,
         routeId: selectedRouteId,
-        routeNumber: routeDetails?.route_number || '',
-        routeName: routeDetails ? `${routeDetails.origin} - ${routeDetails.destination}` : '',
+        routeNumber: selectedRouteDetails?.route_number || '',
+        routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} - ${selectedRouteDetails.destination}` : '',
         lat,
         lng,
         speedKmh: speed,
@@ -271,8 +320,6 @@ export const DriverDashboard: React.FC = () => {
       }
     };
   }, []);
-
-  const selectedRouteDetails = availableRoutes.find(r => r.id === selectedRouteId);
 
   const navItems = [
     {
@@ -325,7 +372,20 @@ export const DriverDashboard: React.FC = () => {
                   </select>
                 </div>
 
-
+                {!isTripActive && (
+                  <label className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={isDevOverride}
+                      onChange={(e) => setIsDevOverride(e.target.checked)}
+                      className="w-4 h-4 text-[#7847CB] rounded border-slate-300 focus:ring-[#7847CB]"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">Bypass Location Enforcement (Testing)</span>
+                      <span className="text-[10px] text-slate-500 block">Allows starting trip from anywhere for dev testing</span>
+                    </div>
+                  </label>
+                )}
               </div>
 
               {!isTripActive ? (
