@@ -53,8 +53,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    // Request user location
-    map.locate({ setView: false, maxZoom: 15, watch: true, enableHighAccuracy: true });
+    // Request user location and auto-pan to it so they can see nearby buses immediately
+    map.locate({ setView: true, maxZoom: 15, watch: true, enableHighAccuracy: true });
     
     map.on('locationfound', (e) => {
       const radius = e.accuracy / 2;
