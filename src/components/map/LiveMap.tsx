@@ -68,7 +68,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     let hasCentered = false;
     map.on('locationfound', (e) => {
       if (!hasCentered || isFollowingRef.current) {
-        map.setView(e.latlng, 15);
+        map.setView(e.latlng, hasCentered ? map.getZoom() : 15, { animate: true });
         hasCentered = true;
       }
       const radius = e.accuracy / 2;
@@ -243,7 +243,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
       {/* Recenter Button */}
       {!isFollowing && (
-        <div className="absolute top-4 right-4 z-[400]">
+        <div className="absolute top-24 right-4 z-[400]">
           <button 
             onClick={(e) => {
               e.preventDefault();
