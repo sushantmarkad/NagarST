@@ -14,7 +14,7 @@ import {
   MapPin,
   ChevronUp
 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { SharedLayout } from '../../components/layout/SharedLayout';
@@ -26,6 +26,16 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
+
+const MapAutoCenter = ({ position }: { position: { lat: number; lng: number } | null }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (position) {
+      map.setView([position.lat, position.lng], map.getZoom(), { animate: true });
+    }
+  }, [position, map]);
+  return null;
+};
 
 export const DriverDashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -105,17 +115,15 @@ export const DriverDashboard: React.FC = () => {
     if (data) setTripStops(data);
   };
 
-  const [isSimulatorMode, setIsSimulatorMode] = useState(true);
-
   const handleStartTrip = async () => {
     if (!selectedRouteId || !busDetails) {
       alert("Please select a route first.");
       return;
     }
 
-    if (!isSimulatorMode && !('geolocation' in navigator)) {
-      alert('Geolocation is not supported by your browser. Falling back to simulator.');
-      setIsSimulatorMode(true);
+    if (!('geolocation' in navigator)) {
+      alert('Geolocation is not supported by your browser. Cannot start trip without GPS.');
+      return;
     }
 
     // 1. Create Trip in DB
@@ -136,47 +144,23 @@ export const DriverDashboard: React.FC = () => {
     setActiveTab('trip');
     setCurrentStopIndex(0);
 
-    // 2. Start GPS Tracking
-    if (isSimulatorMode) {
-      startSimulator(trip.id);
-    } else {
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        async (position) => {
-          const { latitude, longitude, speed } = position.coords;
-          const speedKmh = speed ? Math.round(speed * 3.6) : 0;
-          setDriverPos({ lat: latitude, lng: longitude });
-          await updateLiveLocation(trip.id, latitude, longitude, speedKmh);
-        },
-        (error) => {
-          console.warn(`Failed to get real GPS: ${error.message}. Falling back to simulator mode.`);
-          startSimulator(trip.id);
-        },
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
-      );
-    }
+    // 2. Start Real GPS Tracking
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      async (position) => {
+        const { latitude, longitude, speed } = position.coords;
+        const speedKmh = speed ? Math.round(speed * 3.6) : 0;
+        setDriverPos({ lat: latitude, lng: longitude });
+        await updateLiveLocation(trip.id, latitude, longitude, speedKmh);
+      },
+      (error) => {
+        console.error(`Failed to get real GPS: ${error.message}`);
+        alert(`GPS Error: ${error.message}. Please ensure location services are enabled.`);
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
+    );
   };
 
-  const startSimulator = (tripId: string) => {
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      window.clearInterval(watchIdRef.current);
-    }
-    
-    // Start near first stop or default
-    let currentLat = tripStops.length > 0 ? tripStops[0].stops.lat : 19.0965;
-    let currentLng = tripStops.length > 0 ? tripStops[0].stops.lng : 74.7435;
-    
-    // Set initial instantly
-    setDriverPos({ lat: currentLat, lng: currentLng });
-    updateLiveLocation(tripId, currentLat, currentLng, 35);
 
-    watchIdRef.current = window.setInterval(async () => {
-      currentLat += 0.0003; 
-      currentLng -= 0.0002;
-      setDriverPos({ lat: currentLat, lng: currentLng });
-      await updateLiveLocation(tripId, currentLat, currentLng, 35);
-    }, 3000) as unknown as number;
-  };
 
   const getBusIcon = (busNumber: string) => {
     return L.divIcon({
@@ -341,20 +325,7 @@ export const DriverDashboard: React.FC = () => {
                   </select>
                 </div>
 
-                {!isTripActive && (
-                  <label className="flex items-center gap-2 p-3 bg-amber-50 rounded-xl border border-amber-200 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={isSimulatorMode}
-                      onChange={(e) => setIsSimulatorMode(e.target.checked)}
-                      className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-amber-900 block">Simulator Mode</span>
-                      <span className="text-[10px] text-amber-700 block">Fake GPS movement for testing (use if not in Ahilyanagar)</span>
-                    </div>
-                  </label>
-                )}
+
               </div>
 
               {!isTripActive ? (
@@ -394,6 +365,7 @@ export const DriverDashboard: React.FC = () => {
                 <TileLayer
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
+                <MapAutoCenter position={driverPos} />
                 
                 {/* Route Polyline */}
                 {tripStops.length > 0 && (
