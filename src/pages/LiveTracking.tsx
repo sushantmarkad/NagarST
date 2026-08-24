@@ -18,7 +18,7 @@ export const LiveTracking: React.FC = () => {
   const filteredBuses = filterRoute === 'all' ? buses : buses.filter((b) => b.routeId === filterRoute);
 
   return (
-    <div className="h-full flex flex-col space-y-3 relative">
+    <div className="absolute inset-0 flex flex-col p-3 space-y-3 pb-[70px] md:pb-3">
       {/* Map Control Header Bar */}
       <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between flex-wrap gap-2 shrink-0">
         <div className="flex items-center gap-2">
