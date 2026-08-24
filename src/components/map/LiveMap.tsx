@@ -53,9 +53,32 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
+    // Request user location
+    map.locate({ setView: false, maxZoom: 15, watch: true, enableHighAccuracy: true });
+    
+    map.on('locationfound', (e) => {
+      const radius = e.accuracy / 2;
+      
+      const userKey = 'user-location';
+      if (!markersRef.current[userKey]) {
+        const userIcon = L.divIcon({
+          className: 'user-location-icon',
+          html: `<div style="width:14px;height:14px;background-color:#3b82f6;border-radius:50%;border:2px solid white;box-shadow:0 0 10px rgba(59,130,246,0.5);"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+        
+        markersRef.current[userKey] = L.marker(e.latlng, { icon: userIcon }).addTo(map)
+          .bindPopup(`You are here (accuracy: ${radius.toFixed(0)}m)`);
+      } else {
+        markersRef.current[userKey].setLatLng(e.latlng);
+      }
+    });
+
     mapRef.current = map;
 
     return () => {
+      map.stopLocate();
       map.remove();
       mapRef.current = null;
     };

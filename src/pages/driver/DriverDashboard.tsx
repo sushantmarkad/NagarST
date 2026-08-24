@@ -165,6 +165,33 @@ export const DriverDashboard: React.FC = () => {
     );
   };
 
+  const getBusIcon = (busNumber: string) => {
+    return L.divIcon({
+      className: 'custom-bus-icon',
+      html: `
+        <div style="
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 4px 8px;
+          background-color: #7847CB;
+          color: white;
+          font-weight: 700;
+          font-size: 11px;
+          border-radius: 8px;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+          border: 1.5px solid white;
+          white-space: nowrap;
+        ">
+          <span style="font-size: 12px;">🚌</span>
+          <span>${busNumber}</span>
+        </div>
+      `,
+      iconSize: [60, 26],
+      iconAnchor: [30, 13],
+    });
+  };
+
   const updateLiveLocation = async (tripId: string, lat: number, lng: number, speed: number) => {
     if (!busDetails) return;
     
@@ -187,14 +214,24 @@ export const DriverDashboard: React.FC = () => {
 
     // Emit location instantly for passenger map via persistent Socket.IO connection
     if (socketRef.current) {
+      const nextStop = tripStops[currentStopIndex]?.stops?.stop_name || 'Destination Reached';
+      const routeDetails = availableRoutes.find(r => r.id === selectedRouteId);
+      
       socketRef.current.emit('updateLocation', {
         id: busDetails.id,
         busId: busDetails.id,
         busNumber: busDetails.bus_number,
+        plateNumber: busDetails.plate_number,
+        routeId: selectedRouteId,
+        routeNumber: routeDetails?.route_number || '',
+        routeName: routeDetails ? `${routeDetails.origin} - ${routeDetails.destination}` : '',
         lat,
         lng,
         speedKmh: speed,
         status: 'on_time',
+        occupancy: 'medium',
+        nextStopName: nextStop,
+        driverName: user?.name || 'Driver',
         lastUpdated: new Date().toISOString()
       });
     }
@@ -358,9 +395,9 @@ export const DriverDashboard: React.FC = () => {
                 })}
 
                 {/* Driver Live Position Marker */}
-                {driverPos && (
-                  <Marker position={[driverPos.lat, driverPos.lng]} zIndexOffset={1000}>
-                    <Popup className="font-bold">Bus Location</Popup>
+                {driverPos && busDetails && (
+                  <Marker position={[driverPos.lat, driverPos.lng]} zIndexOffset={1000} icon={getBusIcon(busDetails.bus_number)}>
+                    <Popup className="font-bold">Your Bus Location</Popup>
                   </Marker>
                 )}
               </MapContainer>

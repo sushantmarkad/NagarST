@@ -172,8 +172,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const newBuses = [...prevBuses];
             newBuses[index] = { ...newBuses[index], ...updatedBus, lastUpdated: new Date().toISOString() };
             return newBuses;
+          } else {
+            // Bus is new to this client (e.g. driver just started trip)
+            return [...prevBuses, { ...updatedBus, lastUpdated: new Date().toISOString() } as Bus];
           }
-          return prevBuses; // If bus isn't in state, we could fetch or ignore
         });
       });
 
