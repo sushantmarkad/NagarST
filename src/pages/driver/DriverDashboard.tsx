@@ -416,13 +416,14 @@ export const DriverDashboard: React.FC = () => {
 
         {/* TAB 2: ACTIVE TRIP */}
         {activeTab === 'trip' && (
-          <div className="flex-1 flex flex-col md:flex-row w-full h-full relative overflow-hidden">
+          <div className="absolute inset-0 flex flex-col md:flex-row overflow-hidden bg-slate-100">
             {/* FULL SCREEN MAP */}
-            <div className="flex-1 w-full h-[50vh] md:h-full relative z-0">
+            <div className="absolute inset-0 z-0">
               <MapContainer 
                 center={driverPos ? [driverPos.lat, driverPos.lng] : (tripStops.length > 0 ? [tripStops[0].stops.lat, tripStops[0].stops.lng] : [19.0952, 74.7396])} 
                 zoom={14} 
-                className="w-full h-full absolute inset-0"
+                className="w-full h-full"
+                zoomControl={false}
               >
                 <TileLayer
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -434,8 +435,8 @@ export const DriverDashboard: React.FC = () => {
                   <Polyline 
                     positions={tripStops.map(s => [s.stops.lat, s.stops.lng])} 
                     color="#7847CB" 
-                    weight={4} 
-                    opacity={0.6}
+                    weight={5} 
+                    opacity={0.8}
                   />
                 )}
 
@@ -446,7 +447,7 @@ export const DriverDashboard: React.FC = () => {
                     <Marker 
                       key={s.id} 
                       position={[s.stops.lat, s.stops.lng]}
-                      opacity={isPassed ? 0.5 : 1}
+                      opacity={isPassed ? 0.4 : 1}
                     >
                       <Popup>
                         <div className="font-bold">{i + 1}. {s.stops.stop_name}</div>
@@ -466,7 +467,7 @@ export const DriverDashboard: React.FC = () => {
             </div>
 
             {/* FLOATING BOTTOM SHEET / SIDE PANEL */}
-            <div className={`w-full md:w-96 bg-white border-t md:border-t-0 md:border-l border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] md:shadow-none flex flex-col transition-transform duration-300 z-40 ${isBottomSheetOpen ? 'translate-y-0' : 'translate-y-[calc(100%-48px)] md:translate-y-0'} absolute md:relative bottom-0`}>
+            <div className={`w-full md:w-[400px] bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:shadow-[-8px_0_30px_rgba(0,0,0,0.05)] flex flex-col transition-transform duration-300 ease-out z-40 ${isBottomSheetOpen ? 'translate-y-0' : 'translate-y-[calc(100%-48px)] md:translate-y-0'} absolute md:relative bottom-0 md:right-0 md:ml-auto h-auto max-h-[65vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none`}>
               
               {/* Drag Handle (Mobile) */}
               <div 
