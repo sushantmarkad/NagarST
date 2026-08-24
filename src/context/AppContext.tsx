@@ -208,7 +208,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     fetchSupabaseRoutes();
 
     // 2. Connect to Socket.IO Server for live location updates
-    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
     import('socket.io-client').then(({ io }) => {
       const socket = io(SOCKET_URL);
 

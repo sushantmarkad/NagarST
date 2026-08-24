@@ -64,7 +64,7 @@ export const DriverDashboard: React.FC = () => {
     fetchInitialData();
     
     // Connect to Socket.IO Server
-    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
     import('socket.io-client').then(({ io }) => {
       socketRef.current = io(SOCKET_URL);
     });
