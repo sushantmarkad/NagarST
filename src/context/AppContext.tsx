@@ -1,12 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { Bus, Route, BusStop, Ticket, BusPass, NotificationItem, FavoriteItem } from '../types';
 import { supabase } from '../utils/supabaseClient';
-import { MOCK_BUSES } from '../data/mockBuses';
-import { MOCK_ROUTES } from '../data/mockRoutes';
-import { MOCK_BUS_STOPS } from '../data/mockStops';
-import { MOCK_TICKETS } from '../data/mockTickets';
-import { MOCK_PASSES } from '../data/mockPasses';
-import { MOCK_NOTIFICATIONS } from '../data/mockNotifications';
+
 
 interface AppContextType {
   buses: Bus[];
@@ -34,21 +29,17 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [buses, setBuses] = useState<Bus[]>(MOCK_BUSES);
-  const [routes, setRoutes] = useState<Route[]>(MOCK_ROUTES);
-  const [stops] = useState<BusStop[]>(MOCK_BUS_STOPS);
-  const [tickets, setTickets] = useState<Ticket[]>(MOCK_TICKETS);
-  const [passes, setPasses] = useState<BusPass[]>(MOCK_PASSES);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
-  const [favorites, setFavorites] = useState<FavoriteItem[]>([
-    { id: 'fav-1', type: 'place', title: 'Home', subtitle: 'Savedi Road, Ahilyanagar', targetId: 'stop-savedi', icon: 'home', quickEta: 'Bus 12 in 5m' },
-    { id: 'fav-2', type: 'place', title: 'New Arts College', subtitle: 'College Road', targetId: 'stop-new-arts', icon: 'school', quickEta: 'Bus 12 in 3m' },
-    { id: 'fav-3', type: 'route', title: 'Route 12', subtitle: 'CBS ↔ Savedi Terminal', targetId: 'route-12', icon: 'bus', quickEta: 'Every 12 min' },
-  ]);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [stops, setStops] = useState<BusStop[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [passes, setPasses] = useState<BusPass[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
 
-  const [selectedBusId, setSelectedBusId] = useState<string | null>('bus-101');
-  const [selectedStopId, setSelectedStopId] = useState<string | null>('stop-cbs');
-  const [selectedRouteId, setSelectedRouteId] = useState<string | null>('route-12');
+  const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
+  const [selectedStopId, setSelectedStopId] = useState<string | null>(null);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
 
   const userLocation = {
     lat: 19.0975,
@@ -204,8 +195,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     };
 
+    const fetchSupabaseStops = async () => {
+      const { data, error } = await supabase.from('stops').select('*');
+      if (!error && data) {
+        const formattedStops = data.map((s: any) => ({
+          id: s.id,
+          name: s.stop_name,
+          lat: s.lat,
+          lng: s.lng,
+          isMajor: true,
+          connections: []
+        }));
+        setStops(formattedStops as unknown as BusStop[]);
+      }
+    };
+
     fetchInitialLocations();
     fetchSupabaseRoutes();
+    fetchSupabaseStops();
 
     // 2. Connect to Socket.IO Server for live location updates
     const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
