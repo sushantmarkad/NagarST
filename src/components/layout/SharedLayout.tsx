@@ -135,7 +135,7 @@ export const SharedLayout: React.FC<SharedLayoutProps> = ({
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto relative bg-[#faf9f6] pb-[60px] md:pb-0">
+        <div className="flex-1 flex flex-col overflow-y-auto relative bg-[#faf9f6] pb-[60px] md:pb-0">
           {children}
         </div>
       </main>

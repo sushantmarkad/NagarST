@@ -342,9 +342,9 @@ export const DriverDashboard: React.FC = () => {
 
   return (
     <SharedLayout navItems={navItems} title="Driver Dashboard" subtitle={`Bus ${busDetails?.bus_number || 'Unassigned'}`} headerIcon={CircleDot}>
-      <div className="w-full h-full flex flex-col relative overflow-hidden">
+      <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden">
         {activeTab === 'home' && (
-          <div className="p-4 max-w-md mx-auto w-full space-y-4 overflow-y-auto h-full">
+          <div className="flex-1 p-4 max-w-md mx-auto w-full space-y-4 overflow-y-auto">
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <span className="text-xs font-bold text-[#7847CB] uppercase tracking-wider block">Trip Assignment</span>
