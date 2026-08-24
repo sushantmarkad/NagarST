@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { useApp } from '../../../context/AppContext';
 import { type Bus as BusType } from '../../../types';
+import { LiveMap } from '../../../components/map/LiveMap';
 import {
   Bus,
   MapPin,
@@ -13,30 +11,8 @@ import {
   Users
 } from 'lucide-react';
 
-const createBusIcon = (status: string) => {
-  let color = '#10b981';
-  if (status === 'delayed') color = '#f59e0b';
-  if (status === 'early') color = '#3b82f6';
-
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="3" y="3" width="18" height="15" rx="3" fill="${color}" />
-      <circle cx="7.5" cy="18" r="1.5" fill="#0f172a" />
-      <circle cx="16.5" cy="18" r="1.5" fill="#0f172a" />
-      <path d="M6 7h12" stroke="#ffffff" stroke-width="1.5"/>
-      <path d="M6 11h12" stroke="#ffffff" stroke-width="1.5"/>
-    </svg>
-  `;
-
-  return L.divIcon({
-    html: `<div style="transform: translate(-50%, -50%); cursor: pointer;">${svg}</div>`,
-    className: 'custom-bus-marker',
-    iconSize: [32, 32],
-  });
-};
-
 export const AdminLiveFleet: React.FC = () => {
-  const { buses } = useApp();
+  const { buses, stops, routes } = useApp();
   const [selectedBus, setSelectedBus] = useState<BusType | null>(buses.length > 0 ? buses[0] : null);
 
   return (
@@ -67,34 +43,14 @@ export const AdminLiveFleet: React.FC = () => {
 
       <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 relative">
         <div className="flex-1 rounded-2xl overflow-hidden border border-slate-200 shadow-xs relative z-10">
-          <MapContainer
-            center={[19.0975, 74.7420]}
-            zoom={13}
-            scrollWheelZoom={true}
-            style={{ width: '100%', height: '100%' }}
-          >
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {buses.map((bus) => (
-              <Marker
-                key={bus.id}
-                position={[bus.lat, bus.lng]}
-                icon={createBusIcon(bus.status)}
-                eventHandlers={{
-                  click: () => setSelectedBus(bus),
-                }}
-              >
-                <Popup>
-                  <div className="text-xs space-y-1">
-                    <span className="font-bold text-slate-900 block">{bus.busNumber} • {bus.routeName}</span>
-                    <span className="text-slate-600 block">Next: {bus.nextStopName} ({bus.etaToNextMinutes} min)</span>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer>
+          <LiveMap
+            buses={buses}
+            stops={stops}
+            routes={routes}
+            selectedBusId={selectedBus?.id || null}
+            selectedRouteId={selectedBus?.routeId || null}
+            onSelectBus={(bus) => setSelectedBus(bus)}
+          />
         </div>
 
         {selectedBus && (
