@@ -226,7 +226,7 @@ export const DriverDashboard: React.FC = () => {
         lng,
         speedKmh: speed,
         status: 'on_time',
-        occupancy: 'medium',
+        occupancy: 'moderate',
         nextStopName: nextStop,
         driverName: user?.name || 'Driver',
         lastUpdated: new Date().toISOString()
