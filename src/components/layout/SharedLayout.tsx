@@ -33,13 +33,13 @@ export const SharedLayout: React.FC<SharedLayoutProps> = ({
   const closeSidebar = () => setIsSidebarOpen(false);
 
   return (
-    <div className="min-h-screen bg-[#faf9f6] flex flex-col md:flex-row text-slate-900 font-sans overflow-hidden">
+    <div className="min-h-[100dvh] bg-[#faf9f6] flex flex-col md:flex-row text-slate-900 font-sans overflow-hidden">
       
       {/* Mobile Header */}
-      <header className="md:hidden h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 sticky top-0 z-50 shrink-0">
+      <header className="md:hidden h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 sticky top-0 z-[500] shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={toggleSidebar} className="p-1.5 -ml-1.5 rounded-lg text-slate-600 hover:bg-slate-100">
-            <Menu className="w-6 h-6" />
+          <button onClick={() => setIsSidebarOpen(true)} className="p-1.5 -ml-1.5 text-slate-600 hover:text-slate-900 bg-slate-50 rounded-lg">
+            <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
             {HeaderIcon && (
@@ -58,13 +58,13 @@ export const SharedLayout: React.FC<SharedLayoutProps> = ({
       {/* Sidebar Overlay (Mobile) */}
       {isSidebarOpen && (
         <div 
-          className="md:hidden fixed inset-0 bg-slate-900/50 z-40 backdrop-blur-sm"
+          className="md:hidden fixed inset-0 bg-slate-900/50 z-[500] backdrop-blur-sm"
           onClick={closeSidebar}
         />
       )}
 
       {/* Sidebar (Desktop + Mobile Drawer) */}
-      <aside className={`fixed md:sticky top-0 left-0 h-screen w-64 bg-white border-r border-slate-200 z-50 transform transition-transform duration-300 ease-in-out shrink-0 flex flex-col ${
+      <aside className={`fixed md:sticky top-0 left-0 h-[100dvh] w-64 bg-white border-r border-slate-200 z-[501] transform transition-transform duration-300 ease-in-out shrink-0 flex flex-col ${
         isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
       }`}>
         {/* Sidebar Header */}

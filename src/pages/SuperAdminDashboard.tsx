@@ -9,7 +9,7 @@ export const SuperAdminDashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-900 flex text-slate-300 font-sans">
       {/* Super Admin Sidebar */}
-      <aside className="w-64 bg-slate-950 border-r border-slate-800 h-screen sticky top-0 shrink-0 p-4 flex flex-col justify-between hidden md:flex">
+      <aside className="w-64 bg-slate-950 border-r border-slate-800 h-[100dvh] sticky top-0 shrink-0 p-4 flex flex-col justify-between hidden md:flex">
         <div>
           <div className="flex items-center gap-3 px-2 py-3 mb-6 border-b border-slate-800 pb-4">
             <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-[0_0_15px_rgba(147,51,234,0.4)] shrink-0">
