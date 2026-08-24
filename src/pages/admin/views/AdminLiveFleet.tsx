@@ -50,6 +50,7 @@ export const AdminLiveFleet: React.FC = () => {
             selectedBusId={selectedBus?.id || null}
             selectedRouteId={selectedBus?.routeId || null}
             onSelectBus={(bus) => setSelectedBus(bus)}
+            showUserLocation={false}
           />
         </div>
 

@@ -15,6 +15,7 @@ interface LiveMapProps {
   onSelectBus?: (bus: Bus) => void;
   onSelectStop?: (stop: BusStop) => void;
   height?: string;
+  showUserLocation?: boolean;
 }
 
 export const LiveMap: React.FC<LiveMapProps> = ({
@@ -27,6 +28,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   onSelectBus,
   onSelectStop,
   height = '100%',
+  showUserLocation = true,
 }) => {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -62,32 +64,34 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       isFollowingRef.current = false;
     });
 
-    // Request user location and auto-pan to it so they can see nearby buses immediately
-    map.locate({ setView: false, watch: true, enableHighAccuracy: true });
-    
-    let hasCentered = false;
-    map.on('locationfound', (e) => {
-      if (!hasCentered || isFollowingRef.current) {
-        map.setView(e.latlng, hasCentered ? map.getZoom() : 15, { animate: true });
-        hasCentered = true;
-      }
-      const radius = e.accuracy / 2;
+    if (showUserLocation) {
+      // Request user location and auto-pan to it so they can see nearby buses immediately
+      map.locate({ setView: false, watch: true, enableHighAccuracy: true });
       
-      const userKey = 'user-location';
-      if (!markersRef.current[userKey]) {
-        const userIcon = L.divIcon({
-          className: 'user-location-icon',
-          html: `<div style="width:14px;height:14px;background-color:#3b82f6;border-radius:50%;border:2px solid white;box-shadow:0 0 10px rgba(59,130,246,0.5);"></div>`,
-          iconSize: [14, 14],
-          iconAnchor: [7, 7]
-        });
+      let hasCentered = false;
+      map.on('locationfound', (e) => {
+        if (!hasCentered || isFollowingRef.current) {
+          map.setView(e.latlng, hasCentered ? map.getZoom() : 15, { animate: true });
+          hasCentered = true;
+        }
+        const radius = e.accuracy / 2;
         
-        markersRef.current[userKey] = L.marker(e.latlng, { icon: userIcon }).addTo(map)
-          .bindPopup(`You are here (accuracy: ${radius.toFixed(0)}m)`);
-      } else {
-        markersRef.current[userKey].setLatLng(e.latlng);
-      }
-    });
+        const userKey = 'user-location';
+        if (!markersRef.current[userKey]) {
+          const userIcon = L.divIcon({
+            className: 'user-location-icon',
+            html: `<div style="width:14px;height:14px;background-color:#3b82f6;border-radius:50%;border:2px solid white;box-shadow:0 0 10px rgba(59,130,246,0.5);"></div>`,
+            iconSize: [14, 14],
+            iconAnchor: [7, 7]
+          });
+          
+          markersRef.current[userKey] = L.marker(e.latlng, { icon: userIcon }).addTo(map)
+            .bindPopup(`You are here (accuracy: ${radius.toFixed(0)}m)`);
+        } else {
+          markersRef.current[userKey].setLatLng(e.latlng);
+        }
+      });
+    }
 
     mapRef.current = map;
 
@@ -260,8 +264,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               
               if (selectedBusId && markersRef.current[`bus-${selectedBusId}`]) {
                 mapRef.current?.setView(markersRef.current[`bus-${selectedBusId}`].getLatLng(), 15, { animate: true });
-              } else if (markersRef.current['user-location']) {
+              } else if (showUserLocation && markersRef.current['user-location']) {
                 mapRef.current?.setView(markersRef.current['user-location'].getLatLng(), 15, { animate: true });
+              } else {
+                mapRef.current?.setView([19.0975, 74.7420], 13, { animate: true });
               }
             }}
             className="bg-white flex items-center justify-center w-[40px] h-[40px] rounded-sm border-2 border-slate-300/50 shadow-md text-[#7847CB] hover:bg-slate-50 transition-colors"
