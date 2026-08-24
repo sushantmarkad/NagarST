@@ -104,6 +104,9 @@ export const AdminRouteMgmt: React.FC = () => {
       return;
     }
 
+    let originStopId: string | null = null;
+    let destStopId: string | null = null;
+
     // 2. Automatically create stops for Origin and Destination if pins were dropped
     if (creationPins.origin) {
       const { data: originStop } = await supabase.from('stops').insert([{
@@ -114,6 +117,7 @@ export const AdminRouteMgmt: React.FC = () => {
       }]).select().single();
 
       if (originStop) {
+        originStopId = originStop.id;
         await supabase.from('route_stops').insert([{
           route_id: routeData.id,
           stop_id: originStop.id,
@@ -132,6 +136,7 @@ export const AdminRouteMgmt: React.FC = () => {
       }]).select().single();
 
       if (destStop) {
+        destStopId = destStop.id;
         await supabase.from('route_stops').insert([{
           route_id: routeData.id,
           stop_id: destStop.id,
@@ -146,7 +151,7 @@ export const AdminRouteMgmt: React.FC = () => {
     setCreationPins({});
     
     // Automatically generate and save the route path
-    if (routeData.id && originStop && destStop) {
+    if (routeData.id && originStopId && destStopId) {
       const path = await fetchOSRMRoute([
         { lat: creationPins.origin!.lat, lng: creationPins.origin!.lng },
         { lat: creationPins.dest!.lat, lng: creationPins.dest!.lng }

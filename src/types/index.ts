@@ -58,6 +58,7 @@ export interface Route {
   activeBusesCount: number;
   color: string;
   status: 'normal' | 'detour' | 'high_demand';
+  route_path?: {lat: number, lng: number}[];
 }
 
 export interface Bus {

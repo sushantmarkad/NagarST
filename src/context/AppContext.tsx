@@ -35,7 +35,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [buses, setBuses] = useState<Bus[]>(MOCK_BUSES);
-  const [routes] = useState<Route[]>(MOCK_ROUTES);
+  const [routes, setRoutes] = useState<Route[]>(MOCK_ROUTES);
   const [stops] = useState<BusStop[]>(MOCK_BUS_STOPS);
   const [tickets, setTickets] = useState<Ticket[]>(MOCK_TICKETS);
   const [passes, setPasses] = useState<BusPass[]>(MOCK_PASSES);
@@ -200,7 +200,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 }))
             : []
         }));
-        setRoutes(prev => [...prev, ...formattedRoutes]);
+        setRoutes(prev => [...prev, ...formattedRoutes as unknown as Route[]]);
       }
     };
 

@@ -48,6 +48,8 @@ export const DriverDashboard: React.FC = () => {
   const [selectedRouteId, setSelectedRouteId] = useState<string>('');
   
   const [tripStops, setTripStops] = useState<any[]>([]);
+  const [selectedRouteDetails, setSelectedRouteDetails] = useState<any>(null);
+  const [isDevOverride, setIsDevOverride] = useState(false);
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
 
   const [isTripActive, setIsTripActive] = useState(false);
