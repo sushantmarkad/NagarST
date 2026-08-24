@@ -222,8 +222,7 @@ export const DriverDashboard: React.FC = () => {
       },
       (error) => {
         console.error(`Failed to get real GPS: ${error.message}`);
-      },
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
+      }
     );
   };
 
@@ -296,14 +295,14 @@ export const DriverDashboard: React.FC = () => {
               setIsNavigatingToOrigin(false);
             }
           }
-        }, undefined, { enableHighAccuracy: true });
+        });
       } else {
         beginActualTrip(pos.coords.latitude, pos.coords.longitude, pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0);
       }
     }, (err) => {
       alert(`Could not get your location to verify starting position: ${err.message}`);
       setIsStartingTrip(false);
-    }, { enableHighAccuracy: true, maximumAge: 0 });
+    });
   };
 
 
