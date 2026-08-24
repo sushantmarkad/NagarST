@@ -248,7 +248,7 @@ export const DriverDashboard: React.FC = () => {
       if (tripStops.length > 0 && !isDevOverride) {
         const firstStop = { lat: tripStops[0].stops.lat, lng: tripStops[0].stops.lng };
         const dist = getDistance(driverLatLng, firstStop);
-        if (dist > 50) {
+        if (dist > 150) {
           needsNavigation = true;
           alert(`You are ${dist.toFixed(0)} meters from the origin stop. Tracking started. Move to the origin to begin the trip.`);
         }
@@ -287,7 +287,7 @@ export const DriverDashboard: React.FC = () => {
           const firstStop = { lat: tripStops[0].stops.lat, lng: tripStops[0].stops.lng };
           const currentDist = getDistance(currentLatLng, firstStop);
           
-          if (currentDist <= 50) {
+          if (currentDist <= 150) {
             navigator.geolocation.clearWatch(watchIdRef.current!);
             watchIdRef.current = null;
             if (window.confirm("You are at the start destination. Start Journey?")) {
@@ -303,7 +303,7 @@ export const DriverDashboard: React.FC = () => {
     }, (err) => {
       alert(`Could not get your location to verify starting position: ${err.message}`);
       setIsStartingTrip(false);
-    });
+    }, { enableHighAccuracy: true, maximumAge: 0 });
   };
 
 
