@@ -81,6 +81,7 @@ export const DriverDashboard: React.FC = () => {
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
 
   const [isTripActive, setIsTripActive] = useState(false);
+  const [isStartingTrip, setIsStartingTrip] = useState(false);
   const [currentTripId, setCurrentTripId] = useState<string | null>(null);
   const [driverPos, setDriverPos] = useState<{lat: number, lng: number} | null>(null);
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(true);
@@ -159,6 +160,8 @@ export const DriverDashboard: React.FC = () => {
       return;
     }
 
+    setIsStartingTrip(true);
+
     // Get current position first to validate distance
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const driverLatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -169,6 +172,7 @@ export const DriverDashboard: React.FC = () => {
         const dist = getDistance(driverLatLng, firstStop);
         if (dist > 500) { // 500 meters threshold
           alert(`You are too far from the starting stop (${dist.toFixed(0)} meters). You must be at the origin to start the trip.`);
+          setIsStartingTrip(false);
           return;
         }
       }
@@ -183,6 +187,7 @@ export const DriverDashboard: React.FC = () => {
 
       if (tripErr || !trip) {
         alert("Failed to start trip: " + tripErr?.message);
+        setIsStartingTrip(false);
         return;
       }
 
@@ -190,6 +195,7 @@ export const DriverDashboard: React.FC = () => {
       setIsTripActive(true);
       setActiveTab('trip');
       setCurrentStopIndex(0);
+      setIsStartingTrip(false);
 
       const routePathCoords = selectedRouteDetails?.route_path || [];
 
@@ -421,10 +427,19 @@ export const DriverDashboard: React.FC = () => {
               {!isTripActive ? (
                 <button
                   onClick={handleStartTrip}
-                  disabled={!selectedRouteId || tripStops.length === 0}
-                  className="w-full py-3.5 rounded-xl bg-[#7847CB] hover:bg-[#0a2a42] disabled:opacity-50 text-white font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2"
+                  disabled={!selectedRouteId || tripStops.length === 0 || isStartingTrip}
+                  className="w-full py-3.5 rounded-xl bg-[#7847CB] hover:bg-[#6339a6] disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2"
                 >
-                  <Play className="w-4 h-4 fill-current" /> Start Trip
+                  {isStartingTrip ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-slate-500/30 border-t-slate-500 rounded-full animate-spin" />
+                      Acquiring GPS & Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 fill-current" /> Start Trip
+                    </>
+                  )}
                 </button>
               ) : (
                 <button
