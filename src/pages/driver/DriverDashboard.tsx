@@ -30,12 +30,40 @@ L.Icon.Default.mergeOptions({
 
 const MapAutoCenter = ({ position }: { position: { lat: number; lng: number } | null }) => {
   const map = useMap();
+  const [isFollowing, setIsFollowing] = useState(true);
+
   useEffect(() => {
-    if (position) {
+    const handleDragStart = () => setIsFollowing(false);
+    map.on('dragstart', handleDragStart);
+    return () => { map.off('dragstart', handleDragStart); };
+  }, [map]);
+
+  useEffect(() => {
+    if (position && isFollowing) {
       map.setView([position.lat, position.lng], map.getZoom(), { animate: true });
     }
-  }, [position, map]);
-  return null;
+  }, [position, map, isFollowing]);
+
+  if (isFollowing) return null;
+
+  return (
+    <div className="leaflet-top leaflet-right mt-16 mr-4">
+      <div className="leaflet-control leaflet-bar">
+        <button 
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsFollowing(true);
+            if (position) map.setView([position.lat, position.lng], map.getZoom(), { animate: true });
+          }}
+          className="bg-white flex items-center justify-center w-[40px] h-[40px] text-[#7847CB] hover:bg-slate-50 transition-colors"
+          title="Recenter Map"
+        >
+          <MapPin className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
 };
 
 export const DriverDashboard: React.FC = () => {
