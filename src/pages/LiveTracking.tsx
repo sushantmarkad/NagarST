@@ -12,7 +12,7 @@ export const LiveTracking: React.FC = () => {
   const { buses, stops, routes, selectedBusId, setSelectedBusId, selectedStopId, setSelectedStopId } = useApp();
 
   const [filterRoute, setFilterRoute] = useState<string>('all');
-  const selectedBus = buses.find((b) => b.id === selectedBusId) || buses[0];
+  const selectedBus = selectedBusId ? buses.find((b) => b.id === selectedBusId) : null;
   const selectedRoute = routes.find((r) => r.id === selectedBus?.routeId);
 
   const filteredBuses = filterRoute === 'all' ? buses : buses.filter((b) => b.routeId === filterRoute);

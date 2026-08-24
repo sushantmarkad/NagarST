@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { Bus, BusStop, Route } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
+import { MapPin } from 'lucide-react';
 
 interface LiveMapProps {
   buses?: Bus[];
@@ -32,6 +33,9 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const polylinesRef = useRef<L.Polyline[]>([]);
   const { language } = useLanguage();
+  
+  const [isFollowing, setIsFollowing] = useState(true);
+  const isFollowingRef = useRef(true);
 
   // Initialize Map
   useEffect(() => {
@@ -53,12 +57,17 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
+    map.on('dragstart', () => {
+      setIsFollowing(false);
+      isFollowingRef.current = false;
+    });
+
     // Request user location and auto-pan to it so they can see nearby buses immediately
     map.locate({ setView: false, watch: true, enableHighAccuracy: true });
     
     let hasCentered = false;
     map.on('locationfound', (e) => {
-      if (!hasCentered) {
+      if (!hasCentered || isFollowingRef.current) {
         map.setView(e.latlng, 15);
         hasCentered = true;
       }
@@ -231,6 +240,27 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden border border-slate-200 shadow-2xs">
       <div ref={containerRef} style={{ width: '100%', height }} />
+
+      {/* Recenter Button */}
+      {!isFollowing && (
+        <div className="absolute top-4 right-4 z-[400]">
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsFollowing(true);
+              isFollowingRef.current = true;
+              if (markersRef.current['user-location']) {
+                mapRef.current?.setView(markersRef.current['user-location'].getLatLng(), 15, { animate: true });
+              }
+            }}
+            className="bg-white flex items-center justify-center w-[40px] h-[40px] rounded-sm border-2 border-slate-300/50 shadow-md text-[#7847CB] hover:bg-slate-50 transition-colors"
+            title="Recenter Map"
+          >
+            <MapPin className="w-5 h-5" />
+          </button>
+        </div>
+      )}
 
       {/* Map Legend Overlay */}
       <div className="absolute bottom-4 left-4 z-20 bg-white/90 backdrop-blur-md p-2.5 rounded-xl border border-slate-200 shadow-md text-xs space-y-1.5 hidden sm:block">
