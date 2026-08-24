@@ -105,15 +105,17 @@ export const DriverDashboard: React.FC = () => {
     if (data) setTripStops(data);
   };
 
+  const [isSimulatorMode, setIsSimulatorMode] = useState(true);
+
   const handleStartTrip = async () => {
     if (!selectedRouteId || !busDetails) {
       alert("Please select a route first.");
       return;
     }
 
-    if (!('geolocation' in navigator)) {
-      alert('Geolocation is not supported by your browser.');
-      return;
+    if (!isSimulatorMode && !('geolocation' in navigator)) {
+      alert('Geolocation is not supported by your browser. Falling back to simulator.');
+      setIsSimulatorMode(true);
     }
 
     // 1. Create Trip in DB
@@ -135,34 +137,45 @@ export const DriverDashboard: React.FC = () => {
     setCurrentStopIndex(0);
 
     // 2. Start GPS Tracking
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      async (position) => {
-        const { latitude, longitude, speed } = position.coords;
-        const speedKmh = speed ? Math.round(speed * 3.6) : 0;
-        setDriverPos({ lat: latitude, lng: longitude });
-        await updateLiveLocation(trip.id, latitude, longitude, speedKmh);
-      },
-      (error) => {
-        console.warn(`Failed to get real GPS: ${error.message}. Falling back to simulator mode.`);
-        
-        // Fallback simulator
-        if (watchIdRef.current !== null) {
-          navigator.geolocation.clearWatch(watchIdRef.current);
-        }
-        
-        // Start near first stop or default
-        let currentLat = tripStops.length > 0 ? tripStops[0].stops.lat : 19.0965;
-        let currentLng = tripStops.length > 0 ? tripStops[0].stops.lng : 74.7435;
-        
-        watchIdRef.current = window.setInterval(async () => {
-          currentLat += 0.0003; 
-          currentLng -= 0.0002;
-          setDriverPos({ lat: currentLat, lng: currentLng });
-          await updateLiveLocation(trip.id, currentLat, currentLng, 35);
-        }, 3000) as unknown as number;
-      },
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
-    );
+    if (isSimulatorMode) {
+      startSimulator(trip.id);
+    } else {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        async (position) => {
+          const { latitude, longitude, speed } = position.coords;
+          const speedKmh = speed ? Math.round(speed * 3.6) : 0;
+          setDriverPos({ lat: latitude, lng: longitude });
+          await updateLiveLocation(trip.id, latitude, longitude, speedKmh);
+        },
+        (error) => {
+          console.warn(`Failed to get real GPS: ${error.message}. Falling back to simulator mode.`);
+          startSimulator(trip.id);
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 60000 }
+      );
+    }
+  };
+
+  const startSimulator = (tripId: string) => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      window.clearInterval(watchIdRef.current);
+    }
+    
+    // Start near first stop or default
+    let currentLat = tripStops.length > 0 ? tripStops[0].stops.lat : 19.0965;
+    let currentLng = tripStops.length > 0 ? tripStops[0].stops.lng : 74.7435;
+    
+    // Set initial instantly
+    setDriverPos({ lat: currentLat, lng: currentLng });
+    updateLiveLocation(tripId, currentLat, currentLng, 35);
+
+    watchIdRef.current = window.setInterval(async () => {
+      currentLat += 0.0003; 
+      currentLng -= 0.0002;
+      setDriverPos({ lat: currentLat, lng: currentLng });
+      await updateLiveLocation(tripId, currentLat, currentLng, 35);
+    }, 3000) as unknown as number;
   };
 
   const getBusIcon = (busNumber: string) => {
@@ -327,6 +340,21 @@ export const DriverDashboard: React.FC = () => {
                     ))}
                   </select>
                 </div>
+
+                {!isTripActive && (
+                  <label className="flex items-center gap-2 p-3 bg-amber-50 rounded-xl border border-amber-200 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={isSimulatorMode}
+                      onChange={(e) => setIsSimulatorMode(e.target.checked)}
+                      className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-amber-900 block">Simulator Mode</span>
+                      <span className="text-[10px] text-amber-700 block">Fake GPS movement for testing (use if not in Ahilyanagar)</span>
+                    </div>
+                  </label>
+                )}
               </div>
 
               {!isTripActive ? (
