@@ -222,8 +222,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         `);
       }
 
-      if (isSelected) {
-        // Only pan if it's explicitly selected by the user recently, though tracking it can be done via bounds
+      if (isSelected && isFollowingRef.current) {
+        map.panTo([bus.lat, bus.lng], { animate: true, duration: 0.5 });
       }
     });
 
@@ -250,7 +250,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               e.stopPropagation();
               setIsFollowing(true);
               isFollowingRef.current = true;
-              if (markersRef.current['user-location']) {
+              
+              if (selectedBusId && markersRef.current[`bus-${selectedBusId}`]) {
+                mapRef.current?.setView(markersRef.current[`bus-${selectedBusId}`].getLatLng(), 15, { animate: true });
+              } else if (markersRef.current['user-location']) {
                 mapRef.current?.setView(markersRef.current['user-location'].getLatLng(), 15, { animate: true });
               }
             }}
