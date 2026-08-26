@@ -12,7 +12,8 @@ import {
   Check,
   CircleDot,
   MapPin,
-  ChevronUp
+  ChevronUp,
+  Calendar
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -68,9 +69,10 @@ const MapAutoCenter = ({ position }: { position: { lat: number; lng: number } | 
 
 export const DriverDashboard: React.FC = () => {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'home' | 'trip'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'trip' | 'schedule'>('home');
 
   // Real data state
+  const [driverSchedules, setDriverSchedules] = useState<any[]>([]);
   const [busDetails, setBusDetails] = useState<any>(null);
   const [availableRoutes, setAvailableRoutes] = useState<any[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string>('');
@@ -92,6 +94,7 @@ export const DriverDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchInitialData();
+    fetchSchedules();
     
     // Connect to Socket.IO Server
     const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
@@ -126,6 +129,23 @@ export const DriverDashboard: React.FC = () => {
       setAvailableRoutes(routes);
       if (routes.length > 0) setSelectedRouteId(routes[0].id);
     }
+  };
+
+  const fetchSchedules = async () => {
+    if (!user?.id) return;
+    const { data } = await supabase
+      .from('trips')
+      .select(`
+        id,
+        status,
+        start_time,
+        routes (id, route_number, origin, destination),
+        buses (id, bus_number, plate_number)
+      `)
+      .eq('driver_id', user.id)
+      .order('created_at', { ascending: false });
+    
+    if (data) setDriverSchedules(data);
   };
 
   // Fetch stops when route changes
@@ -425,6 +445,13 @@ export const DriverDashboard: React.FC = () => {
       isActive: activeTab === 'home'
     },
     {
+      id: 'schedule',
+      label: 'My Schedule',
+      icon: Calendar,
+      onClick: () => setActiveTab('schedule'),
+      isActive: activeTab === 'schedule'
+    },
+    {
       id: 'trip',
       label: 'Live Navigation',
       icon: Navigation,
@@ -538,6 +565,62 @@ export const DriverDashboard: React.FC = () => {
                 <p className="text-xs text-rose-500 mt-2 text-center font-bold">This route has no stops. Ask City Admin to add stops.</p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* TAB: SCHEDULE */}
+        {activeTab === 'schedule' && (
+          <div className="flex-1 p-4 max-w-md mx-auto w-full space-y-4 overflow-y-auto">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-lg font-bold text-slate-900">Assigned Schedule</h2>
+              <span className="text-xs font-bold text-[#7847CB] px-2 py-1 bg-purple-50 rounded-lg">{driverSchedules.length} Trips</span>
+            </div>
+
+            {driverSchedules.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 bg-white border border-slate-200 rounded-2xl shadow-sm">
+                <Calendar className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                <p className="text-sm font-semibold">No trips scheduled for you right now.</p>
+                <p className="text-xs mt-1">The city admin will assign routes here.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {driverSchedules.map(trip => (
+                  <div key={trip.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] font-bold text-[#7847CB] uppercase tracking-wider bg-purple-50 px-2 py-1 rounded-full">
+                          {trip.status}
+                        </span>
+                        <h3 className="text-sm font-bold text-slate-900 mt-2">Route {trip.routes?.route_number}</h3>
+                        <p className="text-xs text-slate-500">{trip.routes?.origin} to {trip.routes?.destination}</p>
+                      </div>
+                      <span className="text-xs font-bold text-slate-600">
+                        {trip.start_time ? new Date(trip.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'TBD'}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg">
+                      <BusIcon className="w-4 h-4 text-slate-400" />
+                      Assigned Bus: <strong className="text-slate-700">{trip.buses?.bus_number}</strong>
+                    </div>
+
+                    {trip.status === 'Scheduled' && (
+                      <button
+                        onClick={() => {
+                          if (trip.routes?.id) {
+                            setSelectedRouteId(trip.routes.id);
+                            setActiveTab('home');
+                          }
+                        }}
+                        className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-[#7847CB] hover:text-white text-slate-700 font-bold text-xs transition-colors"
+                      >
+                        Select This Route
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

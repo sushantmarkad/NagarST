@@ -59,7 +59,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser(newUser);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
         }
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         // Only clear if the current user is NOT a driver (since drivers use custom auth for MVP)
         if (user?.role !== 'DRIVER') {
            setUser(null);
