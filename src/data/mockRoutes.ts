@@ -15,7 +15,7 @@ export const MOCK_ROUTES: Route[] = [
     maxFare: 25,
     totalStops: 8,
     durationMinutes: 32,
-    color: '#0f3c5c',
+    color: '#7847CB',
     activeBusesCount: 4,
     status: 'normal',
     stops: [

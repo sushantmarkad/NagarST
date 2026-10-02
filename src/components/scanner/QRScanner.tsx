@@ -8,60 +8,116 @@ import {
   type VerificationResultData
 } from './ScannerComponents';
 import { Camera, QrCode } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
 
 export const QRScanner: React.FC = () => {
+  const { tickets, passes } = useApp();
   const [mode, setMode] = useState<ScannerMode>('ticket');
   const [result, setResult] = useState<VerificationResultData | null>(null);
 
   const verifyCode = (code: string, currentMode: ScannerMode): VerificationResultData => {
-    const uppercaseCode = code.toUpperCase();
+    const uppercaseCode = code.trim().toUpperCase();
 
     if (currentMode === 'ticket') {
+      const match = tickets.find(
+        (t) => t.ticketCode?.toUpperCase() === uppercaseCode || t.id?.toUpperCase() === uppercaseCode
+      );
+
+      if (match) {
+        if (match.status === 'expired') {
+          return {
+            status: 'expired',
+            passengerName: 'Municipal Commuter',
+            expiredAt: match.validUntil || match.purchaseTime || 'Earlier',
+          };
+        }
+        if (match.status === 'used') {
+          return {
+            status: 'already_used',
+            passengerName: 'Municipal Commuter',
+            previousValidationTime: 'Earlier Today',
+            ticketId: match.ticketCode,
+          };
+        }
+        return {
+          status: 'valid',
+          passengerName: 'Municipal Commuter',
+          route: `${match.sourceStop} → ${match.destinationStop}`,
+          ticketType: `${match.passengerCount || 1} Passenger(s)`,
+          fare: match.fare,
+          validUntil: match.validUntil || 'Today 11:59 PM',
+        };
+      }
+
       if (uppercaseCode.includes('EXPIRED')) {
         return {
           status: 'expired',
-          passengerName: 'Rahul Verma',
+          passengerName: 'Simulated User',
           expiredAt: '10:45 AM',
         };
       }
       if (uppercaseCode.includes('USED')) {
         return {
           status: 'already_used',
-          passengerName: 'Sneha Kulkarni',
+          passengerName: 'Simulated User',
           previousValidationTime: 'Today, 08:12 AM',
-          ticketId: 'ANC-TKT-9842',
+          ticketId: uppercaseCode,
         };
       }
-      if (uppercaseCode.includes('INVALID') || uppercaseCode.length < 4) {
+      if (uppercaseCode === 'VALID-TICKET' || uppercaseCode === 'DEMO') {
         return {
-          status: 'invalid',
-          passengerName: 'Unknown',
-          reason: 'Invalid signature or expired route ticket',
+          status: 'valid',
+          passengerName: 'Municipal Commuter',
+          route: 'Central Bus Stand → Savedi',
+          ticketType: 'Single Journey',
+          fare: 15,
+          validUntil: '11:59 PM',
         };
       }
+
       return {
-        status: 'valid',
-        passengerName: 'Chirag Tapre',
-        route: 'Central Bus Stand → Savedi',
-        ticketType: 'Single Journey',
-        fare: 20,
-        validUntil: '11:59 PM',
+        status: 'invalid',
+        passengerName: 'Unknown',
+        reason: 'Ticket record not found in municipal database.',
       };
     } else {
-      if (uppercaseCode.includes('EXPIRED') || uppercaseCode.includes('INVALID')) {
+      const match = passes.find(
+        (p) => p.passCode?.toUpperCase() === uppercaseCode || p.id?.toUpperCase() === uppercaseCode
+      );
+
+      if (match) {
+        if (match.status === 'expired') {
+          return {
+            status: 'invalid',
+            passengerName: match.holderName || 'Pass Holder',
+            reason: `Pass expired on ${match.validUntil}`,
+          };
+        }
         return {
-          status: 'invalid',
-          passengerName: 'Priyanjali Shinde',
-          reason: 'Monthly pass expired on 15 Aug 2026',
+          status: 'valid',
+          passengerName: match.holderName || 'Pass Holder',
+          passType: match.title || 'Municipal Transit Pass',
+          validFrom: match.validFrom,
+          validUntil: match.validUntil,
+          passStatus: 'Active',
         };
       }
+
+      if (uppercaseCode === 'VALID-PASS') {
+        return {
+          status: 'valid',
+          passengerName: 'Student Pass Holder',
+          passType: 'Monthly Student Pass',
+          validFrom: '01 Aug 2026',
+          validUntil: '31 Aug 2026',
+          passStatus: 'Active',
+        };
+      }
+
       return {
-        status: 'valid',
-        passengerName: 'Pooja Deshmukh',
-        passType: 'Monthly Student Pass',
-        validFrom: '01 Aug 2026',
-        validUntil: '31 Aug 2026',
-        passStatus: 'Active',
+        status: 'invalid',
+        passengerName: 'Unknown',
+        reason: 'Bus pass record not found or expired.',
       };
     }
   };
@@ -101,10 +157,10 @@ export const QRScanner: React.FC = () => {
   return (
     <div className="space-y-4 max-w-sm mx-auto">
       <div className="text-center">
-        <h2 className="text-base font-extrabold text-slate-900 flex items-center justify-center gap-2">
-          <QrCode className="w-5 h-5 text-[#0f3c5c]" /> Verify Passenger {mode === 'ticket' ? 'Ticket' : 'Bus Pass'}
+        <h2 className="text-base font-bold text-slate-900 flex items-center justify-center gap-2">
+          <QrCode className="w-5 h-5 text-[#7847CB]" /> Verify Passenger {mode === 'ticket' ? 'Ticket' : 'Bus Pass'}
         </h2>
-        <p className="text-xs text-slate-500 mt-0.5">Scan passenger QR code via device camera</p>
+        <p className="text-xs text-slate-500 mt-0.5">Scan passenger QR code via device camera or simulator</p>
       </div>
 
       <ScannerModeSelector
@@ -123,55 +179,55 @@ export const QRScanner: React.FC = () => {
         )
       ) : (
         <div className="space-y-4">
-          {/* Camera Frame: Clean real-world transit style (NO neon / NO scifi) */}
-          <div className="relative aspect-square w-full rounded-2xl bg-slate-100 border border-slate-300 overflow-hidden flex flex-col items-center justify-center shadow-inner">
-            <div className="absolute inset-8 border-2 border-dashed border-[#0f3c5c]/40 rounded-xl pointer-events-none flex flex-col justify-between p-2">
+          {/* Camera Frame */}
+          <div className="relative aspect-square w-full rounded-2xl bg-slate-900 overflow-hidden flex flex-col items-center justify-center shadow-inner">
+            <div className="absolute inset-8 border-2 border-dashed border-[#7847CB]/60 rounded-xl pointer-events-none flex flex-col justify-between p-2">
               <div className="flex justify-between">
-                <div className="w-4 h-4 border-t-2 border-l-2 border-[#0f3c5c]" />
-                <div className="w-4 h-4 border-t-2 border-r-2 border-[#0f3c5c]" />
+                <div className="w-4 h-4 border-t-2 border-l-2 border-[#7847CB]" />
+                <div className="w-4 h-4 border-t-2 border-r-2 border-[#7847CB]" />
               </div>
               <div className="flex justify-between">
-                <div className="w-4 h-4 border-b-2 border-l-2 border-[#0f3c5c]" />
-                <div className="w-4 h-4 border-b-2 border-r-2 border-[#0f3c5c]" />
+                <div className="w-4 h-4 border-b-2 border-l-2 border-[#7847CB]" />
+                <div className="w-4 h-4 border-b-2 border-r-2 border-[#7847CB]" />
               </div>
             </div>
 
             <div className="relative z-10 text-center p-4">
-              <Camera className="w-10 h-10 text-slate-400 mx-auto mb-2" />
-              <p className="text-xs font-bold text-slate-800">Position QR inside the frame</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Automatic optical code validation</p>
+              <Camera className="w-10 h-10 text-white/50 mx-auto mb-2" />
+              <p className="text-xs font-bold text-white">Position QR inside the frame</p>
+              <p className="text-[11px] text-white/70 mt-0.5">Automatic optical code validation</p>
             </div>
           </div>
 
           <div className="space-y-3">
-            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs">
+            <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2 text-center">
                 Verification Test Simulator
               </span>
-              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+              <div className="grid grid-cols-2 gap-2 text-xs font-semibold">
                 {mode === 'ticket' ? (
                   <>
                     <button
                       onClick={() => handleSimulateScan('valid_ticket')}
-                      className="p-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition"
+                      className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition"
                     >
                       ✓ Valid Ticket
                     </button>
                     <button
                       onClick={() => handleSimulateScan('expired_ticket')}
-                      className="p-2.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition"
+                      className="p-2.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition"
                     >
                       ⚠ Expired Ticket
                     </button>
                     <button
                       onClick={() => handleSimulateScan('used_ticket')}
-                      className="p-2.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
+                      className="p-2.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
                     >
                       ✕ Already Used
                     </button>
                     <button
                       onClick={() => handleSimulateScan('invalid_ticket')}
-                      className="p-2.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
+                      className="p-2.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
                     >
                       ✕ Invalid Ticket
                     </button>
@@ -180,13 +236,13 @@ export const QRScanner: React.FC = () => {
                   <>
                     <button
                       onClick={() => handleSimulateScan('valid_pass')}
-                      className="p-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition"
+                      className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition"
                     >
                       ✓ Valid Pass
                     </button>
                     <button
                       onClick={() => handleSimulateScan('invalid_pass')}
-                      className="p-2.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
+                      className="p-2.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
                     >
                       ✕ Expired / Invalid
                     </button>

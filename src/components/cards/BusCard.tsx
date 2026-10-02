@@ -19,13 +19,13 @@ export const BusCard: React.FC<BusCardProps> = ({ bus, onSelect, isSelected }) =
       onClick={() => onSelect?.(bus)}
       className={`p-4 rounded-xl border bg-white transition-all cursor-pointer ${
         isSelected
-          ? 'border-[#0f3c5c] ring-2 ring-[#0f3c5c]/10 shadow-sm'
+          ? 'border-[#7847CB] ring-2 ring-[#7847CB]/15 shadow-sm'
           : 'border-slate-200 hover:border-slate-300 hover:shadow-2xs'
       }`}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-[#0f3c5c]/10 border border-[#0f3c5c]/20 flex items-center justify-center text-[#0f3c5c]">
+          <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-[#7847CB]">
             <BusIcon className="w-5 h-5" />
           </div>
           <div>
@@ -35,7 +35,7 @@ export const BusCard: React.FC<BusCardProps> = ({ bus, onSelect, isSelected }) =
                 {bus.plateNumber}
               </span>
             </div>
-            <p className="text-xs text-slate-500 font-medium">{bus.routeName}</p>
+            <p className="text-xs text-[#7847CB] font-semibold">{bus.routeName}</p>
           </div>
         </div>
 

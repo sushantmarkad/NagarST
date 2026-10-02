@@ -20,7 +20,7 @@ export const FavoriteLocationCard: React.FC<FavoriteLocationCardProps> = ({
       case 'school':
         return <GraduationCap className="w-4 h-4 text-purple-600" />;
       case 'bus':
-        return <BusIcon className="w-4 h-4 text-[#0f3c5c]" />;
+        return <BusIcon className="w-4 h-4 text-[#7847CB]" />;
       default:
         return <MapPin className="w-4 h-4 text-rose-600" />;
     }
@@ -43,13 +43,13 @@ export const FavoriteLocationCard: React.FC<FavoriteLocationCardProps> = ({
 
       <div className="flex items-center gap-2">
         {favorite.quickEta && (
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-[#7847CB] border border-purple-200">
             {favorite.quickEta}
           </span>
         )}
         <button
           onClick={() => onNavigate?.(favorite)}
-          className="p-1.5 text-[#0f3c5c] hover:bg-slate-100 rounded-lg transition-colors"
+          className="p-1.5 text-[#7847CB] hover:bg-purple-50 rounded-lg transition-colors"
           title="Plan route to favorite"
         >
           <ArrowUpRight className="w-4 h-4" />

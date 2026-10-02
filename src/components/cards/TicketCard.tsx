@@ -19,7 +19,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({ ticket }) => {
     <>
       <div
         className={`rounded-2xl border bg-white shadow-2xs relative overflow-hidden transition-all ${
-          isActive ? 'border-[#0f3c5c] ring-2 ring-[#0f3c5c]/10' : 'border-slate-200 opacity-90'
+          isActive ? 'border-[#7847CB] ring-2 ring-[#7847CB]/15' : 'border-slate-200 opacity-90'
         }`}
       >
         {/* Ticket Header Banner */}
@@ -93,7 +93,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({ ticket }) => {
           {isActive && (
             <button
               onClick={() => setShowQR(true)}
-              className="px-4 py-2 bg-[#0f3c5c] text-white text-xs font-extrabold rounded-xl hover:bg-[#0a2a42] transition-colors flex items-center gap-1.5 shadow-sm"
+              className="px-4 py-2 bg-[#7847CB] text-white text-xs font-bold rounded-xl hover:bg-[#6032aa] transition-colors flex items-center gap-1.5 shadow-xs"
             >
               <QrCode className="w-4 h-4" />
               <span>{language === 'mr' ? 'QR दाखवा' : 'Show Ticket QR'}</span>

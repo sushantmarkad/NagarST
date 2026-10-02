@@ -19,7 +19,7 @@ export const BusStopCard: React.FC<BusStopCardProps> = ({ stop, onSelect, isSele
       onClick={() => onSelect?.(stop)}
       className={`p-4 rounded-xl border bg-white transition-all cursor-pointer ${
         isSelected
-          ? 'border-[#0f3c5c] ring-2 ring-[#0f3c5c]/10 shadow-sm'
+          ? 'border-[#7847CB] ring-2 ring-[#7847CB]/15 shadow-sm'
           : 'border-slate-200 hover:border-slate-300 hover:shadow-2xs'
       }`}
     >
@@ -45,7 +45,7 @@ export const BusStopCard: React.FC<BusStopCardProps> = ({ stop, onSelect, isSele
         {stop.lines.map((line) => (
           <span
             key={line}
-            className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200"
+            className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-[#7847CB] border border-purple-200"
           >
             {line}
           </span>

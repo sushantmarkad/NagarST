@@ -1,16 +1,20 @@
 import React, { type ReactNode } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { type UserRole } from '../../data/mockAuth';
-import { SharedLayout } from '../../components/layout/SharedLayout';
-import type { NavItem } from '../../components/layout/SharedLayout';
+import { SharedLayout, type NavItem } from '../../components/layout/SharedLayout';
 import {
+  LayoutDashboard,
   MapPin,
   Bus,
   Route,
   Calendar,
   Users,
   UserCheck,
-  Building
+  Building,
+  AlertTriangle,
+  Megaphone,
+  BarChart3,
+  Sparkles
 } from 'lucide-react';
 
 export type AdminView =
@@ -40,19 +44,25 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
 
   const getRoleTitle = (role?: UserRole) => {
     switch (role) {
-      case 'CITY_ADMIN': return 'City Admin';
-      case 'SUPER_ADMIN': return 'Super Admin';
-      default: return 'Transit Authority';
+      case 'CITY_ADMIN': return 'Ahilyanagar Municipal City Admin';
+      case 'SUPER_ADMIN': return 'System Root Super Admin';
+      case 'OPERATIONS_MANAGER': return 'Operations Dispatch Manager';
+      default: return 'Transit Undertaking Authority';
     }
   };
 
   const allNavItems: { view: AdminView; label: string; icon: any; allowedRoles?: UserRole[] }[] = [
-    { view: 'live_fleet', label: 'Live Map', icon: MapPin },
-    { view: 'buses', label: 'Fleet', icon: Bus, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
-    { view: 'routes', label: 'Routes', icon: Route, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
-    { view: 'schedules', label: 'Schedules', icon: Calendar, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
-    { view: 'drivers', label: 'Drivers', icon: Users, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
-    { view: 'conductors', label: 'Conductors', icon: UserCheck, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
+    { view: 'overview', label: 'Operations Overview', icon: LayoutDashboard },
+    { view: 'live_fleet', label: 'Live Fleet Radar', icon: MapPin },
+    { view: 'buses', label: 'Vehicle Fleet', icon: Bus, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
+    { view: 'routes', label: 'Route Corridors', icon: Route, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
+    { view: 'schedules', label: 'Timetables & Shifts', icon: Calendar, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'] },
+    { view: 'drivers', label: 'Driver Crew', icon: Users, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
+    { view: 'conductors', label: 'Conductor Staff', icon: UserCheck, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
+    { view: 'incidents', label: 'Incident Desk', icon: AlertTriangle },
+    { view: 'announcements', label: 'Passenger Alerts', icon: Megaphone },
+    { view: 'analytics', label: 'Transit Analytics', icon: BarChart3 },
+    { view: 'ai_insights', label: 'AI Optimization', icon: Sparkles },
   ];
 
   const filteredNav = allNavItems.filter((item) => {
@@ -71,11 +81,13 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
   return (
     <SharedLayout
       navItems={navItems}
-      title="Admin Dashboard"
+      title="Municipal Admin Workspace"
       subtitle={getRoleTitle(user?.role)}
       headerIcon={Building}
     >
-      {children}
+      <div className="flex-1 w-full h-full flex flex-col overflow-y-auto">
+        {children}
+      </div>
     </SharedLayout>
   );
 };

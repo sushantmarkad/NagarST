@@ -52,7 +52,7 @@ export const NotificationItemCard: React.FC<NotificationItemProps> = ({
                 {language === 'mr' ? notification.titleMarathi : notification.title}
               </h4>
               {!notification.read && (
-                <span className="w-2 h-2 rounded-full bg-[#0f3c5c]" />
+                <span className="w-2 h-2 rounded-full bg-[#7847CB]" />
               )}
             </div>
             <p className="text-xs text-slate-600 mt-1 leading-relaxed">

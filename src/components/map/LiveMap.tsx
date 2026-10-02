@@ -94,7 +94,18 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
     mapRef.current = map;
 
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+
     return () => {
+      resizeObserver.disconnect();
       map.stopLocate();
       map.remove();
       mapRef.current = null;
@@ -162,7 +173,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         } else {
           // Normal rendering
           const polyline = L.polyline(pathPoints, {
-            color: route.color || '#0f3c5c',
+            color: route.color || '#7847CB',
             weight: isSelected ? 5 : 3,
             opacity: isSelected ? 0.9 : 0.6,
             dashArray: (!route.route_path || route.route_path.length === 0) ? '10, 10' : (route.status === 'detour' ? '6, 6' : undefined),
@@ -188,7 +199,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             width: ${isSelected ? '22px' : '16px'};
             height: ${isSelected ? '22px' : '16px'};
             background-color: ${isSelected ? '#e11d48' : '#ffffff'};
-            border: 3px solid ${isSelected ? '#ffffff' : '#0f3c5c'};
+            border: 3px solid ${isSelected ? '#ffffff' : '#7847CB'};
             border-radius: 50%;
             box-shadow: 0 2px 6px rgba(0,0,0,0.25);
             transition: all 0.2s ease;
@@ -203,7 +214,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         const marker = L.marker([stop.lat, stop.lng], { icon: stopIcon }).addTo(map);
         marker.on('click', () => onSelectStop?.(stop));
         marker.bindTooltip(
-          `<div style="font-weight: 600; color: #0f3c5c;">${stop.name}</div>`, 
+          `<div style="font-weight: 600; color: #7847CB;">${stop.name}</div>`, 
           { direction: 'top', offset: [0, -10], className: 'custom-tooltip' }
         );
         markersRef.current[key] = marker;
@@ -211,7 +222,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         markersRef.current[key].setIcon(stopIcon);
         markersRef.current[key].setLatLng([stop.lat, stop.lng]);
         markersRef.current[key].setTooltipContent(
-          `<div style="font-weight: 600; color: #0f3c5c;">${stop.name}</div>`
+          `<div style="font-weight: 600; color: #7847CB;">${stop.name}</div>`
         );
       }
     });
@@ -229,13 +240,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         className: 'custom-bus-icon',
         html: `
           <div style="position: relative;">
-            ${isSelected ? '<div class="bus-marker-pulse" style="position: absolute; inset: -4px; border-radius: 12px; background: rgba(15,60,92,0.3);"></div>' : ''}
+            ${isSelected ? '<div class="bus-marker-pulse" style="position: absolute; inset: -4px; border-radius: 12px; background: rgba(120,71,203,0.3);"></div>' : ''}
             <div style="
               display: flex;
               align-items: center;
               gap: 4px;
               padding: 4px 8px;
-              background-color: ${isSelected ? '#0f3c5c' : '#1e293b'};
+              background-color: ${isSelected ? '#7847CB' : '#1e293b'};
               color: white;
               font-weight: 700;
               font-size: 11px;
@@ -259,7 +270,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         marker.on('click', () => onSelectBus?.(bus));
         marker.bindTooltip(`
           <div style="text-align: center;">
-            <b style="color: #0f3c5c;">${bus.busNumber}</b><br/>
+            <b style="color: #7847CB;">${bus.busNumber}</b><br/>
             <span style="font-size: 10px; color: #64748b;">${bus.speedKmh} km/h • ${bus.status}</span>
           </div>
         `, { direction: 'top', offset: [0, -10], className: 'custom-tooltip' });
@@ -269,7 +280,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         markersRef.current[key].setLatLng([bus.lat, bus.lng]);
         markersRef.current[key].setTooltipContent(`
           <div style="text-align: center;">
-            <b style="color: #0f3c5c;">${bus.busNumber}</b><br/>
+            <b style="color: #7847CB;">${bus.busNumber}</b><br/>
             <span style="font-size: 10px; color: #64748b;">${bus.speedKmh} km/h • ${bus.status}</span>
           </div>
         `);
@@ -323,13 +334,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       {/* Map Legend Overlay */}
       <div className="absolute top-4 left-4 z-[400] bg-white/90 backdrop-blur-md p-2.5 rounded-xl border border-slate-200 shadow-md text-xs space-y-1.5 block">
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-[#0f3c5c] inline-block" />
+          <span className="w-3 h-3 rounded-full bg-[#7847CB] inline-block" />
           <span className="font-semibold text-slate-800">
             {language === 'mr' ? 'सक्रिय बसेस' : 'Active Buses'}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full border-2 border-[#0f3c5c] bg-white inline-block" />
+          <span className="w-2.5 h-2.5 rounded-full border-2 border-[#7847CB] bg-white inline-block" />
           <span className="font-semibold text-slate-800">
             {language === 'mr' ? 'बस थांबे' : 'Bus Stops'}
           </span>

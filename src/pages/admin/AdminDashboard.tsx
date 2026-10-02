@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AdminDashboardLayout, type AdminView } from './AdminDashboardLayout';
 import { AdminOverview } from './views/AdminOverview';
 import { AdminLiveFleet } from './views/AdminLiveFleet';
@@ -14,12 +14,33 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ defaultView = 'overview' }) => {
-  const [currentView, setCurrentView] = useState<AdminView>(defaultView);
+  const getInitialView = (): AdminView => {
+    const hash = window.location.hash.replace('#', '') as AdminView;
+    return hash || defaultView;
+  };
+
+  const [currentView, setCurrentView] = useState<AdminView>(getInitialView);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '') as AdminView;
+      if (hash && hash !== currentView) {
+        setCurrentView(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [currentView]);
+
+  const handleSelectView = (view: AdminView) => {
+    setCurrentView(view);
+    window.location.hash = view;
+  };
 
   const renderViewContent = () => {
     switch (currentView) {
       case 'overview':
-        return <AdminOverview />;
+        return <AdminOverview onNavigateView={handleSelectView} />;
       case 'live_fleet':
         return <AdminLiveFleet />;
       case 'routes':
@@ -43,12 +64,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ defaultView = 'o
       case 'announcements':
         return <AdminIncidentsAnnouncements modeType="announcements" />;
       default:
-        return <AdminOverview />;
+        return <AdminOverview onNavigateView={handleSelectView} />;
     }
   };
 
   return (
-    <AdminDashboardLayout currentView={currentView} onSelectView={setCurrentView}>
+    <AdminDashboardLayout currentView={currentView} onSelectView={handleSelectView}>
       {renderViewContent()}
     </AdminDashboardLayout>
   );

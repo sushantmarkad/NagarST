@@ -7,6 +7,7 @@ import {
   Ticket as TicketIcon
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
+import { Button } from '../ui';
 
 export type ScannerMode = 'ticket' | 'pass';
 
@@ -23,7 +24,7 @@ export const ScannerModeSelector: React.FC<ScannerModeSelectorProps> = ({ mode, 
         onClick={() => onSelectMode('ticket')}
         className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
           mode === 'ticket'
-            ? 'bg-[#0f3c5c] text-white shadow-xs'
+            ? 'bg-[#7847CB] text-white shadow-xs'
             : 'text-slate-600 hover:text-slate-900'
         }`}
       >
@@ -35,7 +36,7 @@ export const ScannerModeSelector: React.FC<ScannerModeSelectorProps> = ({ mode, 
         onClick={() => onSelectMode('pass')}
         className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
           mode === 'pass'
-            ? 'bg-[#0f3c5c] text-white shadow-xs'
+            ? 'bg-[#7847CB] text-white shadow-xs'
             : 'text-slate-600 hover:text-slate-900'
         }`}
       >
@@ -69,22 +70,22 @@ export interface TicketVerificationResultProps {
 export const TicketVerificationResult: React.FC<TicketVerificationResultProps> = ({ data, onScanAnother }) => {
   if (data.status === 'valid') {
     return (
-      <div className="p-5 rounded-2xl bg-white border border-emerald-200 shadow-sm text-center space-y-3">
-        <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center border border-emerald-200">
+      <div className="p-5 rounded-xl bg-white border border-emerald-200 shadow-sm text-center space-y-3">
+        <div className="w-14 h-14 rounded-xl bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center border border-emerald-200">
           <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
         </div>
-        <div className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-extrabold border border-emerald-200 uppercase tracking-wider">
-          ✓ Valid Ticket
+        <div className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 uppercase tracking-wider">
+          ✓ Valid Municipal Ticket
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-left text-xs space-y-2">
+        <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 text-left text-xs space-y-2">
           <div className="flex justify-between border-b border-slate-200 pb-2">
             <span className="text-slate-500">Passenger:</span>
-            <span className="font-extrabold text-slate-900">{data.passengerName}</span>
+            <span className="font-bold text-slate-900">{data.passengerName}</span>
           </div>
           <div className="flex justify-between border-b border-slate-200 pb-2">
             <span className="text-slate-500">Route:</span>
-            <span className="font-bold text-[#0f3c5c]">{data.route || 'Central Bus Stand → Savedi'}</span>
+            <span className="font-bold text-[#7847CB]">{data.route || 'Central Bus Stand → Savedi'}</span>
           </div>
           <div className="flex justify-between border-b border-slate-200 pb-2">
             <span className="text-slate-500">Ticket Type:</span>
@@ -92,56 +93,60 @@ export const TicketVerificationResult: React.FC<TicketVerificationResultProps> =
           </div>
           <div className="flex justify-between border-b border-slate-200 pb-2">
             <span className="text-slate-500">Fare:</span>
-            <span className="font-extrabold text-emerald-700 text-sm">{formatCurrency(data.fare || 20)}</span>
+            <span className="font-bold text-emerald-700 text-sm">{formatCurrency(data.fare || 20)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Valid Until:</span>
-            <span className="font-bold text-slate-900">{data.validUntil || '10:45 AM'}</span>
+            <span className="font-bold text-slate-900">{data.validUntil || '11:59 PM'}</span>
           </div>
         </div>
 
-        <button
+        <Button
           onClick={onScanAnother}
-          className="w-full py-3 rounded-xl bg-[#0f3c5c] text-white font-bold text-xs hover:bg-[#0a2a42] transition shadow-xs mt-2"
+          variant="primary"
+          size="md"
+          className="w-full mt-2"
         >
-          Done & Scan Another
-        </button>
+          Done & Scan Next
+        </Button>
       </div>
     );
   }
 
   if (data.status === 'expired') {
     return (
-      <div className="p-5 rounded-2xl bg-white border border-amber-200 shadow-sm text-center space-y-3">
-        <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 mx-auto flex items-center justify-center border border-amber-200">
+      <div className="p-5 rounded-xl bg-white border border-amber-200 shadow-sm text-center space-y-3">
+        <div className="w-14 h-14 rounded-xl bg-amber-50 text-amber-700 mx-auto flex items-center justify-center border border-amber-200">
           <AlertTriangle className="w-8 h-8 stroke-[2]" />
         </div>
-        <div className="inline-block px-3 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-extrabold border border-amber-200 uppercase tracking-wider">
+        <div className="inline-block px-3 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200 uppercase tracking-wider">
           ⚠ Ticket Expired
         </div>
         <p className="text-xs text-slate-600">This ticket expired at {data.expiredAt || '10:45 AM'}</p>
 
-        <button
+        <Button
           onClick={onScanAnother}
-          className="w-full py-3 rounded-xl bg-[#0f3c5c] text-white font-bold text-xs hover:bg-[#0a2a42] transition shadow-xs mt-2"
+          variant="outline"
+          size="md"
+          className="w-full mt-2"
         >
           Scan Again
-        </button>
+        </Button>
       </div>
     );
   }
 
   if (data.status === 'already_used') {
     return (
-      <div className="p-5 rounded-2xl bg-white border border-rose-200 shadow-sm text-center space-y-3">
-        <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-700 mx-auto flex items-center justify-center border border-rose-200">
+      <div className="p-5 rounded-xl bg-white border border-rose-200 shadow-sm text-center space-y-3">
+        <div className="w-14 h-14 rounded-xl bg-rose-50 text-rose-700 mx-auto flex items-center justify-center border border-rose-200">
           <XCircle className="w-8 h-8 stroke-[2]" />
         </div>
-        <div className="inline-block px-3 py-1 rounded-full bg-rose-50 text-rose-800 text-xs font-extrabold border border-rose-200 uppercase tracking-wider">
+        <div className="inline-block px-3 py-1 rounded-full bg-rose-50 text-rose-800 text-xs font-bold border border-rose-200 uppercase tracking-wider">
           ✕ Ticket Already Used
         </div>
 
-        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-left text-xs space-y-2">
+        <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-left text-xs space-y-2">
           <div className="flex justify-between">
             <span className="text-slate-500">Previous Scan:</span>
             <span className="font-semibold text-rose-700">{data.previousValidationTime || 'Today, 08:12 AM'}</span>
@@ -152,34 +157,38 @@ export const TicketVerificationResult: React.FC<TicketVerificationResultProps> =
           </div>
         </div>
 
-        <button
+        <Button
           onClick={onScanAnother}
-          className="w-full py-3 rounded-xl bg-[#0f3c5c] text-white font-bold text-xs hover:bg-[#0a2a42] transition shadow-xs mt-2"
+          variant="outline"
+          size="md"
+          className="w-full mt-2"
         >
           Scan Again
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="p-5 rounded-2xl bg-white border border-rose-200 shadow-sm text-center space-y-3">
-      <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-700 mx-auto flex items-center justify-center border border-rose-200">
+    <div className="p-5 rounded-xl bg-white border border-rose-200 shadow-sm text-center space-y-3">
+      <div className="w-14 h-14 rounded-xl bg-rose-50 text-rose-700 mx-auto flex items-center justify-center border border-rose-200">
         <XCircle className="w-8 h-8 stroke-[2]" />
       </div>
-      <div className="inline-block px-3 py-1 rounded-full bg-rose-50 text-rose-800 text-xs font-extrabold border border-rose-200 uppercase tracking-wider">
+      <div className="inline-block px-3 py-1 rounded-full bg-rose-50 text-rose-800 text-xs font-bold border border-rose-200 uppercase tracking-wider">
         ✕ Invalid Ticket
       </div>
       <p className="text-xs text-slate-600">
         Reason: {data.reason || 'Invalid QR code signature or wrong route'}
       </p>
 
-      <button
+      <Button
         onClick={onScanAnother}
-        className="w-full py-3 rounded-xl bg-[#0f3c5c] text-white font-bold text-xs hover:bg-[#0a2a42] transition shadow-xs mt-2"
+        variant="outline"
+        size="md"
+        className="w-full mt-2"
       >
         Scan Again
-      </button>
+      </Button>
     </div>
   );
 };
@@ -192,22 +201,22 @@ export interface PassVerificationResultProps {
 export const PassVerificationResult: React.FC<PassVerificationResultProps> = ({ data, onScanAnother }) => {
   if (data.status === 'valid') {
     return (
-      <div className="p-5 rounded-2xl bg-white border border-emerald-200 shadow-sm text-center space-y-3">
-        <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center border border-emerald-200">
+      <div className="p-5 rounded-xl bg-white border border-emerald-200 shadow-sm text-center space-y-3">
+        <div className="w-14 h-14 rounded-xl bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center border border-emerald-200">
           <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
         </div>
-        <div className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-extrabold border border-emerald-200 uppercase tracking-wider">
-          ✓ Valid Bus Pass
+        <div className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 uppercase tracking-wider">
+          ✓ Valid Municipal Bus Pass
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-left text-xs space-y-2">
+        <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 text-left text-xs space-y-2">
           <div className="flex justify-between border-b border-slate-200 pb-2">
             <span className="text-slate-500">Passenger:</span>
-            <span className="font-extrabold text-slate-900">{data.passengerName}</span>
+            <span className="font-bold text-slate-900">{data.passengerName}</span>
           </div>
           <div className="flex justify-between border-b border-slate-200 pb-2">
             <span className="text-slate-500">Pass Type:</span>
-            <span className="font-bold text-[#0f3c5c]">{data.passType || 'Monthly Student Pass'}</span>
+            <span className="font-bold text-[#7847CB]">{data.passType || 'Monthly Student Pass'}</span>
           </div>
           <div className="flex justify-between border-b border-slate-200 pb-2">
             <span className="text-slate-500">Valid From:</span>
@@ -225,34 +234,38 @@ export const PassVerificationResult: React.FC<PassVerificationResultProps> = ({ 
           </div>
         </div>
 
-        <button
+        <Button
           onClick={onScanAnother}
-          className="w-full py-3 rounded-xl bg-[#0f3c5c] text-white font-bold text-xs hover:bg-[#0a2a42] transition shadow-xs mt-2"
+          variant="primary"
+          size="md"
+          className="w-full mt-2"
         >
           Scan Another Pass
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="p-5 rounded-2xl bg-white border border-rose-200 shadow-sm text-center space-y-3">
-      <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-700 mx-auto flex items-center justify-center border border-rose-200">
+    <div className="p-5 rounded-xl bg-white border border-rose-200 shadow-sm text-center space-y-3">
+      <div className="w-14 h-14 rounded-xl bg-rose-50 text-rose-700 mx-auto flex items-center justify-center border border-rose-200">
         <XCircle className="w-8 h-8 stroke-[2]" />
       </div>
-      <div className="inline-block px-3 py-1 rounded-full bg-rose-50 text-rose-800 text-xs font-extrabold border border-rose-200 uppercase tracking-wider">
+      <div className="inline-block px-3 py-1 rounded-full bg-rose-50 text-rose-800 text-xs font-bold border border-rose-200 uppercase tracking-wider">
         ✕ Invalid Bus Pass
       </div>
       <p className="text-xs text-slate-600">
         Reason: {data.reason || 'Pass expired or identity verification failed'}
       </p>
 
-      <button
+      <Button
         onClick={onScanAnother}
-        className="w-full py-3 rounded-xl bg-[#0f3c5c] text-white font-bold text-xs hover:bg-[#0a2a42] transition shadow-xs mt-2"
+        variant="outline"
+        size="md"
+        className="w-full mt-2"
       >
         Scan Again
-      </button>
+      </Button>
     </div>
   );
 };
@@ -271,7 +284,7 @@ export const ManualCodeEntry: React.FC<ManualCodeEntryProps> = ({ onSubmitCode }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 text-xs shadow-2xs">
+    <form onSubmit={handleSubmit} className="p-4 rounded-xl bg-white border border-slate-200 space-y-3 text-xs shadow-2xs">
       <label className="block font-bold text-slate-800">Enter Ticket / Pass Code Manually</label>
       <div className="flex gap-2">
         <input
@@ -279,14 +292,15 @@ export const ManualCodeEntry: React.FC<ManualCodeEntryProps> = ({ onSubmitCode }
           placeholder="e.g. ANC-2026-8492"
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-mono uppercase focus:outline-none focus:border-[#0f3c5c]"
+          className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono uppercase focus:outline-none focus:ring-2 focus:ring-[#7847CB]"
         />
-        <button
+        <Button
           type="submit"
-          className="px-4 py-2.5 bg-[#0f3c5c] text-white font-bold rounded-xl hover:bg-[#0a2a42] transition shadow-2xs"
+          variant="primary"
+          size="sm"
         >
           Verify
-        </button>
+        </Button>
       </div>
     </form>
   );

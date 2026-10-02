@@ -4,11 +4,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LanguageProvider } from './context/LanguageContext';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { FeedbackProvider } from './context/FeedbackContext';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
 
 import { AppLayout } from './components/layout/AppLayout';
 import { LoginPage } from './pages/auth/LoginPage';
 import { DriverDashboard } from './pages/driver/DriverDashboard';
+import { ConductorDashboard } from './pages/conductor/ConductorDashboard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { SuperAdminDashboard } from './pages/SuperAdminDashboard';
 
@@ -46,9 +48,10 @@ export const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <LanguageProvider>
-          <AppProvider>
-            <BrowserRouter>
+        <FeedbackProvider>
+          <LanguageProvider>
+            <AppProvider>
+              <BrowserRouter>
               <Routes>
                 {/* 1. PUBLIC LANDING / LOGIN / REGISTER ROUTES */}
                 <Route
@@ -86,16 +89,15 @@ export const App: React.FC = () => {
                   }
                 />
 
-                {/* 3. CONDUCTOR DASHBOARD (Hidden for MVP)
+                {/* 3. CONDUCTOR DASHBOARD */}
                 <Route
                   path="/conductor/*"
                   element={
-                    <ProtectedRoute allowedRoles={['CONDUCTOR', 'ADMIN', 'OPERATIONS_MANAGER']}>
+                    <ProtectedRoute allowedRoles={['CONDUCTOR', 'ADMIN', 'OPERATIONS_MANAGER', 'SUPER_ADMIN', 'CITY_ADMIN']}>
                       <ConductorDashboard />
                     </ProtectedRoute>
                   }
                 />
-                */}
 
                 {/* 4. ADMIN & SPECIALIZED ROLE DASHBOARDS */}
                 <Route
@@ -188,8 +190,9 @@ export const App: React.FC = () => {
             </BrowserRouter>
           </AppProvider>
         </LanguageProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+      </FeedbackProvider>
+    </AuthProvider>
+  </QueryClientProvider>
   );
 };
 

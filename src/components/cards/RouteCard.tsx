@@ -20,7 +20,7 @@ export const RouteCard: React.FC<RouteCardProps> = ({ route, onSelect, onViewLiv
           <div className="flex items-center gap-2">
             <span
               className="px-2.5 py-1 text-xs font-bold text-white rounded-lg shadow-2xs"
-              style={{ backgroundColor: route.color || '#0f3c5c' }}
+              style={{ backgroundColor: route.color || '#7847CB' }}
             >
               {route.routeNumber}
             </span>
@@ -70,7 +70,7 @@ export const RouteCard: React.FC<RouteCardProps> = ({ route, onSelect, onViewLiv
         </button>
         <button
           onClick={() => onViewLive?.(route)}
-          className="flex-1 py-2 text-xs font-semibold text-white bg-[#0f3c5c] hover:bg-[#0a2a42] rounded-lg transition-colors text-center flex items-center justify-center gap-1"
+          className="flex-1 py-2 text-xs font-semibold text-white bg-[#7847CB] hover:bg-[#6032aa] rounded-lg transition-colors text-center flex items-center justify-center gap-1 shadow-xs"
         >
           <span>{language === 'mr' ? 'लाइव्ह ट्रॅक करा' : 'Live Track'}</span>
           <ChevronRight className="w-3.5 h-3.5" />

@@ -64,41 +64,41 @@ export const QRModal: React.FC<QRModalProps> = ({
                   xmlns="http://www.w3.org/2000/svg"
                 >
                   {/* Outer corners */}
-                  <rect x="5" y="5" width="26" height="26" rx="3" fill="#0f3c5c" />
+                  <rect x="5" y="5" width="26" height="26" rx="3" fill="#7847CB" />
                   <rect x="9" y="9" width="18" height="18" fill="white" />
-                  <rect x="13" y="13" width="10" height="10" fill="#0f3c5c" />
+                  <rect x="13" y="13" width="10" height="10" fill="#7847CB" />
 
-                  <rect x="69" y="5" width="26" height="26" rx="3" fill="#0f3c5c" />
+                  <rect x="69" y="5" width="26" height="26" rx="3" fill="#7847CB" />
                   <rect x="73" y="9" width="18" height="18" fill="white" />
-                  <rect x="77" y="13" width="10" height="10" fill="#0f3c5c" />
+                  <rect x="77" y="13" width="10" height="10" fill="#7847CB" />
 
-                  <rect x="5" y="69" width="26" height="26" rx="3" fill="#0f3c5c" />
+                  <rect x="5" y="69" width="26" height="26" rx="3" fill="#7847CB" />
                   <rect x="9" y="73" width="18" height="18" fill="white" />
-                  <rect x="13" y="77" width="10" height="10" fill="#0f3c5c" />
+                  <rect x="13" y="77" width="10" height="10" fill="#7847CB" />
 
                   {/* QR Patterns */}
-                  <rect x="36" y="8" width="6" height="6" fill="#0f3c5c" />
-                  <rect x="46" y="8" width="16" height="6" fill="#0f3c5c" />
-                  <rect x="36" y="18" width="12" height="6" fill="#0f3c5c" />
-                  <rect x="52" y="18" width="10" height="6" fill="#0f3c5c" />
-                  <rect x="36" y="28" width="6" height="6" fill="#0f3c5c" />
-                  <rect x="46" y="28" width="16" height="6" fill="#0f3c5c" />
+                  <rect x="36" y="8" width="6" height="6" fill="#7847CB" />
+                  <rect x="46" y="8" width="16" height="6" fill="#7847CB" />
+                  <rect x="36" y="18" width="12" height="6" fill="#7847CB" />
+                  <rect x="52" y="18" width="10" height="6" fill="#7847CB" />
+                  <rect x="36" y="28" width="6" height="6" fill="#7847CB" />
+                  <rect x="46" y="28" width="16" height="6" fill="#7847CB" />
 
                   {/* Middle row */}
-                  <rect x="8" y="36" width="6" height="12" fill="#0f3c5c" />
-                  <rect x="18" y="36" width="12" height="6" fill="#0f3c5c" />
-                  <rect x="36" y="38" width="26" height="26" rx="4" fill="#0f3c5c" />
+                  <rect x="8" y="36" width="6" height="12" fill="#7847CB" />
+                  <rect x="18" y="36" width="12" height="6" fill="#7847CB" />
+                  <rect x="36" y="38" width="26" height="26" rx="4" fill="#7847CB" />
                   <path d="M49 46 L53 50 L61 42" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                  <rect x="68" y="36" width="12" height="6" fill="#0f3c5c" />
-                  <rect x="84" y="36" width="8" height="12" fill="#0f3c5c" />
+                  <rect x="68" y="36" width="12" height="6" fill="#7847CB" />
+                  <rect x="84" y="36" width="8" height="12" fill="#7847CB" />
 
                   {/* Bottom section */}
-                  <rect x="36" y="68" width="14" height="6" fill="#0f3c5c" />
-                  <rect x="54" y="68" width="14" height="6" fill="#0f3c5c" />
-                  <rect x="72" y="68" width="20" height="6" fill="#0f3c5c" />
-                  <rect x="36" y="78" width="8" height="14" fill="#0f3c5c" />
-                  <rect x="48" y="78" width="18" height="6" fill="#0f3c5c" />
-                  <rect x="70" y="78" width="22" height="14" fill="#0f3c5c" />
+                  <rect x="36" y="68" width="14" height="6" fill="#7847CB" />
+                  <rect x="54" y="68" width="14" height="6" fill="#7847CB" />
+                  <rect x="72" y="68" width="20" height="6" fill="#7847CB" />
+                  <rect x="36" y="78" width="8" height="14" fill="#7847CB" />
+                  <rect x="48" y="78" width="18" height="6" fill="#7847CB" />
+                  <rect x="70" y="78" width="22" height="14" fill="#7847CB" />
                 </svg>
               </div>
 
@@ -118,7 +118,7 @@ export const QRModal: React.FC<QRModalProps> = ({
 
             <button
               onClick={onClose}
-              className="mt-5 w-full py-2.5 bg-[#0f3c5c] text-white text-xs font-semibold rounded-xl hover:bg-[#0a2a42] transition-colors"
+              className="mt-5 w-full py-2.5 bg-[#7847CB] text-white text-xs font-semibold rounded-xl hover:bg-[#6032aa] transition-colors"
             >
               {language === 'mr' ? 'बंद करा' : 'Close'}
             </button>
