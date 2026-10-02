@@ -50,11 +50,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       zoomControl: false,
     });
 
-    // CartoDB Positron - Clean civic tile theme (No neon, soft warm neutrals)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    // OpenStreetMap - Free civic tile theme (No API key required)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd',
-      attribution: '&copy; Ahilyanagar Municipal Transport Authority & OpenStreetMap',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; Ahilyanagar Municipal Transport',
     }).addTo(map);
 
     L.control.zoom({ position: 'topright' }).addTo(map);
