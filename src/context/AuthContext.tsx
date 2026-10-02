@@ -15,7 +15,7 @@ interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   login: (role?: UserRole, credentials?: { email: string; password?: string }) => Promise<UserProfile>;
-  register: (name: string, email: string, password?: string, requestAdmin?: boolean) => Promise<UserProfile>;
+  register: (name: string, email: string, password?: string, requestStaff?: boolean, requestedRole?: 'CITY_ADMIN' | 'DRIVER' | 'PASSENGER') => Promise<UserProfile>;
   logout: () => void;
   switchRole: (role: UserRole) => void;
   getRoleStartRoute: (role?: UserRole) => string;
@@ -79,30 +79,64 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     if (role === 'DRIVER') {
-      // Custom Driver Login Flow (MVP)
-      const { data, error } = await supabase
+      // 1. Try driver_credentials table first (Fleet Management provisioned drivers)
+      const { data: driverData, error: driverErr } = await supabase
         .from('driver_credentials')
         .select('*')
         .eq('email', credentials.email)
         .eq('password', credentials.password)
         .single();
         
-      if (error || !data) {
-        throw new Error('Invalid driver credentials');
+      if (!driverErr && driverData) {
+        const driverUser: UserProfile = {
+          id: driverData.id,
+          name: driverData.full_name,
+          email: driverData.email,
+          role: 'DRIVER',
+          assignedBusId: driverData.assigned_bus_id
+        };
+        setUser(driverUser);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(driverUser));
+        return driverUser;
       }
 
-      const driverUser: UserProfile = {
-        id: data.id,
-        name: data.full_name,
-        email: data.email,
-        role: 'DRIVER',
-        assignedBusId: data.assigned_bus_id
+      // 2. Alternatively check Supabase Auth for drivers registered & approved via user_profiles
+      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+        email: credentials.email,
+        password: credentials.password
+      });
+
+      if (authErr) {
+        throw new Error('Invalid driver credentials. Driver accounts must be approved by the SuperAdmin.');
+      }
+
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profile?.admin_request_status?.startsWith('PENDING')) {
+        await supabase.auth.signOut();
+        throw new Error('Your Driver account application is currently pending SuperAdmin approval. You cannot log in until approved.');
+      }
+
+      if (profile?.role !== 'DRIVER') {
+        await supabase.auth.signOut();
+        throw new Error('This account is not authorized as a Driver. Driver accounts require official SuperAdmin approval.');
+      }
+
+      const driverProfileUser: UserProfile = {
+        id: authData.user.id,
+        name: profile.full_name,
+        email: authData.user.email || credentials.email,
+        role: 'DRIVER'
       };
-      setUser(driverUser);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(driverUser));
-      return driverUser;
+      setUser(driverProfileUser);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(driverProfileUser));
+      return driverProfileUser;
     } else {
-      // Supabase Auth Flow (PASSENGER, ADMIN)
+      // Supabase Auth Flow (PASSENGER, ADMIN, SUPER_ADMIN)
       const { data, error } = await supabase.auth.signInWithPassword({
         email: credentials.email,
         password: credentials.password
@@ -110,18 +144,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (error) throw error;
 
-      // Fetch the REAL profile from user_profiles to get their actual role!
+      // Fetch the REAL profile from user_profiles to verify role & approval
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', data.user.id)
         .single();
 
-      const realRole = profile?.role as UserRole || 'PASSENGER';
+      const realRole = (profile?.role as UserRole) || 'PASSENGER';
+
+      // If user selected ADMIN, ensure they have administrative clearance!
+      if (role === 'ADMIN' || role === 'CITY_ADMIN' || role === 'SUPER_ADMIN') {
+        const isAdminRole = realRole === 'CITY_ADMIN' || realRole === 'SUPER_ADMIN' || realRole === 'ADMIN';
+        if (!isAdminRole) {
+          if (profile?.admin_request_status?.startsWith('PENDING')) {
+            await supabase.auth.signOut();
+            throw new Error('Your City Administrator request is currently pending SuperAdmin approval. You will be able to log in once approved.');
+          }
+          await supabase.auth.signOut();
+          throw new Error('This account does not have Administrator privileges. Direct registration is for passengers only.');
+        }
+      }
 
       const supabaseUser: UserProfile = {
         id: data.user.id,
-        name: profile?.full_name || 'Loading...',
+        name: profile?.full_name || 'User',
         email: data.user.email || '',
         role: realRole
       };
@@ -133,19 +180,30 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const register = async (name: string, email: string, password?: string, requestAdmin?: boolean): Promise<UserProfile> => {
-    const pwd = password || 'password123'; // fallback for UI without password field
+  const register = async (
+    name: string,
+    email: string,
+    password?: string,
+    requestStaff?: boolean,
+    requestedRole: 'CITY_ADMIN' | 'DRIVER' | 'PASSENGER' = 'CITY_ADMIN'
+  ): Promise<UserProfile> => {
+    const pwd = password || 'password123';
     
-    // 1. Sign up with Supabase
+    // 1. Sign up with Supabase Auth
     const { data, error } = await supabase.auth.signUp({
       email,
       password: pwd
     });
 
     if (error) throw error;
-    if (!data.user) throw new Error('Signup failed');
+    if (!data.user) throw new Error('Registration failed');
 
-    // 2. Create Profile
+    const requestStatus = requestStaff
+      ? (requestedRole === 'DRIVER' ? 'PENDING:DRIVER' : 'PENDING:ADMIN')
+      : 'NONE';
+
+    // 2. Create Profile in user_profiles
+    // Note: direct account creation is ONLY PASSENGER. Staff requests stay PASSENGER with PENDING status until approved.
     const { error: profileError } = await supabase
       .from('user_profiles')
       .insert([
@@ -153,13 +211,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           id: data.user.id, 
           full_name: name, 
           role: 'PASSENGER',
-          admin_request_status: requestAdmin ? 'PENDING' : 'NONE'
+          admin_request_status: requestStatus
         }
       ]);
       
     if (profileError) throw profileError;
 
-    // Login automatically happens via onAuthStateChange
+    // If requesting Driver or Admin, sign out immediately so they CANNOT log in directly without SuperAdmin approval!
+    if (requestStaff) {
+      await supabase.auth.signOut();
+      localStorage.removeItem(STORAGE_KEY);
+      setUser(null);
+      return {
+        id: data.user.id,
+        name,
+        email,
+        role: 'PASSENGER'
+      };
+    }
+
+    // Direct Passenger account is active immediately
     return {
       id: data.user.id,
       name,

@@ -98,8 +98,13 @@ export const AdminRoleMgmt: React.FC = () => {
     }
   };
 
-  const pendingRequests = users.filter(u => u.admin_request_status === 'PENDING');
-  const otherUsers = users.filter(u => u.admin_request_status !== 'PENDING');
+  const isPending = (status?: string) => !!status && status.startsWith('PENDING');
+  const getRequestedRole = (status?: string): 'DRIVER' | 'CITY_ADMIN' => {
+    return status === 'PENDING:DRIVER' ? 'DRIVER' : 'CITY_ADMIN';
+  };
+
+  const pendingRequests = users.filter(u => isPending(u.admin_request_status));
+  const otherUsers = users.filter(u => !isPending(u.admin_request_status));
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto p-4 lg:p-6">
@@ -109,7 +114,7 @@ export const AdminRoleMgmt: React.FC = () => {
           Super Admin Access Control & Role Management
         </h2>
         <p className="text-xs text-slate-500 mt-1">
-          Review and audit access levels for registered municipal users. Elevate verified staff to City Administrator roles.
+          Review, approve, or reject access requests from Drivers and City Administrators. Direct account creation is restricted to Passengers.
         </p>
       </div>
 
@@ -151,73 +156,88 @@ export const AdminRoleMgmt: React.FC = () => {
                 {pendingRequests.length > 0 && (
                   <tr>
                     <td colSpan={5} className="bg-amber-50/60 p-2.5 text-xs font-bold text-amber-800 border-b border-amber-200">
-                      Pending Administrator Access Requests ({pendingRequests.length})
+                      Pending Staff & Official Requests ({pendingRequests.length})
                     </td>
                   </tr>
                 )}
-                {[...pendingRequests, ...otherUsers].map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-50">
-                    <td className="p-3.5 font-mono text-slate-500 text-[11px]">{u.id.substring(0, 10)}...</td>
-                    <td className="p-3.5 font-bold text-slate-900">{u.full_name || 'Anonymous User'}</td>
-                    <td className="p-3.5 text-slate-600">
-                      {new Date(u.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
-                    </td>
-                    <td className="p-3.5">
-                      <div className="flex flex-col gap-1 items-start">
-                        {u.admin_request_status === 'PENDING' && (
-                          <span className="px-2 py-0.5 rounded-full font-bold text-[9px] bg-amber-50 text-amber-800 border border-amber-200">
-                            APPROVAL REQUESTED
-                          </span>
-                        )}
-                        <Badge
-                          variant={
-                            u.role === 'SUPER_ADMIN'
-                              ? 'brand'
-                              : u.role === 'CITY_ADMIN'
-                              ? 'info'
-                              : 'neutral'
-                          }
-                        >
-                          {u.role.replace('_', ' ')}
-                        </Badge>
-                      </div>
-                    </td>
-                    <td className="p-3.5 text-right flex justify-end gap-2 items-center">
-                      {u.admin_request_status === 'PENDING' && (
-                        <div className="flex items-center gap-1.5 mr-2">
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => updateRole(u.id, 'CITY_ADMIN', u.full_name)}
-                            className="bg-emerald-600 hover:bg-emerald-700 h-7 text-xs px-2.5"
-                            icon={<CheckCircle className="w-3.5 h-3.5" />}
+                {[...pendingRequests, ...otherUsers].map((u) => {
+                  const pending = isPending(u.admin_request_status);
+                  const reqRole = getRequestedRole(u.admin_request_status);
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-50">
+                      <td className="p-3.5 font-mono text-slate-500 text-[11px]">{u.id.substring(0, 10)}...</td>
+                      <td className="p-3.5 font-bold text-slate-900">{u.full_name || 'Anonymous User'}</td>
+                      <td className="p-3.5 text-slate-600">
+                        {new Date(u.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+                      </td>
+                      <td className="p-3.5">
+                        <div className="flex flex-col gap-1 items-start">
+                          {pending && (
+                            <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] border ${
+                              reqRole === 'DRIVER'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-purple-50 text-[#7847CB] border-purple-200'
+                            }`}>
+                              {reqRole === 'DRIVER' ? 'DRIVER REQUEST' : 'ADMIN REQUEST'}
+                            </span>
+                          )}
+                          <Badge
+                            variant={
+                              u.role === 'SUPER_ADMIN'
+                                ? 'brand'
+                                : u.role === 'CITY_ADMIN'
+                                ? 'info'
+                                : u.role === 'DRIVER'
+                                ? 'warning'
+                                : 'neutral'
+                            }
                           >
-                            Approve
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => rejectRequest(u.id, u.full_name)}
-                            className="h-7 text-xs px-2.5"
-                            icon={<XCircle className="w-3.5 h-3.5" />}
-                          >
-                            Reject
-                          </Button>
+                            {u.role.replace('_', ' ')}
+                          </Badge>
                         </div>
-                      )}
-                      <select
-                        className="bg-slate-50 border border-slate-300 text-slate-800 text-xs font-medium rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-[#7847CB]"
-                        value={u.role}
-                        onChange={(e) => updateRole(u.id, e.target.value as UserRole, u.full_name)}
-                        disabled={u.role === 'SUPER_ADMIN'}
-                      >
-                        <option value="PASSENGER">PASSENGER</option>
-                        <option value="CITY_ADMIN">CITY ADMIN</option>
-                        <option value="SUPER_ADMIN" disabled>SUPER ADMIN</option>
-                      </select>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="p-3.5 text-right flex justify-end gap-2 items-center">
+                        {pending && (
+                          <div className="flex items-center gap-1.5 mr-2">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => updateRole(u.id, reqRole, u.full_name)}
+                              className={`h-7 text-xs px-2.5 ${
+                                reqRole === 'DRIVER'
+                                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              }`}
+                              icon={<CheckCircle className="w-3.5 h-3.5" />}
+                            >
+                              Approve {reqRole === 'DRIVER' ? 'Driver' : 'Admin'}
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => rejectRequest(u.id, u.full_name)}
+                              className="h-7 text-xs px-2.5"
+                              icon={<XCircle className="w-3.5 h-3.5" />}
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        )}
+                        <select
+                          className="bg-slate-50 border border-slate-300 text-slate-800 text-xs font-medium rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-[#7847CB]"
+                          value={u.role}
+                          onChange={(e) => updateRole(u.id, e.target.value as UserRole, u.full_name)}
+                          disabled={u.role === 'SUPER_ADMIN'}
+                        >
+                          <option value="PASSENGER">PASSENGER</option>
+                          <option value="DRIVER">DRIVER</option>
+                          <option value="CITY_ADMIN">CITY ADMIN</option>
+                          <option value="SUPER_ADMIN" disabled>SUPER ADMIN</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {users.length === 0 && (
                   <tr>
                     <td colSpan={5} className="p-8 text-center text-slate-500 text-xs">
