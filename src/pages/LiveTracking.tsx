@@ -55,89 +55,13 @@ export const LiveTracking: React.FC = () => {
   }, [userLocation, stops]);
 
   return (
-    <div className="flex-1 flex flex-col h-full min-h-[480px] relative overflow-hidden bg-[#f8f9fc] p-2.5 sm:p-3 md:p-4 gap-2.5 md:gap-3">
+    <div className="relative flex-1 w-full h-full overflow-hidden flex flex-col md:p-4 md:gap-3 bg-[#f8f9fc]">
       
-      {/* Top Controls Toolbar */}
-      <div className="bg-white p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-2.5 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#7847CB] text-white flex items-center justify-center shrink-0 shadow-xs shadow-[#7847CB]/30">
-            <Navigation className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="font-extrabold text-slate-900 text-xs md:text-sm leading-tight">
-              {t('Live Bus Telemetry & Tracking', 'थेट बस ट्रॅकिंग')}
-            </h2>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[11px] text-slate-500 font-medium">
-                {buses.length} {t('buses online', 'बसेस सुरू आहेत')}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Nearest Stop Pill (if user location is active) */}
-        {nearestStopInfo && (
-          <button
-            type="button"
-            onClick={() => setSelectedStopId(nearestStopInfo.stop.id)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-[#7847CB] text-[11px] font-bold border border-purple-200 hover:bg-purple-100 transition-colors"
-            title="Jump to nearest bus stop"
-          >
-            <MapPin className="w-3.5 h-3.5 text-[#7847CB]" />
-            <span>
-              {nearestStopInfo.stop.name} ({nearestStopInfo.distanceMeters > 1000 ? `${(nearestStopInfo.distanceMeters / 1000).toFixed(1)}km` : `${nearestStopInfo.distanceMeters}m`})
-            </span>
-          </button>
-        )}
-
-        {/* Filters */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Search */}
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('Search bus/stop...', 'बस किंवा थांबा शोधा...')}
-              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-[#7847CB] focus:ring-1 focus:ring-[#7847CB]/30 w-32 sm:w-44"
-            />
-          </div>
-
-          {/* Route Filter Dropdown */}
-          <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
-            <select
-              value={filterRoute}
-              onChange={(e) => setFilterRoute(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#7847CB]"
-            >
-              <option value="all">{t('All Routes', 'सर्व मार्ग')}</option>
-              {routes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.routeNumber} - {r.origin}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowListOnDesktop(!showListOnDesktop)}
-            className="hidden lg:flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
-          >
-            <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" />
-            <span>{showListOnDesktop ? 'Hide Fleet List' : 'Show Fleet List'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Map & Fleet List Container */}
-      <div className="flex-1 flex gap-3 min-h-[360px] relative rounded-2xl overflow-hidden border border-slate-200/90 shadow-2xs">
+      {/* 1. EDGE-TO-EDGE FULL-SCREEN MAP CANVAS (Mobile: 100% full viewport background, Desktop: embedded flex card) */}
+      <div className="absolute inset-0 md:relative md:inset-auto md:flex-1 flex gap-3 w-full h-full md:rounded-2xl md:border md:border-slate-200/90 md:shadow-2xs overflow-hidden z-0">
         
         {/* Leaflet Live Map Canvas */}
-        <div className="flex-1 relative w-full h-full min-h-[360px]">
+        <div className="flex-1 relative w-full h-full min-h-0">
           <LiveMap
             buses={filteredBuses}
             stops={stops}
@@ -147,6 +71,7 @@ export const LiveTracking: React.FC = () => {
             onSelectBus={(bus) => setSelectedBusId(bus.id)}
             onSelectStop={(stop) => setSelectedStopId(stop.id)}
             onUserLocationChange={setUserLocation}
+            className="w-full h-full rounded-none md:rounded-2xl border-0 md:border md:border-slate-200/90"
           />
 
           {/* Floating Selected Bus Quick Card (Desktop) */}
@@ -234,6 +159,83 @@ export const LiveTracking: React.FC = () => {
           </aside>
         )}
       </div>
+
+      {/* 2. FLOATING TOP CONTROLS TOOLBAR (Mobile: Floating glass bar, Desktop: Top static toolbar) */}
+      <div className="absolute top-3 left-3 right-3 md:static z-20 bg-white/95 backdrop-blur-md p-2.5 sm:p-3 md:p-3.5 rounded-2xl border border-slate-200/90 shadow-lg md:shadow-2xs flex flex-wrap items-center justify-between gap-2 shrink-0 pointer-events-auto md:order-first">
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-[#7847CB] text-white flex items-center justify-center shrink-0 shadow-xs shadow-[#7847CB]/30">
+            <Navigation className="w-4 h-4" />
+          </div>
+          <div>
+            <h2 className="font-extrabold text-slate-900 text-xs md:text-sm leading-tight">
+              {t('Live Bus Telemetry & Tracking', 'थेट बस ट्रॅकिंग')}
+            </h2>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[11px] text-slate-500 font-medium">
+                {buses.length} {t('buses online', 'बसेस सुरू आहेत')}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Nearest Stop Pill (if user location is active) */}
+        {nearestStopInfo && (
+          <button
+            type="button"
+            onClick={() => setSelectedStopId(nearestStopInfo.stop.id)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-[#7847CB] text-[11px] font-bold border border-purple-200 hover:bg-purple-100 transition-colors shadow-2xs"
+            title="Jump to nearest bus stop"
+          >
+            <MapPin className="w-3.5 h-3.5 text-[#7847CB]" />
+            <span className="truncate max-w-[140px] sm:max-w-none">
+              {nearestStopInfo.stop.name} ({nearestStopInfo.distanceMeters > 1000 ? `${(nearestStopInfo.distanceMeters / 1000).toFixed(1)}km` : `${nearestStopInfo.distanceMeters}m`})
+            </span>
+          </button>
+        )}
+
+        {/* Filters */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Search */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('Search bus/stop...', 'बस किंवा थांबा शोधा...')}
+              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-[#7847CB] focus:ring-1 focus:ring-[#7847CB]/30 w-32 sm:w-44"
+            />
+          </div>
+
+          {/* Route Filter Dropdown */}
+          <div className="flex items-center gap-1.5">
+            <Filter className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
+            <select
+              value={filterRoute}
+              onChange={(e) => setFilterRoute(e.target.value)}
+              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+            >
+              <option value="all">{t('All Routes', 'सर्व मार्ग')}</option>
+              {routes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.routeNumber} - {r.origin}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowListOnDesktop(!showListOnDesktop)}
+            className="hidden lg:flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+          >
+            <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" />
+            <span>{showListOnDesktop ? 'Hide Fleet List' : 'Show Fleet List'}</span>
+          </button>
+        </div>
+      </div>
+
 
       {/* Selected Bus Mobile Bottom Sheet */}
       <BottomSheet

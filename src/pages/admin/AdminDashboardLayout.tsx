@@ -85,7 +85,7 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
       subtitle={getRoleTitle(user?.role)}
       headerIcon={Building}
     >
-      <div className="flex-1 w-full h-full flex flex-col overflow-y-auto">
+      <div className="flex-1 w-full h-full flex flex-col min-h-0 relative overflow-hidden">
         {children}
       </div>
     </SharedLayout>

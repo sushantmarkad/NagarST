@@ -52,40 +52,10 @@ export const AdminLiveFleet: React.FC = () => {
   };
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 space-y-3 md:space-y-4 w-full max-w-7xl mx-auto flex-1 flex flex-col min-h-[calc(100dvh-85px)]">
+    <div className="relative flex-1 w-full h-full overflow-hidden flex flex-col md:p-6 md:space-y-4 md:max-w-7xl md:mx-auto">
       
-      {/* Top Telemetry Header */}
-      <div className="bg-white p-3.5 md:p-4 rounded-3xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3 md:gap-4 shrink-0">
-        <div className="flex items-center gap-2.5 text-xs font-semibold">
-          <div className="w-8 h-8 rounded-xl bg-purple-50 text-[#7847CB] flex items-center justify-center">
-            <Radio className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="text-slate-900 font-bold block text-sm">Live Urban Fleet Radar</span>
-            <span className="text-[11px] text-slate-500 font-normal">
-              {buses.length} active GPS transponder{buses.length === 1 ? '' : 's'} broadcasting in Ahilyanagar
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 md:gap-4 text-xs font-semibold">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-slate-700">On Time</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-            <span className="text-slate-700">Minor Delay</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-            <span className="text-slate-700">Off Route</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Map & Floating Telemetry Overlay Container */}
-      <div className="flex-1 w-full min-h-[420px] md:min-h-[520px] rounded-3xl overflow-hidden border border-slate-200/90 shadow-xs relative">
+      {/* 1. EDGE-TO-EDGE FULL SCREEN MAP (Mobile: 100% full screen background, Desktop: sleek dashboard card) */}
+      <div className="absolute inset-0 md:relative md:inset-auto md:flex-1 w-full h-full md:rounded-3xl md:border md:border-slate-200/90 md:shadow-xs overflow-hidden z-0">
         <LiveMap
           buses={buses}
           stops={stops}
@@ -95,11 +65,43 @@ export const AdminLiveFleet: React.FC = () => {
           onSelectBus={(bus) => setSelectedBus(bus)}
           showUserLocation={true}
           height="100%"
+          className="w-full h-full rounded-none md:rounded-3xl border-0 md:border md:border-slate-200/90"
         />
+      </div>
 
-        {/* Floating Bus Info Card */}
-        {selectedBus && (
-          <div className="absolute top-4 right-4 z-[450] w-[350px] max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-3xl p-5 shadow-2xl flex flex-col justify-between overflow-y-auto animate-in fade-in slide-in-from-right-4 duration-200">
+      {/* 2. FLOATING TELEMETRY HEADER OVERLAY (Mobile: Floating glass bar, Desktop: Top dashboard card) */}
+      <div className="absolute top-3 left-3 right-3 md:static z-20 bg-white/95 backdrop-blur-md p-3 md:p-4 rounded-2xl md:rounded-3xl border border-slate-200/90 shadow-lg md:shadow-2xs flex flex-wrap items-center justify-between gap-2.5 shrink-0 pointer-events-auto">
+        <div className="flex items-center gap-2.5 text-xs font-semibold">
+          <div className="w-8 h-8 rounded-xl bg-purple-50 text-[#7847CB] flex items-center justify-center shrink-0">
+            <Radio className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-slate-900 font-bold block text-xs md:text-sm leading-tight">Live Urban Fleet Radar</span>
+            <span className="text-[11px] text-slate-500 font-normal">
+              {buses.length} active GPS transponder{buses.length === 1 ? '' : 's'} broadcasting in Ahilyanagar
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 md:gap-4 text-[11px] md:text-xs font-semibold">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-slate-700">On Time</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+            <span className="text-slate-700">Delay</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+            <span className="text-slate-700">Off Route</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. FLOATING BUS INFO DRAWER (Mobile: Bottom Drawer with handle, Desktop: Top-Right Floating Card) */}
+      {selectedBus && (
+        <div className="fixed bottom-3 left-3 right-3 md:fixed-none md:absolute md:top-4 md:right-4 z-[450] md:w-[350px] max-h-[75vh] md:max-h-[calc(100%-2rem)] bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-3xl p-4 md:p-5 shadow-2xl flex flex-col justify-between overflow-y-auto animate-in fade-in slide-in-from-bottom-4 md:slide-in-from-right-4 duration-200">
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -220,8 +222,6 @@ export const AdminLiveFleet: React.FC = () => {
             </Button>
           </div>
         )}
-      </div>
-
     </div>
   );
 };

@@ -17,6 +17,7 @@ interface LiveMapProps {
   height?: string;
   showUserLocation?: boolean;
   onUserLocationChange?: (location: { lat: number; lng: number } | null) => void;
+  className?: string;
 }
 
 export const LiveMap: React.FC<LiveMapProps> = ({
@@ -31,6 +32,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   height = '100%',
   showUserLocation = true,
   onUserLocationChange,
+  className = '',
 }) => {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -446,15 +448,15 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   }, [buses, selectedBusId, onSelectBus]);
 
   return (
-    <div className="relative w-full h-full min-h-[360px] rounded-2xl overflow-hidden border border-slate-200 shadow-2xs">
+    <div className={`relative w-full h-full min-h-0 overflow-hidden ${className ? className : 'rounded-none md:rounded-2xl md:border md:border-slate-200/90'}`}>
       <div 
         ref={containerRef} 
         style={{ width: '100%', height: height || '100%' }} 
-        className="w-full h-full min-h-[360px]" 
+        className="w-full h-full min-h-0" 
       />
 
-      {/* Floating Action Controls (Right Side) */}
-      <div className="absolute top-3 right-3 md:top-4 md:right-4 z-[400] flex flex-col gap-2">
+      {/* Floating Action Controls (Thumb-friendly on mobile, top-right on desktop) */}
+      <div className="absolute bottom-4 md:bottom-auto md:top-4 right-3 md:right-4 z-[400] flex flex-col gap-2">
         {/* GPS "Locate Me" Button */}
         {showUserLocation && (
           <button 
@@ -465,7 +467,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               locateUser(true);
             }}
             disabled={isLocating}
-            className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-white border border-slate-200/90 shadow-md flex items-center justify-center transition-all ${
+            className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-white border border-slate-200/90 shadow-lg flex items-center justify-center transition-all ${
               userCoords 
                 ? 'text-[#7847CB] ring-2 ring-[#7847CB]/25 bg-purple-50/50' 
                 : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
@@ -498,7 +500,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               mapRef.current?.setView([19.0975, 74.7420], 13, { animate: true });
             }
           }}
-          className="w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-white border border-slate-200/90 shadow-md flex items-center justify-center text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-all"
+          className="w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-white border border-slate-200/90 shadow-lg flex items-center justify-center text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-all"
           title={language === 'mr' ? 'अहिल्यानगर केंद्र' : 'Recenter Network View'}
           aria-label="Recenter map"
         >
@@ -506,7 +508,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         </button>
 
         {/* Custom Touch-Friendly Zoom Controls */}
-        <div className="flex flex-col bg-white border border-slate-200/90 rounded-2xl shadow-md overflow-hidden divide-y divide-slate-100">
+        <div className="flex flex-col bg-white border border-slate-200/90 rounded-2xl shadow-lg overflow-hidden divide-y divide-slate-100">
           <button
             type="button"
             onClick={(e) => {
@@ -536,8 +538,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         </div>
       </div>
 
-      {/* Map Legend Overlay */}
-      <div className="absolute top-3 left-3 md:top-4 md:left-4 z-[400] bg-white/95 backdrop-blur-md p-2.5 rounded-2xl border border-slate-200/90 shadow-md text-xs space-y-1.5 pointer-events-none select-none">
+      {/* Map Legend Overlay (Mobile: Bottom Left, Desktop: Top Left) */}
+      <div className="absolute bottom-4 md:bottom-auto md:top-4 left-3 md:left-4 z-[390] bg-white/95 backdrop-blur-md p-2 md:p-2.5 rounded-2xl border border-slate-200/90 shadow-md text-xs space-y-1 md:space-y-1.5 pointer-events-none select-none">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-[#7847CB] inline-block shadow-xs" />
           <span className="font-bold text-slate-800 text-[11px] md:text-xs">
@@ -562,7 +564,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
       {/* Dismissible Geolocation Error Banner */}
       {locationError && (
-        <div className="absolute bottom-3 left-3 right-16 md:right-auto md:max-w-md z-[450] bg-rose-50 border border-rose-200 text-rose-800 text-xs px-3 py-2 rounded-2xl shadow-lg flex items-center justify-between gap-2 animate-in fade-in slide-in-from-bottom-2">
+        <div className="absolute bottom-4 left-3 right-16 md:bottom-4 md:left-3 md:right-auto md:max-w-md z-[450] bg-rose-50 border border-rose-200 text-rose-800 text-xs px-3 py-2 rounded-2xl shadow-lg flex items-center justify-between gap-2 animate-in fade-in slide-in-from-bottom-2">
           <div className="flex items-center gap-2 min-w-0">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
             <span className="leading-tight text-[11px]">{locationError}</span>
