@@ -47,6 +47,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isRequestingAdmin, setIsRequestingAdmin] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 10);
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // If user is already authenticated and visits public landing/login page, redirect to their role start route
   useEffect(() => {
@@ -90,7 +100,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
   return (
     <div className="min-h-screen bg-[#F8F8FA] font-sans text-neutral-900 antialiased selection:bg-[#7847CB] selection:text-white">
       {/* PART 2 — GLASS NAVIGATION */}
-      <nav className="glass-nav fixed top-0 left-0 right-0 z-50 border-b border-neutral-200/80 transition-all duration-300">
+      <nav
+        className={`glass-nav fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md transition-all duration-300 ${
+          isScrolled
+            ? 'shadow-md shadow-neutral-900/5 border-b border-neutral-200/90'
+            : 'border-b border-neutral-200/60'
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           {/* LEFT: Logo & Name */}
           <div className="flex items-center gap-3">
