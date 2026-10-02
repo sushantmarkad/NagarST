@@ -118,12 +118,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (profile?.admin_request_status?.startsWith('PENDING')) {
         await supabase.auth.signOut();
-        throw new Error('Your Driver account application is currently pending SuperAdmin approval. You cannot log in until approved.');
+        throw new Error('Driver accounts are assigned by the transit administration.');
       }
 
       if (profile?.role !== 'DRIVER') {
         await supabase.auth.signOut();
-        throw new Error('This account is not authorized as a Driver. Driver accounts require official SuperAdmin approval.');
+        throw new Error('This account is not registered as a Driver. Driver credentials are assigned by the administrator.');
       }
 
       const driverProfileUser: UserProfile = {
@@ -159,7 +159,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!isAdminRole) {
           if (profile?.admin_request_status?.startsWith('PENDING')) {
             await supabase.auth.signOut();
-            throw new Error('Your City Administrator request is currently pending SuperAdmin approval. You will be able to log in once approved.');
+            throw new Error('Your administrator request is pending approval. You will be notified on your email once approved.');
           }
           await supabase.auth.signOut();
           throw new Error('This account does not have Administrator privileges. Direct registration is for passengers only.');

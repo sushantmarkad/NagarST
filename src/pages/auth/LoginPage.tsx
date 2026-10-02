@@ -49,9 +49,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
-  // Registration and staff access states
-  const [registerType, setRegisterType] = useState<'PASSENGER' | 'STAFF_REQUEST'>('PASSENGER');
-  const [staffRole, setStaffRole] = useState<'DRIVER' | 'CITY_ADMIN'>('DRIVER');
+  // Registration and admin request states (Only passengers register directly; admins submit request)
+  const [registerType, setRegisterType] = useState<'PASSENGER' | 'ADMIN_REQUEST'>('PASSENGER');
   const [requestSubmitted, setRequestSubmitted] = useState(false);
 
   const [isScrolled, setIsScrolled] = useState(false);
@@ -80,9 +79,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
 
     try {
       if (mode === 'register') {
-        if (registerType === 'STAFF_REQUEST') {
-          // Submit request for SuperAdmin approval (Drivers/Admins cannot create accounts directly)
-          await register(name, emailOrPhone, password, true, staffRole);
+        if (registerType === 'ADMIN_REQUEST') {
+          // Submit request for City Admin approval
+          await register(name, emailOrPhone, password, true, 'CITY_ADMIN');
           setRequestSubmitted(true);
         } else {
           // Direct account creation for Passengers only
@@ -110,10 +109,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
     setAuthModalOpen(true);
   };
 
-  const openStaffRequest = (preselectedRole: 'DRIVER' | 'CITY_ADMIN' = 'DRIVER') => {
+  const openAdminRequest = () => {
     setMode('register');
-    setRegisterType('STAFF_REQUEST');
-    setStaffRole(preselectedRole);
+    setRegisterType('ADMIN_REQUEST');
     setRequestSubmitted(false);
     setErrorMsg('');
     setAuthModalOpen(true);
@@ -303,11 +301,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
 
               <div className="pt-2">
                 <button 
-                  onClick={() => openStaffRequest('CITY_ADMIN')}
+                  onClick={openAdminRequest}
                   className="text-sm font-semibold text-white/80 hover:text-white transition-colors flex items-center gap-2"
                 >
                   <Shield className="w-4 h-4" />
-                  Driver or transit official? Request staff approval
+                  <span>Municipal transit official? Request Admin access</span>
                 </button>
               </div>
             </div>
@@ -751,11 +749,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                 Sign In
               </button>
               <button
-                onClick={() => openStaffRequest('CITY_ADMIN')}
+                onClick={openAdminRequest}
                 className="px-8 py-4 rounded-2xl bg-[#7847CB] text-white hover:bg-[#6436ab] font-bold text-base transition duration-300 shadow-lg border border-[#6436ab] mt-2 sm:mt-0 flex items-center gap-2"
               >
                 <Shield className="w-4 h-4" />
-                <span>Apply for Staff Access</span>
+                <span>Request Admin Access</span>
               </button>
             </div>
           </div>
@@ -788,11 +786,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
 
       {/* AUTHENTICATION & DEMO ROLE MODAL */}
       {authModalOpen && (
-        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-5 shadow-2xl border border-neutral-100 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 pb-safe">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-7 space-y-4 shadow-2xl border border-neutral-100 relative max-h-[92dvh] overflow-y-auto">
             <button
               onClick={() => setAuthModalOpen(false)}
-              className="absolute top-5 right-5 p-2 rounded-full hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700"
+              className="absolute top-4 right-4 sm:top-5 sm:right-5 p-2 rounded-full hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition"
+              aria-label="Close dialog"
             >
               <X className="w-5 h-5" />
             </button>
@@ -800,69 +799,60 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
             {/* REQUEST SUBMITTED SUCCESS STATE */}
             {requestSubmitted ? (
               <div className="py-4 text-center space-y-4">
-                <div className="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto shadow-sm ring-8 ring-emerald-50/50">
+                <div className="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto shadow-xs ring-8 ring-emerald-50/50">
                   <CheckCircle className="w-8 h-8" />
                 </div>
-                <div>
-                  <h3 className="text-2xl font-extrabold text-neutral-900">
-                    Application Sent!
+                <div className="space-y-1.5 px-2">
+                  <h3 className="text-2xl font-extrabold text-neutral-900 tracking-tight">
+                    Request Sent!
                   </h3>
-                  <p className="text-xs text-neutral-500 max-w-sm mx-auto mt-2 leading-relaxed">
-                    Your request to register as a{' '}
-                    <strong className="text-neutral-900">
-                      {staffRole === 'DRIVER' ? 'Bus Driver' : 'City Administrator'}
-                    </strong>{' '}
-                    has been submitted to the Super Administrator.
+                  <p className="text-xs sm:text-sm text-neutral-600 max-w-xs mx-auto leading-relaxed">
+                    Your request for administrator access has been submitted. After approval, you will be notified on your email so you can sign in with your credentials.
                   </p>
                 </div>
 
-                <div className="p-4 bg-purple-50/80 border border-purple-200/80 rounded-2xl text-left text-xs text-purple-950 space-y-1.5">
-                  <div className="font-bold flex items-center gap-1.5 text-[#7847CB]">
-                    <Shield className="w-4 h-4" />
-                    <span>Official Approval Process</span>
-                  </div>
-                  <p className="text-[11px] text-purple-900/90 leading-relaxed">
-                    Direct account creation is restricted to passengers. Once the SuperAdmin reviews and approves your application in the Admin Console, you will be able to log in with your email and password.
-                  </p>
+                <div className="p-3.5 bg-neutral-50 border border-neutral-200/80 rounded-2xl text-left text-xs text-neutral-600 flex items-center gap-2.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Direct registration is for passengers. Administrator access is activated once approved.</span>
                 </div>
 
-                <div className="pt-2 flex flex-col gap-2">
+                <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
                   <button
                     type="button"
                     onClick={() => {
                       setRequestSubmitted(false);
                       setMode('login');
-                      setSelectedDemoRole(staffRole === 'DRIVER' ? 'DRIVER' : 'ADMIN');
+                      setSelectedDemoRole('ADMIN');
                     }}
-                    className="w-full py-3.5 rounded-xl bg-[#7847CB] text-white font-bold text-sm hover:bg-[#6336b3] transition shadow-md shadow-[#7847CB]/20"
+                    className="flex-1 py-3.5 rounded-xl bg-[#7847CB] text-white font-bold text-sm hover:bg-[#6336b3] transition shadow-md shadow-[#7847CB]/20"
                   >
                     Go to Sign In
                   </button>
                   <button
                     type="button"
                     onClick={() => setAuthModalOpen(false)}
-                    className="w-full py-3 rounded-xl border border-neutral-200 text-neutral-600 font-semibold text-xs hover:bg-neutral-50"
+                    className="py-3 px-5 rounded-xl border border-neutral-200 text-neutral-600 font-semibold text-xs hover:bg-neutral-50 transition"
                   >
-                    Back to Home
+                    Done
                   </button>
                 </div>
               </div>
             ) : (
               <>
-                <div>
-                  <h3 className="text-2xl font-extrabold text-neutral-900">
+                <div className="pr-8">
+                  <h3 className="text-xl sm:text-2xl font-extrabold text-neutral-900 tracking-tight">
                     {mode === 'login'
-                      ? 'Sign in to Ahilyanagar City Bus'
+                      ? 'Sign In'
                       : registerType === 'PASSENGER'
-                      ? 'Create Passenger Account'
-                      : 'Staff Access Application'}
+                      ? 'Create Commuter Account'
+                      : 'Request Admin Access'}
                   </h3>
                   <p className="text-xs text-neutral-500 mt-1">
                     {mode === 'login'
-                      ? 'Select your role to access your personalized transit dashboard.'
+                      ? 'Sign in to access your transit tools and live services.'
                       : registerType === 'PASSENGER'
-                      ? 'Instant free account for commuters across Ahilyanagar.'
-                      : 'Driver and Administrator accounts require SuperAdmin approval before activation.'}
+                      ? 'Instant free account for Ahilyanagar bus passengers.'
+                      : 'Send request. After approval, you will be notified on your email.'}
                   </p>
                 </div>
 
@@ -885,24 +875,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                         </button>
                       ))}
                     </div>
-                    <p className="text-[11px] text-neutral-500 text-center">
+                    <p className="text-[11px] text-neutral-500 text-center px-1">
                       {selectedDemoRole === 'PASSENGER' && 'Commuter account — live bus tracking, passes & trip planning.'}
-                      {selectedDemoRole === 'DRIVER' && 'Driver portal — vehicle telemetry, duty status & stops.'}
-                      {selectedDemoRole === 'ADMIN' && 'Municipal portal — fleet dispatch, operations & analytics.'}
+                      {selectedDemoRole === 'DRIVER' && 'Driver portal — sign in with credentials assigned by the administrator.'}
+                      {selectedDemoRole === 'ADMIN' && 'Administrator portal — fleet management & municipal dispatch.'}
                     </p>
                   </div>
                 )}
 
-                {/* REGISTER: Passenger vs Staff Request Switch */}
+                {/* REGISTER: Passenger vs Admin Request Switch */}
                 {mode === 'register' && (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     <div className="flex bg-[#F8F8FA] p-1 rounded-2xl border border-neutral-200">
                       <button
                         type="button"
                         onClick={() => setRegisterType('PASSENGER')}
-                        className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
+                        className={`flex-1 py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
                           registerType === 'PASSENGER'
-                            ? 'bg-white text-neutral-900 shadow-sm'
+                            ? 'bg-white text-neutral-900 shadow-xs'
                             : 'text-neutral-500 hover:text-neutral-800'
                         }`}
                       >
@@ -911,76 +901,38 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                       </button>
                       <button
                         type="button"
-                        onClick={() => setRegisterType('STAFF_REQUEST')}
-                        className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
-                          registerType === 'STAFF_REQUEST'
-                            ? 'bg-[#7847CB] text-white shadow-sm'
+                        onClick={() => setRegisterType('ADMIN_REQUEST')}
+                        className={`flex-1 py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
+                          registerType === 'ADMIN_REQUEST'
+                            ? 'bg-[#7847CB] text-white shadow-xs'
                             : 'text-neutral-500 hover:text-neutral-800'
                         }`}
                       >
                         <Shield className="w-3.5 h-3.5" />
-                        <span>Driver / Admin Request</span>
+                        <span>Request Admin Access</span>
                       </button>
                     </div>
 
                     {registerType === 'PASSENGER' ? (
                       <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-800">
                         <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span><strong>Instant Commuter Registration:</strong> Direct sign-up is open for passengers.</span>
+                        <span>Instant registration — start planning journeys and tracking buses right away.</span>
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
-                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-bold block">SuperAdmin Approval Required</span>
-                            <span className="text-[11px] text-amber-800 leading-snug block mt-0.5">
-                              Direct registration is only available for passengers. Driver and Administrator accounts must be submitted for SuperAdmin verification before activation.
-                            </span>
-                          </div>
-                        </div>
-
+                      <div className="p-3 bg-purple-50/80 border border-purple-200/80 rounded-xl flex items-start gap-2.5 text-xs text-purple-900">
+                        <Shield className="w-4 h-4 text-[#7847CB] shrink-0 mt-0.5" />
                         <div>
-                          <label className="block text-neutral-700 font-bold mb-1 text-xs">Role to Request</label>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setStaffRole('DRIVER')}
-                              className={`p-3 rounded-xl border text-left flex items-start gap-2.5 transition ${
-                                staffRole === 'DRIVER'
-                                  ? 'border-[#7847CB] bg-purple-50/60 ring-2 ring-[#7847CB]/20'
-                                  : 'border-neutral-200 bg-[#F8F8FA] hover:bg-neutral-100'
-                              }`}
-                            >
-                              <Bus className="w-4 h-4 text-[#7847CB] mt-0.5 shrink-0" />
-                              <div>
-                                <span className="block text-xs font-bold text-neutral-900">City Bus Driver</span>
-                                <span className="block text-[10px] text-neutral-500">Live cockpit & telemetry</span>
-                              </div>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setStaffRole('CITY_ADMIN')}
-                              className={`p-3 rounded-xl border text-left flex items-start gap-2.5 transition ${
-                                staffRole === 'CITY_ADMIN'
-                                  ? 'border-[#7847CB] bg-purple-50/60 ring-2 ring-[#7847CB]/20'
-                                  : 'border-neutral-200 bg-[#F8F8FA] hover:bg-neutral-100'
-                              }`}
-                            >
-                              <Shield className="w-4 h-4 text-[#7847CB] mt-0.5 shrink-0" />
-                              <div>
-                                <span className="block text-xs font-bold text-neutral-900">City Admin</span>
-                                <span className="block text-[10px] text-neutral-500">Fleet, dispatch & analytics</span>
-                              </div>
-                            </button>
-                          </div>
+                          <span className="font-bold block">Approval Required</span>
+                          <span className="text-[11px] text-purple-800/90 leading-snug block mt-0.5">
+                            Direct registration is for passengers. Send request below; once approved, you will be notified on your email to sign in.
+                          </span>
                         </div>
                       </div>
                     )}
                   </div>
                 )}
 
-                <form onSubmit={handleSignIn} className="space-y-4 text-xs mt-3">
+                <form onSubmit={handleSignIn} className="space-y-3.5 text-xs mt-2">
                   {mode === 'register' && (
                     <div>
                       <label className="block text-neutral-700 font-bold mb-1">Full Name</label>
@@ -990,20 +942,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                         placeholder="Enter your full name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB]"
+                        className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB] transition"
                       />
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-neutral-700 font-bold mb-1">Email or Phone</label>
+                    <label className="block text-neutral-700 font-bold mb-1">
+                      {mode === 'register' && registerType === 'ADMIN_REQUEST' ? 'Official Email or Phone' : 'Email or Phone'}
+                    </label>
                     <input
                       type="text"
                       required
-                      placeholder="Enter email or phone"
+                      placeholder={mode === 'register' && registerType === 'ADMIN_REQUEST' ? 'Enter official email or phone' : 'Enter email or phone'}
                       value={emailOrPhone}
                       onChange={(e) => setEmailOrPhone(e.target.value)}
-                      className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB]"
+                      className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB] transition"
                     />
                   </div>
 
@@ -1017,10 +971,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                     <input
                       type="password"
                       required
-                      placeholder={mode === 'register' && registerType === 'STAFF_REQUEST' ? 'Set password (used once approved)' : 'Enter password'}
+                      placeholder={mode === 'register' && registerType === 'ADMIN_REQUEST' ? 'Set password (used once approved)' : 'Enter password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB]"
+                      className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB] transition"
                     />
                   </div>
 
@@ -1032,7 +986,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                   )}
 
                   {mode === 'login' && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 pt-0.5">
                       <input
                         type="checkbox"
                         id="remember"
@@ -1055,8 +1009,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                       <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     ) : mode === 'login' ? (
                       `Sign In as ${selectedDemoRole.charAt(0) + selectedDemoRole.slice(1).toLowerCase()}`
-                    ) : registerType === 'STAFF_REQUEST' ? (
-                      `Submit ${staffRole === 'DRIVER' ? 'Driver' : 'Admin'} Request to SuperAdmin`
+                    ) : registerType === 'ADMIN_REQUEST' ? (
+                      'Send Request'
                     ) : (
                       'Create Free Passenger Account'
                     )}
@@ -1073,17 +1027,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                           onClick={openPassengerRegister}
                           className="text-[#7847CB] font-bold hover:underline"
                         >
-                          Register as Commuter
+                          Register as Passenger
                         </button>
                       </p>
                       <p className="text-[11px] text-neutral-400">
-                        Are you a transit driver or municipal official?{' '}
+                        Municipal transit official?{' '}
                         <button
                           type="button"
-                          onClick={() => openStaffRequest('DRIVER')}
+                          onClick={openAdminRequest}
                           className="text-[#7847CB] font-semibold hover:underline"
                         >
-                          Request Staff Access
+                          Request Admin Access
                         </button>
                       </p>
                     </div>
