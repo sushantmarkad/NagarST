@@ -148,3 +148,23 @@
 .sos-beacon {
   animation: sos-pulse 1.8s infinite;
 }
+
+@keyframes user-beacon-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(2.2);
+    opacity: 0.15;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.user-beacon-ping {
+  animation: user-beacon-pulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+

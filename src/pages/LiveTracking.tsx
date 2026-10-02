@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { useLanguage } from '../context/LanguageContext';
 import { LiveMap } from '../components/map/LiveMap';
 import { BottomSheet } from '../components/common/BottomSheet';
 import { OccupancyBadge, BusStatusBadge } from '../components/common/StatusBadge';
 import { ETAIndicator } from '../components/common/ETAIndicator';
-import { Navigation, User, Search, Filter, Bus as BusIcon, ChevronRight } from 'lucide-react';
+import { Navigation, User, Search, Filter, Bus as BusIcon, ChevronRight, MapPin } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
+import type { BusStop } from '../types';
 
 export const LiveTracking: React.FC = () => {
   const { t } = useLanguage();
@@ -15,6 +16,7 @@ export const LiveTracking: React.FC = () => {
   const [filterRoute, setFilterRoute] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showListOnDesktop, setShowListOnDesktop] = useState(true);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const selectedBus = selectedBusId ? buses.find((b) => b.id === selectedBusId) : null;
   const selectedRoute = routes.find((r) => r.id === selectedBus?.routeId);
@@ -29,11 +31,34 @@ export const LiveTracking: React.FC = () => {
     return matchesRoute && matchesSearch;
   });
 
+  // Calculate nearest stop to the commuter's live location
+  const nearestStopInfo = useMemo<{ stop: BusStop; distanceMeters: number } | null>(() => {
+    if (!userLocation || stops.length === 0) return null;
+    let closestStop: BusStop | null = null;
+    let minDistance = Infinity;
+
+    for (const stop of stops) {
+      const dLat = (stop.lat - userLocation.lat) * 111320;
+      const dLng = (stop.lng - userLocation.lng) * 111320 * Math.cos(userLocation.lat * (Math.PI / 180));
+      const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestStop = stop;
+      }
+    }
+
+    if (!closestStop || minDistance > 5000) return null;
+    return {
+      stop: closestStop,
+      distanceMeters: Math.round(minDistance),
+    };
+  }, [userLocation, stops]);
+
   return (
-    <div className="flex-1 flex flex-col h-full relative overflow-hidden bg-[#f8f9fc] p-3 md:p-4 gap-3">
+    <div className="flex-1 flex flex-col h-full min-h-[480px] relative overflow-hidden bg-[#f8f9fc] p-2.5 sm:p-3 md:p-4 gap-2.5 md:gap-3">
       
       {/* Top Controls Toolbar */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3 shrink-0">
+      <div className="bg-white p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-2.5 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-[#7847CB] text-white flex items-center justify-center shrink-0 shadow-xs shadow-[#7847CB]/30">
             <Navigation className="w-4 h-4" />
@@ -51,6 +76,21 @@ export const LiveTracking: React.FC = () => {
           </div>
         </div>
 
+        {/* Nearest Stop Pill (if user location is active) */}
+        {nearestStopInfo && (
+          <button
+            type="button"
+            onClick={() => setSelectedStopId(nearestStopInfo.stop.id)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-[#7847CB] text-[11px] font-bold border border-purple-200 hover:bg-purple-100 transition-colors"
+            title="Jump to nearest bus stop"
+          >
+            <MapPin className="w-3.5 h-3.5 text-[#7847CB]" />
+            <span>
+              {nearestStopInfo.stop.name} ({nearestStopInfo.distanceMeters > 1000 ? `${(nearestStopInfo.distanceMeters / 1000).toFixed(1)}km` : `${nearestStopInfo.distanceMeters}m`})
+            </span>
+          </button>
+        )}
+
         {/* Filters */}
         <div className="flex items-center gap-2 flex-wrap">
           {/* Search */}
@@ -61,7 +101,7 @@ export const LiveTracking: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t('Search bus/stop...', 'बस किंवा थांबा शोधा...')}
-              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-[#7847CB] focus:ring-1 focus:ring-[#7847CB]/30 w-36 sm:w-44"
+              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-[#7847CB] focus:ring-1 focus:ring-[#7847CB]/30 w-32 sm:w-44"
             />
           </div>
 
@@ -94,10 +134,10 @@ export const LiveTracking: React.FC = () => {
       </div>
 
       {/* Main Map & Fleet List Container */}
-      <div className="flex-1 flex gap-3 min-h-0 relative rounded-2xl overflow-hidden border border-slate-200/90 shadow-2xs">
+      <div className="flex-1 flex gap-3 min-h-[360px] relative rounded-2xl overflow-hidden border border-slate-200/90 shadow-2xs">
         
         {/* Leaflet Live Map Canvas */}
-        <div className="flex-1 relative h-full">
+        <div className="flex-1 relative w-full h-full min-h-[360px]">
           <LiveMap
             buses={filteredBuses}
             stops={stops}
@@ -106,6 +146,7 @@ export const LiveTracking: React.FC = () => {
             selectedStopId={selectedStopId}
             onSelectBus={(bus) => setSelectedBusId(bus.id)}
             onSelectStop={(stop) => setSelectedStopId(stop.id)}
+            onUserLocationChange={setUserLocation}
           />
 
           {/* Floating Selected Bus Quick Card (Desktop) */}

@@ -13,7 +13,8 @@ import {
   Radio,
   ChevronRight,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Crosshair
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -74,9 +75,21 @@ export const Home: React.FC = () => {
                 className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs md:text-sm focus:outline-none focus:border-[#7847CB] focus:ring-2 focus:ring-[#7847CB]/20 transition-colors"
               />
             </div>
-            <Button type="submit" size="md" className="w-full sm:w-auto shrink-0" rightIcon={<ArrowRight className="w-4 h-4" />}>
-              {t('Find Route', 'मार्ग शोधा')}
-            </Button>
+            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+              <Button type="submit" size="md" className="flex-1 sm:flex-none" rightIcon={<ArrowRight className="w-4 h-4" />}>
+                {t('Find Route', 'मार्ग शोधा')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                onClick={() => navigate('/app/live')}
+                className="flex-1 sm:flex-none border-purple-200 text-[#7847CB] hover:bg-purple-50"
+                leftIcon={<Crosshair className="w-4 h-4" />}
+              >
+                {t('Live Map', 'थेट नकाशा')}
+              </Button>
+            </div>
           </form>
         </div>
 

@@ -188,8 +188,8 @@ export const SharedLayout: React.FC<SharedLayoutProps> = ({
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col min-w-0 h-auto md:h-[100dvh] overflow-y-auto">
-        <div className={`flex-1 flex flex-col ${bottomNavItems ? 'pb-16 md:pb-0' : ''}`}>
+      <main className="flex-1 flex flex-col min-w-0 h-[calc(100dvh-3.5rem)] md:h-[100dvh] overflow-y-auto">
+        <div className={`flex-1 flex flex-col min-h-0 ${bottomNavItems && bottomNavItems.length > 0 ? 'pb-16 md:pb-0' : ''}`}>
           {children}
         </div>
       </main>

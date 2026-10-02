@@ -52,10 +52,10 @@ export const AdminLiveFleet: React.FC = () => {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-4 w-full max-w-7xl mx-auto flex-1 flex flex-col min-h-[calc(100dvh-85px)]">
+    <div className="p-3 sm:p-4 md:p-6 space-y-3 md:space-y-4 w-full max-w-7xl mx-auto flex-1 flex flex-col min-h-[calc(100dvh-85px)]">
       
       {/* Top Telemetry Header */}
-      <div className="bg-white p-4 rounded-3xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-4 shrink-0">
+      <div className="bg-white p-3.5 md:p-4 rounded-3xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3 md:gap-4 shrink-0">
         <div className="flex items-center gap-2.5 text-xs font-semibold">
           <div className="w-8 h-8 rounded-xl bg-purple-50 text-[#7847CB] flex items-center justify-center">
             <Radio className="w-4 h-4" />
@@ -68,7 +68,7 @@ export const AdminLiveFleet: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-xs font-semibold">
+        <div className="flex items-center gap-3 md:gap-4 text-xs font-semibold">
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-slate-700">On Time</span>
@@ -85,7 +85,7 @@ export const AdminLiveFleet: React.FC = () => {
       </div>
 
       {/* Map & Floating Telemetry Overlay Container */}
-      <div className="flex-1 w-full min-h-[520px] rounded-3xl overflow-hidden border border-slate-200/90 shadow-xs relative">
+      <div className="flex-1 w-full min-h-[420px] md:min-h-[520px] rounded-3xl overflow-hidden border border-slate-200/90 shadow-xs relative">
         <LiveMap
           buses={buses}
           stops={stops}
@@ -93,7 +93,7 @@ export const AdminLiveFleet: React.FC = () => {
           selectedBusId={selectedBus?.id || null}
           selectedRouteId={selectedBus?.routeId || null}
           onSelectBus={(bus) => setSelectedBus(bus)}
-          showUserLocation={false}
+          showUserLocation={true}
           height="100%"
         />
 
