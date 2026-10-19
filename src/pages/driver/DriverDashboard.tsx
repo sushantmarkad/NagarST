@@ -22,6 +22,7 @@ import { SharedLayout } from '../../components/layout/SharedLayout';
 import { getDistance, getDistanceToPolyline } from '../../utils/routing';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
+import { createModernBusIcon } from '../../components/map/busMarkerIcon';
 
 // Fix for default leaflet icons in React
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -99,13 +100,23 @@ export const DriverDashboard: React.FC = () => {
 
   const watchIdRef = useRef<number | null>(null);
   const socketRef = useRef<any>(null);
+  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const lastDbWriteRef = useRef<number>(0);
 
   const fetchInitialData = useCallback(async () => {
-    if (!user?.assignedBusId) return;
-
-    // 1. Fetch Bus
-    const { data: bus } = await supabase.from('buses').select('*').eq('id', user.assignedBusId).single();
-    if (bus) setBusDetails(bus);
+    let busId = user?.assignedBusId;
+    // Fallback: If not on user object, fetch directly from driver_credentials or first active bus
+    if (!busId && user?.id) {
+      const { data: cred } = await supabase.from('driver_credentials').select('assigned_bus_id').eq('id', user.id).single();
+      if (cred?.assigned_bus_id) busId = cred.assigned_bus_id;
+    }
+    if (busId) {
+      const { data: bus } = await supabase.from('buses').select('*').eq('id', busId).single();
+      if (bus) setBusDetails(bus);
+    } else {
+      const { data: bus } = await supabase.from('buses').select('*').limit(1).single();
+      if (bus) setBusDetails(bus);
+    }
 
     // 2. Fetch Routes for dropdown
     const { data: routes } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
@@ -113,7 +124,7 @@ export const DriverDashboard: React.FC = () => {
       setAvailableRoutes(routes);
       if (routes.length > 0 && !selectedRouteId) setSelectedRouteId(routes[0].id);
     }
-  }, [user?.assignedBusId, selectedRouteId]);
+  }, [user?.assignedBusId, user?.id, selectedRouteId]);
 
   const fetchSchedules = useCallback(async () => {
     if (!user?.id) return;
@@ -161,6 +172,9 @@ export const DriverDashboard: React.FC = () => {
         socketRef.current.off('dispatchMessage');
         socketRef.current.disconnect();
       }
+      if (broadcastChannelRef.current) {
+        broadcastChannelRef.current.close();
+      }
     };
   }, [user?.assignedBusId, fetchInitialData, fetchSchedules, toast]);
 
@@ -193,7 +207,125 @@ export const DriverDashboard: React.FC = () => {
     }
   }, [selectedRouteId, availableRoutes, fetchRouteStops]);
 
-  const beginActualTrip = async (_latitude: number, _longitude: number, _speedKmh: number) => {
+  // Centralized telemetry emitter for instant commuter sync
+  const sendLiveTelemetry = useCallback(async (
+    lat: number,
+    lng: number,
+    speedKmh: number,
+    statusOverride?: string
+  ) => {
+    if (!busDetails) return;
+
+    let currentStatus = statusOverride || 'on_time';
+    const routePathCoords = selectedRouteDetails?.route_path || [];
+    if (!statusOverride && routePathCoords.length > 0) {
+      const distToRoute = getDistanceToPolyline({ lat, lng }, routePathCoords);
+      if (distToRoute > 150) {
+        currentStatus = 'off_route';
+      }
+    }
+
+    const payload = {
+      id: busDetails.id,
+      busId: busDetails.id,
+      busNumber: busDetails.bus_number,
+      plateNumber: busDetails.plate_number,
+      routeId: selectedRouteId || '',
+      routeNumber: selectedRouteDetails?.route_number || '',
+      routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} - ${selectedRouteDetails.destination}` : 'In Service',
+      origin: selectedRouteDetails?.origin || 'Depot',
+      destination: selectedRouteDetails?.destination || 'Depot',
+      lat,
+      lng,
+      speedKmh,
+      status: currentStatus,
+      occupancy: 'moderate' as const,
+      nextStopName: tripStops[currentStopIndex]?.stops?.stop_name || (tripStops[0]?.stops?.stop_name || 'Terminal'),
+      driverName: user?.name || 'Driver',
+      lastUpdated: new Date().toISOString()
+    };
+
+    // 1. Cross-tab BroadcastChannel (instant 0ms latency sync)
+    try {
+      if (!broadcastChannelRef.current && typeof BroadcastChannel !== 'undefined') {
+        broadcastChannelRef.current = new BroadcastChannel('nagarst_bus_telemetry');
+      }
+      broadcastChannelRef.current?.postMessage({
+        type: 'locationUpdate',
+        data: payload
+      });
+    } catch (_) {}
+
+    // 2. Cross-tab localStorage
+    try {
+      localStorage.setItem('nagarst_live_bus_' + busDetails.id, JSON.stringify(payload));
+    } catch (_) {}
+
+    // 3. Socket.IO (when connected)
+    if (socketRef.current) {
+      socketRef.current.emit('updateLocation', payload);
+    }
+
+    // 4. Supabase DB live_locations table (debounced/throttled to 2.5s)
+    const now = Date.now();
+    if (now - lastDbWriteRef.current >= 2500 || lastDbWriteRef.current === 0) {
+      lastDbWriteRef.current = now;
+      try {
+        const { data: existing } = await supabase
+          .from('live_locations')
+          .select('id')
+          .eq('bus_id', busDetails.id)
+          .limit(1);
+
+        const row = {
+          bus_id: busDetails.id,
+          trip_id: currentTripId || null,
+          lat,
+          lng,
+          speed_kmh: speedKmh,
+          heading: 0,
+          occupancy_level: 'Moderate',
+          updated_at: new Date().toISOString()
+        };
+
+        if (existing && existing.length > 0) {
+          await supabase.from('live_locations').update(row).eq('id', existing[0].id);
+        } else {
+          await supabase.from('live_locations').insert(row);
+        }
+      } catch (err) {
+        console.warn('DB Telemetry sync notice:', err);
+      }
+    }
+  }, [busDetails, selectedRouteId, selectedRouteDetails, tripStops, currentStopIndex, user?.name, currentTripId]);
+
+  // Standby GPS watcher so driver location is tracked as soon as GPS is turned on
+  useEffect(() => {
+    let standbyWatchId: number | null = null;
+    if ('geolocation' in navigator && !isTripActive && !isNavigatingToOrigin) {
+      standbyWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const spd = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
+          setDriverPos({ lat, lng });
+          setCurrentSpeedKmh(spd);
+          if (busDetails) {
+            sendLiveTelemetry(lat, lng, spd, 'standby');
+          }
+        },
+        (err) => console.log('Standby GPS fix wait:', err.message),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+      );
+    }
+    return () => {
+      if (standbyWatchId !== null) {
+        navigator.geolocation.clearWatch(standbyWatchId);
+      }
+    };
+  }, [busDetails, isTripActive, isNavigatingToOrigin, sendLiveTelemetry]);
+
+  const beginActualTrip = async (latitude: number, longitude: number, speedKmh: number) => {
     // 1. Create Trip in DB
     const { data: trip, error: tripErr } = await supabase.from('trips').insert([{
       bus_id: busDetails.id,
@@ -216,7 +348,8 @@ export const DriverDashboard: React.FC = () => {
     setIsStartingTrip(false);
     toast.success('Live GPS tracking active and broadcasting to commuter map.', 'Trip Started');
 
-    const routePathCoords = selectedRouteDetails?.route_path || [];
+    // Immediately transmit initial trip point
+    sendLiveTelemetry(latitude, longitude, speedKmh, 'on_time');
 
     // 2. Start Real GPS Tracking
     if (watchIdRef.current !== null) {
@@ -224,39 +357,12 @@ export const DriverDashboard: React.FC = () => {
     }
     
     watchIdRef.current = navigator.geolocation.watchPosition(
-      async (position) => {
+      (position) => {
         const { latitude: lat, longitude: lng, speed } = position.coords;
         const currentSpeed = speed ? Math.round(speed * 3.6) : 0;
         setDriverPos({ lat, lng });
         setCurrentSpeedKmh(currentSpeed);
-
-        let currentStatus = 'on_time';
-        if (routePathCoords.length > 0) {
-          const distToRoute = getDistanceToPolyline({ lat, lng }, routePathCoords);
-          if (distToRoute > 150) {
-            currentStatus = 'off_route';
-          }
-        }
-
-        if (socketRef.current) {
-          socketRef.current.emit('updateLocation', {
-            id: busDetails.id,
-            busId: busDetails.id,
-            busNumber: busDetails.bus_number,
-            plateNumber: busDetails.plate_number,
-            routeId: selectedRouteId,
-            routeNumber: selectedRouteDetails?.route_number || '',
-            routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} - ${selectedRouteDetails.destination}` : '',
-            lat,
-            lng,
-            speedKmh: currentSpeed,
-            status: currentStatus,
-            occupancy: 'moderate',
-            nextStopName: tripStops[currentStopIndex]?.stops?.stop_name || 'Terminal',
-            driverName: user?.name || 'Driver',
-            lastUpdated: new Date().toISOString()
-          });
-        }
+        sendLiveTelemetry(lat, lng, currentSpeed);
       },
       (error) => {
         console.error(`Failed to get real GPS: ${error.message}`);
@@ -301,26 +407,7 @@ export const DriverDashboard: React.FC = () => {
           const currentSpeed = speed ? Math.round(speed * 3.6) : 0;
           setDriverPos({ lat: latitude, lng: longitude });
           setCurrentSpeedKmh(currentSpeed);
-          
-          if (socketRef.current) {
-            socketRef.current.emit('updateLocation', {
-              id: busDetails.id,
-              busId: busDetails.id,
-              busNumber: busDetails.bus_number,
-              plateNumber: busDetails.plate_number,
-              routeId: selectedRouteId,
-              routeNumber: selectedRouteDetails?.route_number || '',
-              routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} - ${selectedRouteDetails.destination}` : '',
-              lat: latitude,
-              lng: longitude,
-              speedKmh: currentSpeed,
-              status: 'navigating_to_origin',
-              occupancy: 'moderate',
-              nextStopName: tripStops[0]?.stops?.stop_name || 'Origin',
-              driverName: user?.name || 'Driver',
-              lastUpdated: new Date().toISOString()
-            });
-          }
+          sendLiveTelemetry(latitude, longitude, currentSpeed, 'navigating_to_origin');
 
           const currentLatLng = { lat: latitude, lng: longitude };
           const firstStop = { lat: tripStops[0].stops.lat, lng: tripStops[0].stops.lng };
@@ -351,29 +438,11 @@ export const DriverDashboard: React.FC = () => {
   };
 
   const getBusIcon = (busNumber: string) => {
-    return L.divIcon({
-      className: 'custom-bus-icon',
-      html: `
-        <div style="
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          padding: 4px 8px;
-          background-color: #7847CB;
-          color: white;
-          font-weight: 800;
-          font-size: 11px;
-          border-radius: 8px;
-          box-shadow: 0 4px 10px rgba(0,0,0,0.25);
-          border: 2px solid white;
-          white-space: nowrap;
-        ">
-          <span>🚌</span>
-          <span>${busNumber}</span>
-        </div>
-      `,
-      iconSize: [60, 26],
-      iconAnchor: [30, 13],
+    return createModernBusIcon(busNumber, {
+      isSelected: true,
+      isSelf: true,
+      speedKmh: currentSpeedKmh,
+      status: isTripActive ? 'on_time' : 'standby'
     });
   };
 
@@ -394,7 +463,12 @@ export const DriverDashboard: React.FC = () => {
         
         if (busDetails) {
           await supabase.from('live_locations').delete().eq('bus_id', busDetails.id);
-          
+          try {
+            localStorage.removeItem('nagarst_live_bus_' + busDetails.id);
+          } catch (_) {}
+          if (broadcastChannelRef.current) {
+            broadcastChannelRef.current.postMessage({ type: 'busOffline', busId: busDetails.id });
+          }
           if (socketRef.current) {
             socketRef.current.emit('stopTrip', busDetails.id);
           }
@@ -488,6 +562,13 @@ export const DriverDashboard: React.FC = () => {
             <div className="flex items-center gap-1.5 text-slate-300">
               <Gauge className="w-3.5 h-3.5 text-emerald-400" />
               <span className="font-mono font-bold">{currentSpeedKmh} km/h</span>
+            </div>
+            <span className="text-slate-500">•</span>
+            <div className="flex items-center gap-1.5 text-slate-300">
+              <span className={`w-2 h-2 rounded-full ${driverPos ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              <span className="font-semibold text-[11px]">
+                {driverPos ? 'GPS Broadcasting' : 'Acquiring GPS...'}
+              </span>
             </div>
           </div>
 

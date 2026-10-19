@@ -21,7 +21,7 @@ interface AuthContextType {
   getRoleStartRoute: (role?: UserRole) => string;
 }
 
-const STORAGE_KEY = 'ahilyanagar_bus_auth_user';
+const STORAGE_KEY = 'nagarst_bus_auth_user';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 

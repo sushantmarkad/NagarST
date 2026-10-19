@@ -132,9 +132,16 @@ export const LiveTracking: React.FC = () => {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="px-2 py-0.5 bg-[#7847CB] text-white text-[11px] font-black rounded-md">
+                        <span className={`px-2 py-0.5 text-[11px] font-black rounded-md ${
+                          bus.isDemo || bus.id?.startsWith('demo-') ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
+                        }`}>
                           {bus.busNumber}
                         </span>
+                        {Boolean(bus.isDemo || bus.id?.startsWith('demo-')) && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase tracking-wider shrink-0">
+                            DEMO
+                          </span>
+                        )}
                         <span className="text-xs font-bold text-slate-900 truncate">
                           {bus.routeName}
                         </span>
@@ -246,6 +253,14 @@ export const LiveTracking: React.FC = () => {
       >
         {selectedBus && (
           <div className="space-y-4">
+            {Boolean(selectedBus.isDemo || selectedBus.id?.startsWith('demo-')) && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-900 text-xs font-bold">
+                <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[9px] font-black uppercase tracking-wider shrink-0">
+                  SIMULATION
+                </span>
+                <span>Predefined road route replay for testing. Not in passenger revenue service.</span>
+              </div>
+            )}
             <div className="p-3.5 bg-purple-50/60 rounded-xl border border-purple-100 flex items-center justify-between">
               <div>
                 <span className="text-[10px] uppercase font-bold text-slate-500 block">

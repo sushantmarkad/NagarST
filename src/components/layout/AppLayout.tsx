@@ -140,8 +140,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     <SharedLayout
       navItems={allNavItems}
       bottomNavItems={bottomNavItems}
-      title={t('Ahilyanagar Bus', 'अहिल्यानगर बस')}
-      subtitle={t('Citizen Transit Undertaking', 'नागरी वाहतूक उपक्रम')}
+      title={t('NagarST', 'नगर एसटी')}
+      subtitle={t('Smart City Transit', 'नागरी स्मार्ट वाहतूक')}
     >
       {children}
     </SharedLayout>

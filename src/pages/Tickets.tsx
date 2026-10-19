@@ -93,7 +93,7 @@ export const Tickets: React.FC = () => {
               {t('Digital Bus Tickets', 'डिजिटल बस तिकीट')}
             </h2>
             <p className="text-xs text-slate-500 font-medium">
-              {t('Instant QR tickets for Ahilyanagar city buses with automatic fare validation', 'अहिल्यानगर सिटी बससाठी इन्स्टंट QR तिकिटे')}
+              {t('Instant QR tickets for NagarST buses with automatic fare validation', 'नगर एसटी बससाठी इन्स्टंट QR तिकिटे')}
             </p>
           </div>
         </div>
@@ -117,7 +117,7 @@ export const Tickets: React.FC = () => {
                 {t('Issue Paperless City Transit Ticket', 'बस तिकीट बुकिंग')}
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                {t('Select your journey origin and destination stop in Ahilyanagar', 'प्रारंभ व गंतव्य थांबा निवडा')}
+                {t('Select your journey origin and destination stop', 'प्रारंभ व गंतव्य थांबा निवडा')}
               </p>
             </div>
             <Badge variant="brand" size="sm">MSRTC Standard</Badge>

@@ -148,10 +148,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
             </div>
             <div>
               <span className="text-lg font-bold tracking-tight text-neutral-900 block leading-tight">
-                Ahilyanagar City Bus
+                NagarST
               </span>
               <span className="text-[10px] text-neutral-500 font-semibold uppercase tracking-wider block">
-                Municipal Transit Undertaking
+                Smart City Transit
               </span>
             </div>
           </div>
@@ -265,7 +265,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
           <div className="relative z-10 flex items-center gap-2">
             <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold text-white tracking-wide">
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              Ahilyanagar Official Smart City Transit
+              NagarST Smart City Transit
             </span>
           </div>
 
@@ -279,7 +279,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
               </h1>
 
               <p className="text-lg text-purple-100/90 max-w-xl font-normal leading-relaxed">
-                Plan your journey, track buses in real time, manage digital tickets and stay updated with Ahilyanagar’s city bus network.
+                Plan your journey, track buses in real time, manage digital tickets and stay updated with NagarST’s city bus network.
               </p>
 
               <div className="flex flex-wrap items-center gap-4 pt-2">
@@ -349,7 +349,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                     <div className="w-7 h-7 rounded-lg bg-[#7847CB] text-white flex items-center justify-center font-bold text-xs">
                       <Bus className="w-4 h-4" />
                     </div>
-                    <span className="text-xs font-extrabold text-neutral-900">Ahilyanagar Bus</span>
+                    <span className="text-xs font-extrabold text-neutral-900">NagarST</span>
                   </div>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">
                     Live Updates
@@ -444,7 +444,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
               Designed for modern urban commuters
             </h2>
             <p className="text-sm text-neutral-500">
-              Everything you need for seamless bus travel across Ahilyanagar in one intuitive app.
+              Everything you need for seamless bus travel across your city in one intuitive app.
             </p>
           </div>
 
@@ -465,7 +465,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
               </div>
               <h3 className="text-xl font-bold text-neutral-900">Smart Routes</h3>
               <p className="text-sm text-neutral-500 leading-relaxed">
-                Find optimal multi-stop journey options, transfers, schedules, and route timings across Ahilyanagar.
+                Find optimal multi-stop journey options, transfers, schedules, and route timings across your city.
               </p>
             </div>
 
@@ -674,7 +674,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
         <section className="space-y-8">
           <div className="text-center max-w-xl mx-auto space-y-2">
             <h2 className="text-3xl font-extrabold text-neutral-900 tracking-tight">Trusted by daily commuters</h2>
-            <p className="text-sm text-neutral-500">Hear from commuters travelling across Ahilyanagar daily.</p>
+            <p className="text-sm text-neutral-500">Hear from commuters travelling across the city daily.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -733,7 +733,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
               Start Your Journey Today
             </h2>
             <p className="text-purple-100 text-base">
-              Experience fast, reliable, and modern digital public transportation in Ahilyanagar.
+              Experience fast, reliable, and modern digital public transportation with NagarST.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
               <button
@@ -766,7 +766,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
               <div className="w-7 h-7 rounded-lg bg-[#7847CB] text-white flex items-center justify-center font-bold text-xs">
                 <Bus className="w-4 h-4" />
               </div>
-              <span className="font-bold text-neutral-900 text-sm">Ahilyanagar City Bus</span>
+              <span className="font-bold text-neutral-900 text-sm">NagarST</span>
             </div>
 
             <div className="flex gap-6 font-medium text-neutral-600">
@@ -778,7 +778,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-neutral-100 pt-6">
-            <span>© {new Date().getFullYear()} Ahilyanagar Municipal Transport Undertaking. All rights reserved.</span>
+            <span>© {new Date().getFullYear()} NagarST Smart Transit. All rights reserved.</span>
             <span>Official Smart City Transit Infrastructure v2.4</span>
           </div>
         </footer>
@@ -851,7 +851,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                     {mode === 'login'
                       ? 'Sign in to access your transit tools and live services.'
                       : registerType === 'PASSENGER'
-                      ? 'Instant free account for Ahilyanagar bus passengers.'
+                      ? 'Instant free account for NagarST passengers.'
                       : 'Send request. After approval, you will be notified on your email.'}
                   </p>
                 </div>

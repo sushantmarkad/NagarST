@@ -23,7 +23,7 @@ export const HelpFeedback: React.FC = () => {
       setDescription('');
       toast.success(
         t(
-          'Your feedback ticket has been dispatched to Ahilyanagar Municipal Transit Support.',
+          'Your feedback ticket has been dispatched to NagarST Transit Support.',
           'तुमचा अभिप्राय / तक्रार नियंत्रण कक्षाकडे पाठवली गेली आहे.'
         ),
         t('Report Dispatched', 'तक्रार नोंदवली गेली')
@@ -44,7 +44,7 @@ export const HelpFeedback: React.FC = () => {
               {t('Help & Passenger Feedback', 'मदत आणि नागरिक अभिप्राय')}
             </h2>
             <p className="text-xs text-slate-500 font-medium">
-              {t('Report transit issues, missing buses, or submit feedback to Ahilyanagar Transit', 'अहिल्यानगर बस सेवेबाबत तक्रार अथवा अभिप्राय नोंदवा')}
+              {t('Report transit issues, missing buses, or submit feedback to NagarST Support', 'नगर एसटी बस सेवेबाबत तक्रार अथवा अभिप्राय नोंदवा')}
             </p>
           </div>
         </div>
@@ -165,7 +165,7 @@ export const HelpFeedback: React.FC = () => {
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
             <h5 className="font-bold text-slate-900">Are student concession passes valid on all electric and AC buses?</h5>
             <p className="text-slate-600 leading-relaxed">
-              Yes, monthly student concessional passes issued under the municipal student welfare scheme are valid across all municipal Ahilyanagar city bus routes.
+              Yes, monthly student concessional passes issued under the student welfare scheme are valid across all NagarST bus routes.
             </p>
           </div>
         </div>

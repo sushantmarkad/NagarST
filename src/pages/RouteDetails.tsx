@@ -140,7 +140,7 @@ export const RouteDetails: React.FC = () => {
               {t('Complete Route Stop Sequence', 'संपूर्ण मार्ग थांबे क्रम')}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              {t('Live bus positions marked along the Ahilyanagar transit corridor', 'वेळापत्रकावर थेट बसेसची स्थिती')}
+              {t('Live bus positions marked along the transit corridor', 'वेळापत्रकावर थेट बसेसची स्थिती')}
             </p>
           </div>
           <Badge variant="brand" size="md">

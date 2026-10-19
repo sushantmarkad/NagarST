@@ -9,6 +9,7 @@ import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
+import { createModernBusIcon } from '../../../components/map/busMarkerIcon';
 
 // Helper to calculate routing polyline via OpenStreetMap OSRM
 async function fetchOSRMRoute(coordinates: { lat: number; lng: number }[]) {
@@ -294,30 +295,7 @@ export const AdminRouteMgmt: React.FC = () => {
     : stops.map(s => [s.stops.lat, s.stops.lng]);
 
   const getBusIcon = (busNumber: string) => {
-    return L.divIcon({
-      className: 'custom-bus-icon',
-      html: `
-        <div style="
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          padding: 4px 8px;
-          background-color: #7847CB;
-          color: white;
-          font-weight: 800;
-          font-size: 11px;
-          border-radius: 8px;
-          box-shadow: 0 4px 10px rgba(0,0,0,0.25);
-          border: 2px solid white;
-          white-space: nowrap;
-        ">
-          <span>🚌</span>
-          <span>${busNumber}</span>
-        </div>
-      `,
-      iconSize: [60, 26],
-      iconAnchor: [30, 13],
-    });
+    return createModernBusIcon(busNumber, { isSelected: true });
   };
 
   const stopIcon = L.divIcon({

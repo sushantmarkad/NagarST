@@ -104,7 +104,7 @@ export const SharedLayout: React.FC<SharedLayoutProps> = ({
             </div>
             <div className="min-w-0">
               <span className="text-xs font-black tracking-tight text-slate-900 block leading-tight truncate">
-                NagarST Transit
+                NagarST
               </span>
               <span className="text-[10px] text-slate-500 font-medium block truncate">
                 {title}
@@ -172,7 +172,7 @@ export const SharedLayout: React.FC<SharedLayoutProps> = ({
         {/* Sidebar Footer */}
         <div className="p-3 border-t border-slate-100 space-y-2 shrink-0 bg-slate-50/40">
           <div className="hidden md:flex items-center justify-between px-1">
-            <span className="text-[10px] text-slate-500 font-medium">Ahilyanagar Transit</span>
+            <span className="text-[10px] text-slate-500 font-medium">NagarST</span>
             <LanguageToggle />
           </div>
 

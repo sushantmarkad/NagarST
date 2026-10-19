@@ -17,7 +17,7 @@ export const BusPass: React.FC = () => {
   const [isApplying, setIsApplying] = useState(false);
   const [passType, setPassType] = useState<'daily' | 'weekly' | 'monthly_general' | 'monthly_student'>('monthly_student');
   const [holderName, setHolderName] = useState('Aditya Rahul Pawar');
-  const [institution, setInstitution] = useState('New Arts & Commerce College, Ahilyanagar');
+  const [institution, setInstitution] = useState('City Arts & Commerce College');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const getPassFare = () => {
@@ -98,7 +98,7 @@ export const BusPass: React.FC = () => {
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <h3 className="font-extrabold text-slate-900 text-sm md:text-base">
-                {t('Ahilyanagar Municipal Bus Pass Issuance', 'अहिल्यानगर महानगरपालिका बस पास अर्ज')}
+                {t('NagarST Smart Bus Pass Issuance', 'नगर एसटी बस पास अर्ज')}
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 {t('Instant digital issuance with verifiable conductor QR scan', 'कंडक्टर पडताळणीसाठी डिजिटल क्यूआर पास')}

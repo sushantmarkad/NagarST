@@ -176,7 +176,7 @@ export const AdminIncidentsAnnouncements: React.FC<Props> = ({ modeType = 'incid
               </div>
               <h3 className="text-sm font-bold text-slate-900">Zero Active Incident Reports</h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                All Ahilyanagar municipal transit corridors are operating smoothly without mechanical breakdowns or traffic detours.
+                All NagarST transit corridors are operating smoothly without mechanical breakdowns or traffic detours.
               </p>
             </div>
           ) : (

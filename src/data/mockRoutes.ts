@@ -58,10 +58,10 @@ export const MOCK_ROUTES: Route[] = [
   {
     id: 'route-4',
     routeNumber: 'Route 4',
-    name: 'Savedi Terminal ↔ Ahilyanagar Railway Station',
-    nameMarathi: 'सावेडी टर्मिनस ↔ अहिल्यानगर रेल्वे स्टेशन',
+    name: 'Savedi Terminal ↔ Central Railway Station',
+    nameMarathi: 'सावेडी टर्मिनस ↔ मध्यवर्ती रेल्वे स्टेशन',
     origin: 'Savedi Bus Terminal',
-    destination: 'Ahilyanagar Railway Station',
+    destination: 'Central Railway Station',
     firstBus: '06:15 AM',
     lastBus: '09:45 PM',
     frequencyMinutes: 20,
@@ -76,7 +76,7 @@ export const MOCK_ROUTES: Route[] = [
       { stopId: 'stop-savedi', stopName: 'Savedi Bus Terminal', stopNameMarathi: 'सावेडी बस टर्मिनस', sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, isMajorHub: true, lat: 19.1220, lng: 74.7350 },
       { stopId: 'stop-premdan', stopName: 'Premdan Chowk', stopNameMarathi: 'प्रेमदान चौक', sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 8, lat: 19.1130, lng: 74.7390 },
       { stopId: 'stop-cbs', stopName: 'Central Bus Stand (CBS)', stopNameMarathi: 'मध्यवर्ती बस स्थानक', sequence: 3, fareFromOrigin: 15, estimatedMinutesFromOrigin: 16, isMajorHub: true, lat: 19.0975, lng: 74.7420 },
-      { stopId: 'stop-railway', stopName: 'Ahilyanagar Railway Station', stopNameMarathi: 'अहिल्यानगर रेल्वे स्टेशन', sequence: 4, fareFromOrigin: 20, estimatedMinutesFromOrigin: 25, isMajorHub: true, lat: 19.0810, lng: 74.7380 },
+      { stopId: 'stop-railway', stopName: 'Central Railway Station', stopNameMarathi: 'मध्यवर्ती रेल्वे स्टेशन', sequence: 4, fareFromOrigin: 20, estimatedMinutesFromOrigin: 25, isMajorHub: true, lat: 19.0810, lng: 74.7380 },
     ],
   },
   {

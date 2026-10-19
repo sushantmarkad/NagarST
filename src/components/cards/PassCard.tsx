@@ -24,7 +24,7 @@ export const PassCard: React.FC<PassCardProps> = ({ pass, onRenew }) => {
         <div className="flex items-start justify-between relative z-10">
           <div>
             <span className="text-[10px] font-bold uppercase tracking-wider text-purple-200 block">
-              Ahilyanagar Municipal Transport
+              NagarST Smart Transit
             </span>
             <h3 className="font-bold text-base text-white mt-0.5">
               {language === 'mr' ? pass.titleMarathi : pass.title}
@@ -94,7 +94,7 @@ export const PassCard: React.FC<PassCardProps> = ({ pass, onRenew }) => {
       <QRModal
         isOpen={showQR}
         onClose={() => setShowQR(false)}
-        title={language === 'mr' ? 'अहिल्यानगर बस पास' : 'Ahilyanagar Bus Pass'}
+        title={language === 'mr' ? 'नगर एसटी बस पास' : 'NagarST Bus Pass'}
         subtitle={`${pass.holderName} • ${pass.passCode}`}
         code={pass.passCode}
         qrData={pass.qrData}

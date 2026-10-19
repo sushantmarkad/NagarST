@@ -11,6 +11,7 @@ export interface ModalProps {
   children: ReactNode;
   maxWidth?: ModalMaxWidth;
   showCloseButton?: boolean;
+  closeOnBackdropClick?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -21,7 +22,10 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   maxWidth = 'md',
   showCloseButton = true,
+  closeOnBackdropClick = true,
 }) => {
+  const backdropMouseDownRef = React.useRef(false);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -50,16 +54,34 @@ export const Modal: React.FC<ModalProps> = ({
 
   const resolvedWidthClass = maxWidthClasses[maxWidth] || maxWidth;
 
+  const handleBackdropMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      backdropMouseDownRef.current = true;
+    } else {
+      backdropMouseDownRef.current = false;
+    }
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Only close if BOTH mousedown and mouseup originated directly on the outer backdrop
+    if (closeOnBackdropClick && e.target === e.currentTarget && backdropMouseDownRef.current) {
+      onClose();
+    }
+    backdropMouseDownRef.current = false;
+  };
+
   return (
     <div
       className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in"
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
+      onMouseDown={handleBackdropMouseDown}
+      onClick={handleBackdropClick}
     >
       <div
         className={`w-full ${resolvedWidthClass} bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95`}
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         {(title || showCloseButton) && (
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">

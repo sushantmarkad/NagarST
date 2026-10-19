@@ -111,8 +111,8 @@ export const QRModal: React.FC<QRModalProps> = ({
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
               <span>
                 {language === 'mr'
-                  ? 'अहिल्यानगर परिवहन प्राधिकरणाद्वारे डिजिटल सत्यापित'
-                  : 'Digitally verified by Ahilyanagar Transit Authority'}
+                  ? 'नगर एसटी प्राधिकरणाद्वारे डिजिटल सत्यापित'
+                  : 'Digitally verified by NagarST Authority'}
               </span>
             </div>
 

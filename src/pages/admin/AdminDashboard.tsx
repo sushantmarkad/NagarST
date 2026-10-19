@@ -8,6 +8,8 @@ import { AdminFleetStaffMgmt } from './views/AdminFleetStaffMgmt';
 import { AdminAnalytics } from './views/AdminAnalytics';
 import { AdminAIInsights } from './views/AdminAIInsights';
 import { AdminIncidentsAnnouncements } from './views/AdminIncidentsAnnouncements';
+import { AdminDataCleanup } from './views/AdminDataCleanup';
+import { AdminDemoSimulator } from './views/AdminDemoSimulator';
 
 interface AdminDashboardProps {
   defaultView?: AdminView;
@@ -43,6 +45,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ defaultView = 'o
         return <AdminOverview onNavigateView={handleSelectView} />;
       case 'live_fleet':
         return <AdminLiveFleet />;
+      case 'demo_simulator':
+        return <AdminDemoSimulator />;
       case 'routes':
         return <AdminRouteMgmt />;
       case 'buses':
@@ -63,6 +67,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ defaultView = 'o
         return <AdminIncidentsAnnouncements modeType="incidents" />;
       case 'announcements':
         return <AdminIncidentsAnnouncements modeType="announcements" />;
+      case 'data_cleanup':
+        return <AdminDataCleanup />;
       default:
         return <AdminOverview onNavigateView={handleSelectView} />;
     }

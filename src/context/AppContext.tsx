@@ -24,6 +24,7 @@ interface AppContextType {
   markNotificationRead: (id: string) => void;
   userLocation: { lat: number; lng: number; name: string };
   refreshData: () => Promise<void>;
+  clearAllAppData: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -77,7 +78,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const userLocation = {
     lat: 19.0975,
     lng: 74.7420,
-    name: 'Central Bus Stand, Ahilyanagar',
+    name: 'Central Bus Stand',
   };
 
   // Sync state changes to localStorage
@@ -102,11 +103,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newTicket: Ticket = {
       ...data,
       id: `tkt-${Date.now()}-${randomId}`,
-      ticketCode: `ANC-2026-${randomId}`,
+      ticketCode: `NST-2026-${randomId}`,
       purchaseTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       validUntil: 'Today, 11:59 PM',
       status: 'active',
-      qrData: `AHILYANAGAR-BUS-TICKET-${randomId}-ACTIVE`,
+      qrData: `NAGARST-BUS-TICKET-${randomId}-ACTIVE`,
     };
     setTickets((prev) => [newTicket, ...prev]);
     return newTicket;
@@ -121,11 +122,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newPass: BusPass = {
       ...data,
       id: `pass-${Date.now()}-${randomId}`,
-      passCode: `ANC-PASS-${randomId}`,
+      passCode: `NST-PASS-${randomId}`,
       validFrom: new Date().toLocaleDateString(undefined, { dateStyle: 'medium' }),
       status: 'active',
       daysRemaining,
-      qrData: `AHILYANAGAR-BUS-PASS-${randomId}-ACTIVE`,
+      qrData: `NAGARST-BUS-PASS-${randomId}-ACTIVE`,
     };
 
     setPasses((prev) => [newPass, ...prev]);
@@ -153,6 +154,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   };
 
+  const clearAllAppData = () => {
+    setTickets([]);
+    setPasses([]);
+    setFavorites([]);
+    setNotifications([]);
+    setBuses([]);
+    setRoutes([]);
+    setStops([]);
+    setSelectedBusId(null);
+    setSelectedStopId(null);
+    setSelectedRouteId(null);
+    try {
+      localStorage.removeItem('nagarst_tickets');
+      localStorage.removeItem('nagarst_passes');
+      localStorage.removeItem('nagarst_favorites');
+      localStorage.removeItem('nagarst_notifications');
+      localStorage.removeItem('nagarst_incidents');
+      localStorage.removeItem('nagarst_conductor_shift');
+    } catch (e) {
+      console.warn('Failed clearing localStorage:', e);
+    }
+  };
+
   // --- COMPREHENSIVE SUPABASE REAL-TIME & DATABASE FETCH ---
   const refreshData = async () => {
     try {
@@ -163,7 +187,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: s.id,
           name: s.stop_name || 'Stop',
           nameMarathi: s.stop_name || 'थांबा',
-          area: 'Ahilyanagar',
+          area: 'City Center',
           lat: s.lat || 19.0975,
           lng: s.lng || 74.7420,
           lines: [],
@@ -174,6 +198,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           liveArrivals: []
         }));
         setStops(formattedStops as BusStop[]);
+      } else {
+        setStops([]);
       }
 
       // 2. Fetch all real Routes with route_stops from Supabase
@@ -234,6 +260,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             : []
         }));
         setRoutes(formattedRoutes as unknown as Route[]);
+      } else {
+        setRoutes([]);
       }
 
       // 3. Fetch all real Buses from 'buses' table and merge with 'live_locations'
@@ -259,33 +287,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (dbBuses) {
         const mappedBuses = dbBuses.map((b: any) => {
           const live = liveLocMap.get(b.id);
+          let cached: any = null;
+          try {
+            const raw = localStorage.getItem('nagarst_live_bus_' + b.id);
+            if (raw) cached = JSON.parse(raw);
+          } catch (_) {}
+
           return {
             id: b.id,
             busNumber: b.bus_number,
             plateNumber: b.plate_number,
-            routeId: live?.trips?.route_id || '',
-            routeNumber: live?.trips?.routes?.route_number || '',
-            routeName: live?.trips?.routes ? `${live.trips.routes.origin} - ${live.trips.routes.destination}` : 'Standby / In Service',
+            routeId: cached?.routeId || live?.trips?.route_id || '',
+            routeNumber: cached?.routeNumber || live?.trips?.routes?.route_number || '',
+            routeName: cached?.routeName || (live?.trips?.routes ? `${live.trips.routes.origin} - ${live.trips.routes.destination}` : 'Standby / In Service'),
             origin: live?.trips?.routes?.origin || 'Depot',
             destination: live?.trips?.routes?.destination || 'Depot',
             currentStopId: 'stop1',
-            currentStopName: 'Ahilyanagar Depot',
+            currentStopName: cached?.nextStopName || 'Central Depot',
             nextStopId: 'stop2',
-            nextStopName: 'Approaching Corridor',
+            nextStopName: cached?.nextStopName || 'Approaching Corridor',
             etaToNextMinutes: 4,
-            speedKmh: live?.speed_kmh || 0,
-            occupancy: 'low' as const,
-            status: live ? ('on_time' as const) : ('on_time' as const),
-            lat: live?.lat || 19.0975,
-            lng: live?.lng || 74.7420,
-            heading: 0,
-            driverName: 'Assigned Driver',
+            speedKmh: cached?.speedKmh ?? (live?.speed_kmh || 0),
+            occupancy: (cached?.occupancy || 'moderate') as Bus['occupancy'],
+            status: (cached?.status || (live ? 'on_time' : 'on_time')) as Bus['status'],
+            lat: cached?.lat ?? (live?.lat || 19.0975),
+            lng: cached?.lng ?? (live?.lng || 74.7420),
+            heading: cached?.heading || live?.heading || 0,
+            driverName: cached?.driverName || 'Assigned Driver',
             conductorName: 'Duty Conductor',
             busType: b.type || 'Standard City',
-            lastUpdated: live?.updated_at || b.created_at
+            lastUpdated: cached?.lastUpdated || live?.updated_at || b.created_at
           };
         });
         setBuses(mappedBuses as Bus[]);
+      } else {
+        setBuses([]);
       }
     } catch (err) {
       console.error('Failed to load database records:', err);
@@ -295,7 +331,64 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     refreshData();
 
-    // Socket.IO Real-time Connection
+    // Central updater for incoming telemetry across any channel
+    const handleBusUpdate = (updatedBus: Partial<Bus>) => {
+      if (!updatedBus || !updatedBus.id) return;
+      setBuses(prevBuses => {
+        const index = prevBuses.findIndex(b => b.id === updatedBus.id);
+        if (index !== -1) {
+          const newBuses = [...prevBuses];
+          newBuses[index] = { ...newBuses[index], ...updatedBus, lastUpdated: new Date().toISOString() };
+          return newBuses;
+        } else {
+          return [...prevBuses, { ...updatedBus, lastUpdated: new Date().toISOString() } as Bus];
+        }
+      });
+    };
+
+    const handleBusOffline = (busId: string) => {
+      setBuses(prev => prev.filter(b => b.id !== busId));
+    };
+
+    // Load active demo bus if one is running in storage
+    try {
+      const demoRaw = localStorage.getItem('nagarst_demo_bus');
+      if (demoRaw) {
+        handleBusUpdate(JSON.parse(demoRaw));
+      }
+    } catch (_) {}
+
+    // 1. Cross-Tab Fast Channel (Zero Latency)
+    let broadcastChannel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        broadcastChannel = new BroadcastChannel('nagarst_bus_telemetry');
+        broadcastChannel.onmessage = (event) => {
+          if (event.data?.type === 'locationUpdate' && event.data?.data) {
+            handleBusUpdate(event.data.data);
+          } else if (event.data?.type === 'busOffline' && event.data?.busId) {
+            handleBusOffline(event.data.busId);
+          }
+        };
+      } catch (e) {
+        console.warn('BroadcastChannel not supported:', e);
+      }
+    }
+
+    // 2. Storage event fallback for cross-tab updates
+    const onStorage = (e: StorageEvent) => {
+      if (e.key?.startsWith('nagarst_live_bus_') && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          handleBusUpdate(parsed);
+        } catch (_) {}
+      } else if (e.key === 'nagarst_demo_bus' && !e.newValue) {
+        handleBusOffline('demo-bus-sim-01');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+
+    // 3. Socket.IO Real-time Connection
     const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
     let socketInstance: any = null;
 
@@ -303,16 +396,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       socketInstance = io(SOCKET_URL);
 
       socketInstance.on('locationUpdate', (updatedBus: Partial<Bus>) => {
-        setBuses(prevBuses => {
-          const index = prevBuses.findIndex(b => b.id === updatedBus.id);
-          if (index !== -1) {
-            const newBuses = [...prevBuses];
-            newBuses[index] = { ...newBuses[index], ...updatedBus, lastUpdated: new Date().toISOString() };
-            return newBuses;
-          } else {
-            return [...prevBuses, { ...updatedBus, lastUpdated: new Date().toISOString() } as Bus];
-          }
-        });
+        handleBusUpdate(updatedBus);
+      });
+
+      socketInstance.on('busOffline', (busId: string) => {
+        handleBusOffline(busId);
       });
 
       socketInstance.on('initialLocations', (activeBuses: Partial<Bus>[]) => {
@@ -322,6 +410,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const index = newBuses.findIndex(b => b.id === updatedBus.id);
             if (index !== -1) {
               newBuses[index] = { ...newBuses[index], ...updatedBus };
+            } else if (updatedBus.isDemo || updatedBus.id?.startsWith('demo-')) {
+              newBuses.push(updatedBus as Bus);
             }
           });
           return newBuses;
@@ -329,8 +419,63 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     });
 
+    // 4. Supabase Realtime Channel on live_locations table
+    const dbChannel = supabase
+      .channel('realtime_live_locations')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_locations' }, (payload) => {
+        if (payload.new && (payload.new as any).bus_id) {
+          const loc = payload.new as any;
+          setBuses(prev => prev.map(bus => {
+            if (bus.id === loc.bus_id) {
+              return {
+                ...bus,
+                lat: loc.lat,
+                lng: loc.lng,
+                speedKmh: loc.speed_kmh || 0,
+                heading: loc.heading || 0,
+                lastUpdated: loc.updated_at || new Date().toISOString()
+              };
+            }
+            return bus;
+          }));
+        }
+      })
+      .subscribe();
+
+    // 5. Periodic polling fallback every 3.5 seconds
+    const pollTimer = setInterval(async () => {
+      try {
+        const { data: latestLocs } = await supabase.from('live_locations').select('*');
+        if (latestLocs && latestLocs.length > 0) {
+          setBuses(prev => {
+            let hasChanges = false;
+            const updated = prev.map(b => {
+              const match = latestLocs.find((l: any) => l.bus_id === b.id);
+              if (match && (match.lat !== b.lat || match.lng !== b.lng || match.speed_kmh !== b.speedKmh)) {
+                hasChanges = true;
+                return {
+                  ...b,
+                  lat: match.lat,
+                  lng: match.lng,
+                  speedKmh: match.speed_kmh || 0,
+                  heading: match.heading || 0,
+                  lastUpdated: match.updated_at || new Date().toISOString()
+                };
+              }
+              return b;
+            });
+            return hasChanges ? updated : prev;
+          });
+        }
+      } catch (_) {}
+    }, 3500);
+
     return () => {
+      if (broadcastChannel) broadcastChannel.close();
+      window.removeEventListener('storage', onStorage);
       if (socketInstance) socketInstance.disconnect();
+      supabase.removeChannel(dbChannel);
+      clearInterval(pollTimer);
     };
   }, []);
 
@@ -358,6 +503,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         markNotificationRead,
         userLocation,
         refreshData,
+        clearAllAppData,
       }}
     >
       {children}

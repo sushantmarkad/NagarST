@@ -87,3 +87,20 @@ export async function fetchOSRMRoute(stops: LatLng[]): Promise<LatLng[]> {
     return [];
   }
 }
+
+/**
+ * Calculates compass heading (bearing in degrees 0-360) from p1 to p2.
+ */
+export function getBearing(p1: LatLng, p2: LatLng): number {
+  const lat1 = (p1.lat * Math.PI) / 180;
+  const lat2 = (p2.lat * Math.PI) / 180;
+  const dLng = ((p2.lng - p1.lng) * Math.PI) / 180;
+
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  const brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return (brng + 360) % 360;
+}
+

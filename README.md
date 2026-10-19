@@ -1,7 +1,7 @@
-# 🚌 Ahilyanagar City Bus (अहिल्यानगर शहर बस सेवा)
+# 🚌 NagarST (नगर एसटी) - Smart City Bus Transit Platform
 
 > **Next-Gen Smart City Transit Management System & Commuter Mobility Platform**  
-> *Empowering Ahilyanagar (Ahmednagar) with real-time bus tracking, digital QR ticketing, automated pass management, conductor/driver consoles, and AI-powered fleet analytics.*
+> *Empowering small and medium cities with real-time bus tracking, digital QR ticketing, automated pass management, conductor/driver consoles, and AI-powered fleet analytics.*
 
 ---
 
@@ -26,7 +26,7 @@
 - [Project Architecture & Directory Structure](#-project-architecture--directory-structure)
 - [Getting Started](#-getting-started)
 - [Demo Credentials & Role Access](#-demo-credentials--role-access)
-- [Key Ahilyanagar Transit Routes](#-key-ahilyanagar-transit-routes)
+- [Key Transit Routes](#-key-transit-routes)
 - [Scripts & Quality Assurance](#-scripts--quality-assurance)
 - [License](#-license)
 
@@ -34,7 +34,7 @@
 
 ## 🌐 Overview
 
-**Ahilyanagar City Bus** is a comprehensive, modern Intelligent Transportation System (ITS) designed to modernize public transit in Ahilyanagar (Ahmednagar), Maharashtra. 
+**NagarST** is a comprehensive, modern Intelligent Transportation System (ITS) designed to modernize public transit in small and medium cities. 
 
 The application bridges the gap between commuters, transit crews, and municipal administrative authorities by offering:
 - **For Commuters**: Real-time live bus tracking on interactive Leaflet maps, instant journey planning across local hubs, digital QR tickets, and hassle-free bus pass applications.

@@ -14,7 +14,9 @@ import {
   AlertTriangle,
   Megaphone,
   BarChart3,
-  Sparkles
+  Sparkles,
+  Play,
+  Trash2
 } from 'lucide-react';
 
 export type AdminView =
@@ -31,7 +33,9 @@ export type AdminView =
   | 'analytics'
   | 'ai_insights'
   | 'announcements'
-  | 'settings';
+  | 'settings'
+  | 'demo_simulator'
+  | 'data_cleanup';
 
 interface AdminLayoutProps {
   currentView: AdminView;
@@ -44,7 +48,7 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
 
   const getRoleTitle = (role?: UserRole) => {
     switch (role) {
-      case 'CITY_ADMIN': return 'Ahilyanagar Municipal City Admin';
+      case 'CITY_ADMIN': return 'NagarST City Admin';
       case 'SUPER_ADMIN': return 'System Root Super Admin';
       case 'OPERATIONS_MANAGER': return 'Operations Dispatch Manager';
       default: return 'Transit Undertaking Authority';
@@ -54,6 +58,7 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
   const allNavItems: { view: AdminView; label: string; icon: any; allowedRoles?: UserRole[] }[] = [
     { view: 'overview', label: 'Operations Overview', icon: LayoutDashboard },
     { view: 'live_fleet', label: 'Live Fleet Radar', icon: MapPin },
+    { view: 'demo_simulator', label: 'GPS Demo Simulator', icon: Play, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'] },
     { view: 'buses', label: 'Vehicle Fleet', icon: Bus, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
     { view: 'routes', label: 'Route Corridors', icon: Route, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
     { view: 'schedules', label: 'Timetables & Shifts', icon: Calendar, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'] },
@@ -63,6 +68,7 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
     { view: 'announcements', label: 'Passenger Alerts', icon: Megaphone },
     { view: 'analytics', label: 'Transit Analytics', icon: BarChart3 },
     { view: 'ai_insights', label: 'AI Optimization', icon: Sparkles },
+    { view: 'data_cleanup', label: 'System Data Reset', icon: Trash2, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
   ];
 
   const filteredNav = allNavItems.filter((item) => {
@@ -85,7 +91,7 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
       subtitle={getRoleTitle(user?.role)}
       headerIcon={Building}
     >
-      <div className="flex-1 w-full h-full flex flex-col min-h-0 relative overflow-hidden">
+      <div className="flex-1 w-full min-h-full flex flex-col min-h-0 relative overflow-y-auto">
         {children}
       </div>
     </SharedLayout>

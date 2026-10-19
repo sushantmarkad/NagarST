@@ -118,8 +118,8 @@ export const MOCK_BUS_STOPS: BusStop[] = [
   },
   {
     id: 'stop-railway',
-    name: 'Ahilyanagar Railway Station',
-    nameMarathi: 'अहिल्यानगर रेल्वे स्टेशन',
+    name: 'Central Railway Station',
+    nameMarathi: 'मध्यवर्ती रेल्वे स्टेशन',
     area: 'Station Road South',
     lat: 19.0810,
     lng: 74.7380,

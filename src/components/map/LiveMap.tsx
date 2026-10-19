@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import type { Bus, BusStop, Route } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
 import { MapPin, Crosshair, Loader2, AlertCircle, X, Navigation } from 'lucide-react';
+import { createModernBusIcon } from './busMarkerIcon';
 
 interface LiveMapProps {
   buses?: Bus[];
@@ -188,7 +189,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    // Ahilyanagar Center coordinates
+    // City Transit Center coordinates
     const map = L.map(containerRef.current, {
       center: [19.0975, 74.7420],
       zoom: 13,
@@ -198,7 +199,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     // OpenStreetMap - Free civic tile theme (No API key required)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors &copy; Ahilyanagar Municipal Transport',
+      attribution: '&copy; OpenStreetMap contributors &copy; NagarST Transit',
     }).addTo(map);
 
     map.on('dragstart', () => {
@@ -381,55 +382,39 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
     buses.forEach((bus) => {
       const isSelected = selectedBusId === bus.id;
+      const isDemo = Boolean(bus.isDemo || bus.id?.startsWith('demo-'));
 
-      const busIcon = L.divIcon({
-        className: 'custom-bus-icon',
-        html: `
-          <div style="position: relative;">
-            ${isSelected ? '<div class="bus-marker-pulse" style="position: absolute; inset: -4px; border-radius: 12px; background: rgba(120,71,203,0.3);"></div>' : ''}
-            <div style="
-              display: flex;
-              align-items: center;
-              gap: 4px;
-              padding: 4px 8px;
-              background-color: ${isSelected ? '#7847CB' : '#1e293b'};
-              color: white;
-              font-weight: 700;
-              font-size: 11px;
-              border-radius: 8px;
-              box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-              border: 1.5px solid white;
-              white-space: nowrap;
-            ">
-              <span style="font-size: 12px;">🚌</span>
-              <span>${bus.busNumber}</span>
-            </div>
-          </div>
-        `,
-        iconSize: [60, 26],
-        iconAnchor: [30, 13],
+      const busIcon = createModernBusIcon(bus.busNumber, {
+        isSelected,
+        speedKmh: bus.speedKmh,
+        status: bus.status,
+        heading: bus.heading,
+        isDemo
       });
 
       const key = `bus-${bus.id}`;
+      const tooltipHtml = isDemo ? `
+        <div style="text-align: center;">
+          <span style="background: #F59E0B; color: #000; font-size: 9px; font-weight: 900; padding: 1px 4px; border-radius: 4px;">DEMO</span>
+          <b style="color: #F59E0B; margin-left: 4px;">${bus.busNumber}</b><br/>
+          <span style="font-size: 10px; color: #64748b;">${bus.speedKmh} km/h • Simulated Route</span>
+        </div>
+      ` : `
+        <div style="text-align: center;">
+          <b style="color: #7847CB;">${bus.busNumber}</b><br/>
+          <span style="font-size: 10px; color: #64748b;">${bus.speedKmh} km/h • ${bus.status}</span>
+        </div>
+      `;
+
       if (!markersRef.current[key]) {
         const marker = L.marker([bus.lat, bus.lng], { icon: busIcon }).addTo(map);
         marker.on('click', () => onSelectBus?.(bus));
-        marker.bindTooltip(`
-          <div style="text-align: center;">
-            <b style="color: #7847CB;">${bus.busNumber}</b><br/>
-            <span style="font-size: 10px; color: #64748b;">${bus.speedKmh} km/h • ${bus.status}</span>
-          </div>
-        `, { direction: 'top', offset: [0, -10], className: 'custom-tooltip' });
+        marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -10], className: 'custom-tooltip' });
         markersRef.current[key] = marker;
       } else {
         markersRef.current[key].setIcon(busIcon);
         markersRef.current[key].setLatLng([bus.lat, bus.lng]);
-        markersRef.current[key].setTooltipContent(`
-          <div style="text-align: center;">
-            <b style="color: #7847CB;">${bus.busNumber}</b><br/>
-            <span style="font-size: 10px; color: #64748b;">${bus.speedKmh} km/h • ${bus.status}</span>
-          </div>
-        `);
+        markersRef.current[key].setTooltipContent(tooltipHtml);
       }
 
       if (isSelected && isFollowingRef.current) {
@@ -483,7 +468,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           </button>
         )}
 
-        {/* Ahilyanagar Network Recenter Button */}
+        {/* NagarST Network Recenter Button */}
         <button 
           type="button"
           onClick={(e) => {

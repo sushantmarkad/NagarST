@@ -89,7 +89,7 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
             onChange(e.target.value);
             setIsOpen(true);
           }}
-          placeholder={placeholder || (language === 'mr' ? 'थांबा शोधा...' : 'Search stop in Ahilyanagar...')}
+          placeholder={placeholder || (language === 'mr' ? 'थांबा शोधा...' : 'Search stop in NagarST network...')}
           className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7847CB] focus:bg-white transition-all"
         />
         {query && (
@@ -118,7 +118,7 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
           </button>
 
           <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            {language === 'mr' ? 'अहिल्यानगरमधील अधिकृत बस थांबे' : 'Official Ahilyanagar Bus Stops'} ({filteredLocations.length})
+            {language === 'mr' ? 'अधिकृत बस थांबे' : 'Official Bus Stops'} ({filteredLocations.length})
           </div>
 
           {filteredLocations.length > 0 ? (

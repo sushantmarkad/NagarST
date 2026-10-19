@@ -33,7 +33,7 @@ export const Favorites: React.FC = () => {
             {t('Saved Places & Frequent Stops', 'माझे आवडते थांबे व ठिकाणे')}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            {t('Quick 1-tap access to your daily Ahilyanagar destinations', 'तुमच्या दैनंदिन प्रवासाच्या ठिकाणांवर त्वरित जा')}
+            {t('Quick 1-tap access to your daily destinations', 'तुमच्या दैनंदिन प्रवासाच्या ठिकाणांवर त्वरित जा')}
           </p>
         </div>
 

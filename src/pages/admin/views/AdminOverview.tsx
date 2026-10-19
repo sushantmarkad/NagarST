@@ -15,7 +15,8 @@ import {
   Sparkles,
   TrendingUp,
   ShieldCheck,
-  Zap
+  Zap,
+  Trash2
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -48,7 +49,7 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
       ] = await Promise.all([
         supabase.from('buses').select('*', { count: 'exact', head: true }),
         supabase.from('routes').select('*', { count: 'exact', head: true }),
-        supabase.from('driver_credentials').select('*', { count: 'exact', head: true }),
+        supabase.from('driver_credentials').select('*', { count: 'exact', head: true }).neq('status', 'Deleted'),
         supabase.from('trips').select('*', { count: 'exact', head: true }).eq('status', 'Active'),
       ]);
 
@@ -81,13 +82,13 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
         <div className="max-w-2xl relative z-10">
           <div className="flex items-center gap-2 mb-2">
             <Badge variant="brand" size="md" dot>
-              Ahilyanagar Municipal Operations Room
+              NagarST Operations Room
             </Badge>
             <span className="text-xs font-semibold text-slate-500">Live Telemetry Feed</span>
           </div>
 
           <h1 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
-            Ahilyanagar Urban Transit Control Center
+            NagarST Transit Control Center
           </h1>
           <p className="text-xs md:text-sm text-slate-600 mt-1.5 leading-relaxed">
             Real-time fleet monitoring, route corridor management, driver dispatch, and public citizen service announcements.
@@ -222,7 +223,7 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <h3 className="text-sm md:text-base font-bold text-slate-900">
-                Live Active Vehicles on Ahilyanagar Roads
+                Live Active Vehicles on City Roads
               </h3>
               <p className="text-xs text-slate-500">Real-time driver location and speed telemetry</p>
             </div>
@@ -306,6 +307,18 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
                 <span>Assign Driver Shift & Bus</span>
                 <Users className="w-4 h-4 text-slate-400" />
               </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('data_cleanup')}
+                className="w-full p-3 rounded-2xl bg-rose-50/80 hover:bg-rose-100/80 flex items-center justify-between text-left text-xs font-bold text-rose-700 transition-colors border border-rose-200/80"
+              >
+                <span className="flex items-center gap-2">
+                  <Trash2 className="w-4 h-4 text-rose-600" />
+                  System Data Reset & Cleanup
+                </span>
+                <ArrowUpRight className="w-4 h-4 text-rose-400" />
+              </button>
             </div>
           </div>
 
@@ -316,7 +329,7 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
               <h4 className="text-xs font-bold text-slate-900">Green City Transit Undertaking</h4>
             </div>
             <p className="text-xs text-slate-600 leading-relaxed">
-              70% of Ahilyanagar municipal fleet operates on zero-emission electric powertrains, reducing urban particulate smog.
+              70% of NagarST fleet operates on zero-emission electric powertrains, reducing urban particulate smog.
             </p>
             <div className="pt-2 border-t border-purple-200/60 flex items-center justify-between text-xs">
               <span className="font-semibold text-slate-600">Daily Carbon Offset</span>

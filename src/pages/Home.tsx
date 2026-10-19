@@ -80,7 +80,7 @@ export const Home: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100/80 text-[#7847CB] text-xs font-bold border border-purple-200 shadow-2xs">
               <Sparkles className="w-3.5 h-3.5 text-[#7847CB]" />
-              <span>{t('Ahilyanagar Municipal City Transit', 'अहिल्यानगर महानगरपालिका शहर बस')}</span>
+              <span>{t('NagarST City Transit', 'नगर एसटी शहर बस')}</span>
             </span>
 
             <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200">
@@ -94,12 +94,12 @@ export const Home: React.FC = () => {
           {/* Hero Title */}
           <div>
             <h1 className="text-xl sm:text-2xl md:text-4xl font-black text-slate-900 tracking-tight leading-tight">
-              {t('Smart, Reliable Urban Transit Across Ahilyanagar', 'अहिल्यानगर शहरात सुलभ, जलद व सुरक्षित प्रवास')}
+              {t('Smart, Reliable Urban Transit Across Your City', 'शहरात सुलभ, जलद व सुरक्षित प्रवास')}
             </h1>
             <p className="mt-2 text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl font-medium">
               {t(
                 'Track real-time GPS telemetry, book instant cashless QR tickets, check corridor timetables, and navigate city routes effortlessly.',
-                'रिअल-टाइम जीपीएस बस ट्रॅकिंग, कॅशलेस डिजिटल क्यूआर तिकीट आणि अहिल्यानगर शहर बस वेळापत्रक एकाच ठिकाणी.'
+                'रिअल-टाइम जीपीएस बस ट्रॅकिंग, कॅशलेस डिजिटल क्यूआर तिकीट आणि नगर एसटी बस वेळापत्रक एकाच ठिकाणी.'
               )}
             </p>
           </div>
@@ -438,7 +438,7 @@ export const Home: React.FC = () => {
             </p>
           </section>
 
-          {/* Major Ahilyanagar Transit Hubs */}
+          {/* Major Transit Hubs */}
           <section className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 shadow-xs">
             <h3 className="text-xs sm:text-sm font-bold text-slate-900 mb-3 flex items-center justify-between">
               <span>{t('Major Transit Hubs', 'प्रमुख बस थांबे')}</span>
@@ -461,7 +461,7 @@ export const Home: React.FC = () => {
                         {stop.name}
                       </p>
                       <p className="text-[10px] text-slate-500 truncate">
-                        {stop.nameMarathi || stop.area || 'Ahilyanagar Municipal Area'}
+                        {stop.nameMarathi || stop.area || 'City Transit Area'}
                       </p>
                     </div>
                   </div>

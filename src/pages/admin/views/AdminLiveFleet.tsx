@@ -12,11 +12,13 @@ import {
   Users,
   Radio,
   Send,
-  Sparkles
+  Sparkles,
+  Play
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
+import { DemoSimulatorPanel } from '../../../components/admin/DemoSimulatorPanel';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
 
@@ -25,6 +27,7 @@ export const AdminLiveFleet: React.FC = () => {
   const toast = useToast();
   const prompt = usePrompt();
   const [selectedBus, setSelectedBus] = useState<BusType | null>(buses.length > 0 ? buses[0] : null);
+  const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
 
   const handleSendDispatch = async () => {
     if (!selectedBus) return;
@@ -78,7 +81,7 @@ export const AdminLiveFleet: React.FC = () => {
           <div>
             <span className="text-slate-900 font-bold block text-xs md:text-sm leading-tight">Live Urban Fleet Radar</span>
             <span className="text-[11px] text-slate-500 font-normal">
-              {buses.length} active GPS transponder{buses.length === 1 ? '' : 's'} broadcasting in Ahilyanagar
+              {buses.length} active GPS transponder{buses.length === 1 ? '' : 's'} broadcasting in NagarST network
             </span>
           </div>
         </div>
@@ -96,8 +99,37 @@ export const AdminLiveFleet: React.FC = () => {
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
             <span className="text-slate-700">Off Route</span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setIsSimulatorOpen(!isSimulatorOpen)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-sm transition-all active:scale-95 ml-1"
+          >
+            <Play className="w-3.5 h-3.5 fill-slate-950" />
+            <span>GPS Simulator</span>
+          </button>
         </div>
       </div>
+
+      {/* FLOATING DEMO SIMULATOR MODAL / DRAWER */}
+      {isSimulatorOpen && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg">
+            <button
+              type="button"
+              onClick={() => setIsSimulatorOpen(false)}
+              className="absolute -top-3 -right-3 z-30 p-2 rounded-full bg-slate-800 text-white hover:bg-slate-700 shadow-lg border border-slate-700"
+              title="Close Simulator"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <DemoSimulatorPanel onSelectBusOnMap={(id) => {
+              const b = buses.find(x => x.id === id);
+              if (b) setSelectedBus(b);
+            }} />
+          </div>
+        </div>
+      )}
 
       {/* 3. FLOATING BUS INFO DRAWER (Mobile: Bottom Drawer with handle, Desktop: Top-Right Floating Card) */}
       {selectedBus && (

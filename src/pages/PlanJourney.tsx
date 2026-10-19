@@ -123,7 +123,7 @@ export const PlanJourney: React.FC = () => {
                 {t('Plan Your Bus Journey', 'तुमच्या प्रवासाचे नियोजन करा')}
               </h2>
               <p className="text-xs text-slate-500 font-medium">
-                {t('Intelligent routing across Ahilyanagar municipal transit corridors', 'अहिल्यानगर परिवहन जाळे')}
+                {t('Intelligent routing across NagarST transit corridors', 'नगर एसटी परिवहन जाळे')}
               </p>
             </div>
           </div>

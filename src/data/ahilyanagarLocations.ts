@@ -8,7 +8,7 @@ export interface TransitLocation {
   popular: boolean;
 }
 
-export const AHILYANAGAR_LOCATIONS: TransitLocation[] = [
+export const NAGAR_LOCATIONS: TransitLocation[] = [
   {
     id: 'stop-cbs',
     name: 'Central Bus Stand (CBS)',
@@ -38,8 +38,8 @@ export const AHILYANAGAR_LOCATIONS: TransitLocation[] = [
   },
   {
     id: 'stop-railway',
-    name: 'Ahilyanagar Railway Station',
-    nameMarathi: 'अहिल्यानगर रेल्वे स्टेशन',
+    name: 'Central Railway Station',
+    nameMarathi: 'मध्यवर्ती रेल्वे स्टेशन',
     category: 'hub',
     lat: 19.0810,
     lng: 74.7380,
@@ -127,3 +127,4 @@ export const AHILYANAGAR_LOCATIONS: TransitLocation[] = [
     popular: false,
   },
 ];
+export const AHILYANAGAR_LOCATIONS = NAGAR_LOCATIONS;

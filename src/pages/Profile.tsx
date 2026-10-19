@@ -104,7 +104,7 @@ export const Profile: React.FC = () => {
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-lg md:text-xl font-extrabold text-slate-900 truncate">
-                  {user?.name || 'Ahilyanagar Passenger'}
+                  {user?.name || 'NagarST Passenger'}
                 </h2>
                 <Badge variant={user?.role === 'SUPER_ADMIN' ? 'danger' : user?.role === 'CITY_ADMIN' ? 'brand' : 'success'} size="sm">
                   {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'CITY_ADMIN' ? 'City Admin' : 'Verified Citizen'}
@@ -113,7 +113,7 @@ export const Profile: React.FC = () => {
 
               <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                 <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="truncate">{user?.email || 'citizen@ahilyanagar.gov.in'}</span>
+                <span className="truncate">{user?.email || 'citizen@nagarst.in'}</span>
               </div>
               <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
                 ID: {user?.id}

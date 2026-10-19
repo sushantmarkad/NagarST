@@ -86,6 +86,7 @@ export interface Bus {
   conductorName: string;
   busType: BusType;
   lastUpdated: string;
+  isDemo?: boolean;
 }
 
 export interface Ticket {
