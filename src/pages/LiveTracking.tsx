@@ -29,7 +29,7 @@ import { Button } from '../components/ui/Button';
 import type { BusStop, Bus, Route as RouteType } from '../types';
 import { getDistance } from '../utils/routing';
 import { MOCK_ROUTES } from '../data/mockRoutes';
-import { AVAILABLE_DEMO_ROUTES } from '../utils/demoSimulatorEngine';
+import { AVAILABLE_DEMO_ROUTES, getDemoSimulatorState } from '../utils/demoSimulatorEngine';
 
 export const LiveTracking: React.FC = () => {
   const { t } = useLanguage();
@@ -63,13 +63,49 @@ export const LiveTracking: React.FC = () => {
   const selectedBusRoute = useMemo<RouteType | null>(() => {
     if (!selectedBus) return null;
 
-    // 1. Direct DB or mock route match
+    // 1. Check if it's a simulated demo bus with active corridor & marked terminal pins
+    const simState = getDemoSimulatorState();
+    const demoRuntime = simState.buses[selectedBus.id];
+    if (demoRuntime && demoRuntime.def.stops && demoRuntime.def.stops.length > 0) {
+      return {
+        id: demoRuntime.def.routeId,
+        routeNumber: demoRuntime.def.routeNumber,
+        name: demoRuntime.def.routeName,
+        nameMarathi: demoRuntime.def.routeName,
+        origin: demoRuntime.def.origin,
+        destination: demoRuntime.def.destination,
+        firstBus: '06:00 AM',
+        lastBus: '10:00 PM',
+        frequencyMinutes: 15,
+        baseFare: 10,
+        maxFare: 25,
+        totalStops: demoRuntime.def.stops.length,
+        durationMinutes: 30,
+        color: demoRuntime.def.color,
+        activeBusesCount: 1,
+        status: 'normal' as const,
+        stops: demoRuntime.def.stops.map((s, idx) => ({
+          stopId: s.id,
+          stopName: s.name,
+          stopNameMarathi: s.name,
+          sequence: idx + 1,
+          fareFromOrigin: idx * 5,
+          estimatedMinutesFromOrigin: idx * 5,
+          isMajorHub: idx === 0 || idx === demoRuntime.def.stops.length - 1,
+          lat: s.lat,
+          lng: s.lng,
+        })),
+        route_path: demoRuntime.def.waypoints,
+      };
+    }
+
+    // 2. Direct DB or mock route match
     const directRoute = allRoutes.find((r) => r.id === selectedBus.routeId);
     if (directRoute && directRoute.stops && directRoute.stops.length > 0) {
       return directRoute;
     }
 
-    // 2. Demo Route Presets match
+    // 3. Demo Route Presets match
     const preset = AVAILABLE_DEMO_ROUTES.find(
       (p) => p.id === selectedBus.routeId || selectedBus.routeName?.includes(p.routeNumber)
     );
@@ -111,11 +147,51 @@ export const LiveTracking: React.FC = () => {
   // Routes to display on map: shows all active corridor paths
   const routesToDisplay = useMemo(() => {
     if (selectedBusRoute) return [selectedBusRoute];
-    if (filterRoute !== 'all') return allRoutes.filter((r) => r.id === filterRoute);
+
+    // Collect active demo routes from simulator runtime
+    const demoSim = getDemoSimulatorState();
+    const demoRoutes: RouteType[] = Object.values(demoSim.buses)
+      .filter((b) => b.isRunning)
+      .map((b) => ({
+        id: b.def.routeId,
+        routeNumber: b.def.routeNumber,
+        name: b.def.routeName,
+        nameMarathi: b.def.routeName,
+        origin: b.def.origin,
+        destination: b.def.destination,
+        firstBus: '06:00 AM',
+        lastBus: '10:00 PM',
+        frequencyMinutes: 15,
+        baseFare: 10,
+        maxFare: 25,
+        totalStops: b.def.stops.length,
+        durationMinutes: 30,
+        color: b.def.color,
+        activeBusesCount: 1,
+        status: 'normal' as const,
+        stops: b.def.stops.map((s, idx) => ({
+          stopId: s.id,
+          stopName: s.name,
+          stopNameMarathi: s.name,
+          sequence: idx + 1,
+          fareFromOrigin: idx * 5,
+          estimatedMinutesFromOrigin: idx * 5,
+          isMajorHub: idx === 0 || idx === b.def.stops.length - 1,
+          lat: s.lat,
+          lng: s.lng,
+        })),
+        route_path: b.def.waypoints,
+      }));
+
+    if (filterRoute !== 'all') {
+      const dbFiltered = allRoutes.filter((r) => r.id === filterRoute);
+      const demoFiltered = demoRoutes.filter((r) => r.id === filterRoute);
+      return [...demoFiltered, ...dbFiltered];
+    }
 
     const activeRouteIds = new Set(filteredBuses.map((b) => b.routeId).filter(Boolean));
     const matched = allRoutes.filter((r) => activeRouteIds.has(r.id));
-    return matched.length > 0 ? matched : allRoutes;
+    return [...demoRoutes, ...(matched.length > 0 ? matched : allRoutes)];
   }, [selectedBusRoute, filterRoute, allRoutes, filteredBuses]);
 
   // Calculate nearest stop to the commuter's live location

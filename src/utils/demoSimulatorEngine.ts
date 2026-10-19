@@ -651,17 +651,64 @@ export function setBusDelay(busId: string, delayMinutes: number) {
 }
 
 /**
- * Assign a specific route corridor to a demo bus (before starting or dynamically)
+ * Assign a specific route corridor and marked terminal pins to a demo bus
  */
-export function setBusAssignedRoute(busId: string, routePresetId: string, isReverse = false) {
+export function setBusAssignedRoute(
+  busId: string,
+  routePresetId: string,
+  isReverse = false,
+  startTerminalId?: string,
+  endTerminalId?: string
+) {
   const runtime = runtimeStore[busId];
   const preset = AVAILABLE_DEMO_ROUTES.find(r => r.id === routePresetId);
   if (!runtime || !preset) return;
 
-  const stops = isReverse ? [...preset.stops].reverse() : [...preset.stops];
-  const waypoints = isReverse ? [...preset.waypoints].reverse() : [...preset.waypoints];
-  const origin = isReverse ? preset.destination : preset.origin;
-  const destination = isReverse ? preset.origin : preset.destination;
+  let stops = isReverse ? [...preset.stops].reverse() : [...preset.stops];
+  let waypoints = isReverse ? [...preset.waypoints].reverse() : [...preset.waypoints];
+
+  // If specific Terminal Pins were marked, strictly trim stops & waypoints between them
+  if (startTerminalId && endTerminalId && startTerminalId !== endTerminalId) {
+    const sIdx = stops.findIndex(s => s.id === startTerminalId);
+    const eIdx = stops.findIndex(s => s.id === endTerminalId);
+
+    if (sIdx !== -1 && eIdx !== -1) {
+      const lower = Math.min(sIdx, eIdx);
+      const upper = Math.max(sIdx, eIdx);
+      stops = stops.slice(lower, upper + 1);
+      if (sIdx > eIdx) stops.reverse();
+
+      // Find closest waypoints to Start and End terminal pins
+      const startPt = stops[0];
+      const endPt = stops[stops.length - 1];
+
+      let wpStart = 0;
+      let minStartD = Infinity;
+      let wpEnd = waypoints.length - 1;
+      let minEndD = Infinity;
+
+      waypoints.forEach((wp, idx) => {
+        const d1 = getDistance(wp, startPt);
+        if (d1 < minStartD) {
+          minStartD = d1;
+          wpStart = idx;
+        }
+        const d2 = getDistance(wp, endPt);
+        if (d2 < minEndD) {
+          minEndD = d2;
+          wpEnd = idx;
+        }
+      });
+
+      const wpLower = Math.min(wpStart, wpEnd);
+      const wpUpper = Math.max(wpStart, wpEnd);
+      waypoints = waypoints.slice(wpLower, wpUpper + 1);
+      if (wpStart > wpEnd) waypoints.reverse();
+    }
+  }
+
+  const origin = stops[0].name;
+  const destination = stops[stops.length - 1].name;
 
   runtime.def = {
     ...runtime.def,
@@ -686,6 +733,21 @@ export function setBusAssignedRoute(busId: string, routePresetId: string, isReve
   }
 
   notifyListeners();
+}
+
+/**
+ * Assign a specific route corridor and marked terminal pins to ALL demo buses
+ * so the entire fleet runs strictly on this selected corridor between the terminal pins!
+ */
+export function setAllBusesAssignedRoute(
+  routePresetId: string,
+  isReverse = false,
+  startTerminalId?: string,
+  endTerminalId?: string
+) {
+  Object.keys(runtimeStore).forEach((busId) => {
+    setBusAssignedRoute(busId, routePresetId, isReverse, startTerminalId, endTerminalId);
+  });
 }
 
 // =========================================================================

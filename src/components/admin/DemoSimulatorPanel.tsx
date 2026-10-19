@@ -20,7 +20,11 @@ import {
   ArrowLeftRight,
   ChevronDown,
   ChevronUp,
-  Sparkles
+  Sparkles,
+  Pin,
+  Lock,
+  RotateCcw,
+  Layers
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
@@ -33,6 +37,7 @@ import {
   setBusSpeed,
   setBusDelay,
   setBusAssignedRoute,
+  setAllBusesAssignedRoute,
   subscribeToDemoState,
   getDemoSimulatorState,
   DEMO_BUS_DEFINITIONS,
@@ -66,6 +71,8 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   const [selectedRoutePresetId, setSelectedRoutePresetId] = useState<string>('route-12');
   const [isReverseDirection, setIsReverseDirection] = useState<boolean>(false);
   const [showStopsList, setShowStopsList] = useState<boolean>(true);
+  const [startTerminalPinId, setStartTerminalPinId] = useState<string>('');
+  const [endTerminalPinId, setEndTerminalPinId] = useState<string>('');
 
   // Sync external selected bus if provided
   useEffect(() => {
@@ -89,15 +96,22 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   const isSelectedBusRunning = Boolean(activeBusRuntime?.isRunning);
   const isSelectedDelayActive = Boolean(activeBusRuntime && activeBusRuntime.delayMinutes > 0);
 
-  // Sync route preset ID when active bus changes
+  const activePreset: DemoRoutePreset =
+    AVAILABLE_DEMO_ROUTES.find((r) => r.id === selectedRoutePresetId) || AVAILABLE_DEMO_ROUTES[0];
+
+  // Sync route preset ID and terminal pins when active bus changes
   useEffect(() => {
     if (activeBusRuntime?.def.routeId) {
       setSelectedRoutePresetId(activeBusRuntime.def.routeId);
     }
-  }, [selectedBusId]);
-
-  const activePreset: DemoRoutePreset =
-    AVAILABLE_DEMO_ROUTES.find((r) => r.id === selectedRoutePresetId) || AVAILABLE_DEMO_ROUTES[0];
+    if (activeBusRuntime?.def.stops && activeBusRuntime.def.stops.length > 0) {
+      setStartTerminalPinId(activeBusRuntime.def.stops[0].id);
+      setEndTerminalPinId(activeBusRuntime.def.stops[activeBusRuntime.def.stops.length - 1].id);
+    } else if (activePreset.stops.length > 0) {
+      setStartTerminalPinId(activePreset.stops[0].id);
+      setEndTerminalPinId(activePreset.stops[activePreset.stops.length - 1].id);
+    }
+  }, [selectedBusId, activeBusRuntime]);
 
   const handleStartAll = () => {
     if (!isAuthorized) {
@@ -129,18 +143,66 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
 
   const handleRouteChange = (newRouteId: string) => {
     setSelectedRoutePresetId(newRouteId);
+    const preset = AVAILABLE_DEMO_ROUTES.find((r) => r.id === newRouteId) || activePreset;
+    const startPin = preset.stops[0]?.id || '';
+    const endPin = preset.stops[preset.stops.length - 1]?.id || '';
+    setStartTerminalPinId(startPin);
+    setEndTerminalPinId(endPin);
     if (!activeBusRuntime) return;
-    setBusAssignedRoute(activeBusRuntime.id, newRouteId, isReverseDirection);
-    toast.info(`Assigned ${newRouteId.toUpperCase()} to ${activeBusRuntime.def.busNumber}.`);
+    setBusAssignedRoute(activeBusRuntime.id, newRouteId, isReverseDirection, startPin, endPin);
+    toast.info(`Assigned ${newRouteId.toUpperCase()} with full corridor terminals to ${activeBusRuntime.def.busNumber}.`);
+    onSelectBusOnMap?.(activeBusRuntime.id);
+  };
+
+  const handleStartTerminalPinChange = (newStartPin: string) => {
+    setStartTerminalPinId(newStartPin);
+    if (!activeBusRuntime) return;
+    setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, isReverseDirection, newStartPin, endTerminalPinId);
+    const stopObj = activePreset.stops.find((s) => s.id === newStartPin);
+    toast.info(`🏁 Start Terminal Pin marked: ${stopObj?.name || newStartPin}`);
+    onSelectBusOnMap?.(activeBusRuntime.id);
+  };
+
+  const handleEndTerminalPinChange = (newEndPin: string) => {
+    setEndTerminalPinId(newEndPin);
+    if (!activeBusRuntime) return;
+    setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, isReverseDirection, startTerminalPinId, newEndPin);
+    const stopObj = activePreset.stops.find((s) => s.id === newEndPin);
+    toast.info(`🎯 End Terminal Pin marked: ${stopObj?.name || newEndPin}`);
     onSelectBusOnMap?.(activeBusRuntime.id);
   };
 
   const handleToggleDirection = () => {
     const nextReverse = !isReverseDirection;
     setIsReverseDirection(nextReverse);
+    const prevStart = startTerminalPinId;
+    const prevEnd = endTerminalPinId;
+    setStartTerminalPinId(prevEnd);
+    setEndTerminalPinId(prevStart);
     if (!activeBusRuntime) return;
-    setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, nextReverse);
+    setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, nextReverse, prevEnd, prevStart);
     toast.info(`Reversed route direction for ${activeBusRuntime.def.busNumber}.`);
+  };
+
+  const handleResetTerminals = () => {
+    const startPin = activePreset.stops[0]?.id || '';
+    const endPin = activePreset.stops[activePreset.stops.length - 1]?.id || '';
+    setStartTerminalPinId(startPin);
+    setEndTerminalPinId(endPin);
+    if (!activeBusRuntime) return;
+    setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, isReverseDirection, startPin, endPin);
+    toast.success(`Reset terminal pins to full corridor (${activePreset.origin} ↔ ${activePreset.destination}).`);
+  };
+
+  const handleApplyTerminalsToAllBuses = () => {
+    setAllBusesAssignedRoute(selectedRoutePresetId, isReverseDirection, startTerminalPinId, endTerminalPinId);
+    const sName = activePreset.stops.find((s) => s.id === startTerminalPinId)?.name || activePreset.origin;
+    const eName = activePreset.stops.find((s) => s.id === endTerminalPinId)?.name || activePreset.destination;
+    toast.success(
+      `All demo buses locked to ${activePreset.routeNumber} between ${sName} and ${eName}!`,
+      'Fleet Synchronized'
+    );
+    onSelectBusOnMap?.(selectedBusId);
   };
 
   const handleSpeedChange = (mult: number) => {
@@ -303,9 +365,9 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
           </div>
         </div>
 
-        {/* 2. ROUTE & STOPS SELECTION BEFORE STARTING */}
+        {/* 2. ROUTE & TERMINAL PINS CONFIGURATION BEFORE STARTING */}
         {activeBusRuntime && (
-          <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-200/80 space-y-3">
+          <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-200/80 space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
                 <Route className="w-3.5 h-3.5 text-[#7847CB]" /> 2. Choose Route Corridor & Direction
@@ -339,25 +401,94 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
               </select>
             </div>
 
+            {/* 3. MARK TERMINAL PINS UI */}
+            <div className="p-3.5 bg-white rounded-xl border border-purple-200 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Pin className="w-3.5 h-3.5 text-emerald-600" /> Mark Route Terminal Pins (Lock Route)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResetTerminals}
+                  className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-purple-700 transition-colors"
+                  title="Reset to full corridor ends"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset Ends</span>
+                </button>
+              </div>
+
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Mark the Start & End terminal pins on the route. Buses will stay strictly inside these terminal anchors and turn around dynamically without wandering off-route.
+              </p>
+
+              {/* Pin Dropdown Selectors */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-emerald-700 flex items-center gap-1">
+                    <span>🏁 Start Terminal Pin</span>
+                  </label>
+                  <select
+                    value={startTerminalPinId}
+                    onChange={(e) => handleStartTerminalPinChange(e.target.value)}
+                    className="w-full p-2 bg-emerald-50/40 border border-emerald-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-emerald-500"
+                  >
+                    {activePreset.stops.map((stop) => (
+                      <option key={stop.id} value={stop.id}>
+                        {stop.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-rose-700 flex items-center gap-1">
+                    <span>🎯 End Terminal Pin</span>
+                  </label>
+                  <select
+                    value={endTerminalPinId}
+                    onChange={(e) => handleEndTerminalPinChange(e.target.value)}
+                    className="w-full p-2 bg-rose-50/40 border border-rose-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500"
+                  >
+                    {activePreset.stops.map((stop) => (
+                      <option key={stop.id} value={stop.id}>
+                        {stop.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Apply Route & Terminal Pins to ALL Demo Buses Button */}
+              <button
+                type="button"
+                onClick={handleApplyTerminalsToAllBuses}
+                className="w-full py-2.5 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#7847CB] text-xs font-black transition-all flex items-center justify-center gap-2 border border-purple-200/90 shadow-2xs"
+              >
+                <Layers className="w-4 h-4 text-[#7847CB]" />
+                <span>Apply Route & Terminal Pins to ALL Demo Buses</span>
+              </button>
+            </div>
+
             {/* Where to Where Banner */}
             <div className="p-3 bg-white rounded-xl border border-purple-100 shadow-2xs space-y-1.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-extrabold text-[#7847CB]">
-                  {activeBusRuntime.def.routeNumber} Corridor
+                <span className="font-extrabold text-[#7847CB] flex items-center gap-1">
+                  <Lock className="w-3.5 h-3.5" /> Locked Corridor
                 </span>
                 <span className="text-[11px] text-slate-400 font-mono">
-                  {activeBusRuntime.def.stops.length} Scheduled Stops
+                  {activeBusRuntime.def.stops.length} Stops Inside Terminal Pins
                 </span>
               </div>
 
               <div className="flex items-center gap-2 text-xs font-bold text-slate-900 bg-slate-50 p-2 rounded-lg">
-                <div className="min-w-0 truncate text-purple-900">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block">ORIGIN</span>
+                <div className="min-w-0 truncate text-emerald-800">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block">🏁 START PIN</span>
                   {activeBusRuntime.def.origin}
                 </div>
                 <ArrowRight className="w-4 h-4 text-[#7847CB] shrink-0" />
-                <div className="min-w-0 truncate text-emerald-900">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block">DESTINATION</span>
+                <div className="min-w-0 truncate text-rose-800">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block">🎯 END PIN</span>
                   {activeBusRuntime.def.destination}
                 </div>
               </div>
@@ -370,28 +501,47 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                 onClick={() => setShowStopsList(!showStopsList)}
                 className="w-full flex items-center justify-between text-xs font-bold text-slate-700 py-1"
               >
-                <span>Stops on this Route ({activeBusRuntime.def.stops.length})</span>
+                <span>Stops on this Locked Route ({activeBusRuntime.def.stops.length})</span>
                 {showStopsList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
 
               {showStopsList && (
                 <div className="p-2 bg-white rounded-xl border border-slate-200/80 max-h-40 overflow-y-auto space-y-1.5 text-xs">
-                  {activeBusRuntime.def.stops.map((stop, i) => (
-                    <div
-                      key={stop.id}
-                      className="flex items-center justify-between p-1.5 rounded-lg hover:bg-slate-50 text-slate-700"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="w-5 h-5 rounded-full bg-purple-100 text-[#7847CB] font-mono text-[10px] font-black flex items-center justify-center shrink-0">
-                          {i + 1}
+                  {activeBusRuntime.def.stops.map((stop, i) => {
+                    const isStartPin = i === 0;
+                    const isEndPin = i === activeBusRuntime.def.stops.length - 1;
+
+                    return (
+                      <div
+                        key={stop.id}
+                        className={`flex items-center justify-between p-1.5 rounded-lg ${
+                          isStartPin
+                            ? 'bg-emerald-50/60 text-emerald-900 border border-emerald-200/70'
+                            : isEndPin
+                            ? 'bg-rose-50/60 text-rose-900 border border-rose-200/70'
+                            : 'hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`w-5 h-5 rounded-full font-mono text-[10px] font-black flex items-center justify-center shrink-0 ${
+                              isStartPin
+                                ? 'bg-emerald-600 text-white'
+                                : isEndPin
+                                ? 'bg-rose-600 text-white'
+                                : 'bg-purple-100 text-[#7847CB]'
+                            }`}
+                          >
+                            {i + 1}
+                          </span>
+                          <span className="font-semibold truncate">{stop.name}</span>
+                        </div>
+                        <span className="text-[10px] font-bold font-mono">
+                          {isStartPin ? '🏁 START PIN' : isEndPin ? '🎯 END PIN' : 'Way Stop'}
                         </span>
-                        <span className="font-semibold truncate">{stop.name}</span>
                       </div>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {i === 0 ? 'Depot Start' : i === activeBusRuntime.def.stops.length - 1 ? 'Terminal Hub' : 'Way Stop'}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

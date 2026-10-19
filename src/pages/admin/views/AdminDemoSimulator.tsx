@@ -30,8 +30,41 @@ export const AdminDemoSimulator: React.FC = () => {
   const selectedBus = buses.find(b => b.id === selectedBusId);
   const activeDemoBuses = buses.filter(b => b.isDemo || b.id?.startsWith('demo-'));
 
-  // Combine loaded routes or fallback to mock routes for demo paths
-  const allRoutes = routes.length > 0 ? routes : MOCK_ROUTES;
+  // Combine loaded routes or fallback to mock routes for demo paths, augmented with active simulator corridor definitions & marked terminal pins
+  const demoRoutes = React.useMemo(() => {
+    return Object.values(simState.buses).map((b) => ({
+      id: b.def.routeId,
+      routeNumber: b.def.routeNumber,
+      name: b.def.routeName,
+      nameMarathi: b.def.routeName,
+      origin: b.def.origin,
+      destination: b.def.destination,
+      firstBus: '06:00 AM',
+      lastBus: '10:00 PM',
+      frequencyMinutes: 15,
+      baseFare: 10,
+      maxFare: 25,
+      totalStops: b.def.stops.length,
+      durationMinutes: 30,
+      color: b.def.color,
+      activeBusesCount: 1,
+      status: 'normal' as const,
+      stops: b.def.stops.map((s, idx) => ({
+        stopId: s.id,
+        stopName: s.name,
+        stopNameMarathi: s.name,
+        sequence: idx + 1,
+        fareFromOrigin: idx * 5,
+        estimatedMinutesFromOrigin: idx * 5,
+        isMajorHub: idx === 0 || idx === b.def.stops.length - 1,
+        lat: s.lat,
+        lng: s.lng,
+      })),
+      route_path: b.def.waypoints,
+    }));
+  }, [simState]);
+
+  const allRoutes = [...demoRoutes, ...(routes.length > 0 ? routes : MOCK_ROUTES)];
 
   return (
     <div className="flex-1 w-full h-full flex flex-col p-4 md:p-6 gap-6 bg-[#f8f9fc] text-slate-900 overflow-y-auto">

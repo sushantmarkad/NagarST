@@ -375,6 +375,179 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     });
   }, [stops, selectedStopId, onSelectStop]);
 
+  // Update Route Terminal Pin Markers (Start and End Terminal Pin Anchors)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const activeTerminalKeys = new Set<string>();
+
+    routes.forEach((route) => {
+      if (!route.stops || route.stops.length < 2) return;
+
+      const startStop = route.stops[0];
+      const endStop = route.stops[route.stops.length - 1];
+
+      // 1. START TERMINAL PIN (🏁 Origin Anchor)
+      const startKey = `terminal-start-${route.id}`;
+      activeTerminalKeys.add(startKey);
+
+      const startPinHtml = `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center; pointer-events: auto; z-index: 600;">
+          <div style="
+            background: #ffffff;
+            color: #065f46;
+            border: 2px solid #059669;
+            box-shadow: 0 4px 12px rgba(5,150,105,0.3);
+            border-radius: 8px;
+            padding: 2px 6px;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 10px;
+            font-weight: 800;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 2px;
+          ">
+            <span style="background: #059669; color: #ffffff; padding: 1px 4px; border-radius: 4px; font-size: 8px; font-weight: 900;">
+              START TERMINAL
+            </span>
+            <span style="max-width: 120px; overflow: hidden; text-overflow: ellipsis;">
+              ${startStop.stopName}
+            </span>
+          </div>
+
+          <div style="position: relative; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;">
+            <div style="
+              position: absolute;
+              width: 28px;
+              height: 28px;
+              border-radius: 50%;
+              background: #059669;
+              opacity: 0.35;
+              animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+            "></div>
+            <div style="
+              width: 22px;
+              height: 22px;
+              border-radius: 50%;
+              background: #059669;
+              border: 3px solid #ffffff;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #ffffff;
+              font-size: 11px;
+            ">
+              🏁
+            </div>
+          </div>
+        </div>
+      `;
+
+      const startIcon = L.divIcon({
+        className: 'custom-terminal-pin-start',
+        html: startPinHtml,
+        iconSize: [140, 52],
+        iconAnchor: [70, 48],
+      });
+
+      if (!markersRef.current[startKey]) {
+        const marker = L.marker([startStop.lat, startStop.lng], { icon: startIcon, zIndexOffset: 700 }).addTo(map);
+        marker.bindTooltip(`<b>Start Terminal Pin:</b> ${startStop.stopName}`, { direction: 'top', offset: [0, -20] });
+        markersRef.current[startKey] = marker;
+      } else {
+        markersRef.current[startKey].setIcon(startIcon);
+        markersRef.current[startKey].setLatLng([startStop.lat, startStop.lng]);
+      }
+
+      // 2. END TERMINAL PIN (🎯 Destination Anchor)
+      const endKey = `terminal-end-${route.id}`;
+      activeTerminalKeys.add(endKey);
+
+      const endPinHtml = `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center; pointer-events: auto; z-index: 600;">
+          <div style="
+            background: #ffffff;
+            color: #9f1239;
+            border: 2px solid #e11d48;
+            box-shadow: 0 4px 12px rgba(225,29,72,0.3);
+            border-radius: 8px;
+            padding: 2px 6px;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 10px;
+            font-weight: 800;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 2px;
+          ">
+            <span style="background: #e11d48; color: #ffffff; padding: 1px 4px; border-radius: 4px; font-size: 8px; font-weight: 900;">
+              END TERMINAL
+            </span>
+            <span style="max-width: 120px; overflow: hidden; text-overflow: ellipsis;">
+              ${endStop.stopName}
+            </span>
+          </div>
+
+          <div style="position: relative; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;">
+            <div style="
+              position: absolute;
+              width: 28px;
+              height: 28px;
+              border-radius: 50%;
+              background: #e11d48;
+              opacity: 0.35;
+              animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+            "></div>
+            <div style="
+              width: 22px;
+              height: 22px;
+              border-radius: 50%;
+              background: #e11d48;
+              border: 3px solid #ffffff;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #ffffff;
+              font-size: 11px;
+            ">
+              🎯
+            </div>
+          </div>
+        </div>
+      `;
+
+      const endIcon = L.divIcon({
+        className: 'custom-terminal-pin-end',
+        html: endPinHtml,
+        iconSize: [140, 52],
+        iconAnchor: [70, 48],
+      });
+
+      if (!markersRef.current[endKey]) {
+        const marker = L.marker([endStop.lat, endStop.lng], { icon: endIcon, zIndexOffset: 700 }).addTo(map);
+        marker.bindTooltip(`<b>End Terminal Pin:</b> ${endStop.stopName}`, { direction: 'top', offset: [0, -20] });
+        markersRef.current[endKey] = marker;
+      } else {
+        markersRef.current[endKey].setIcon(endIcon);
+        markersRef.current[endKey].setLatLng([endStop.lat, endStop.lng]);
+      }
+    });
+
+    // Cleanup inactive terminal markers
+    Object.keys(markersRef.current).forEach((key) => {
+      if (key.startsWith('terminal-') && !activeTerminalKeys.has(key)) {
+        markersRef.current[key].remove();
+        delete markersRef.current[key];
+      }
+    });
+  }, [routes]);
+
   // Update Live Bus Markers
   useEffect(() => {
     const map = mapRef.current;
