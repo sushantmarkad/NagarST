@@ -2,8 +2,8 @@ import type { Bus } from '../types';
 import { getDistance, getBearing } from './routing';
 
 export const DEMO_BUS_ID = 'demo-bus-sim-01';
-export const DEMO_BUS_NUMBER = 'MH-16-DEMO';
-export const DEMO_PLATE_NUMBER = 'MH-16-DEMO-SIM';
+export const DEMO_BUS_NUMBER = 'MH-16-DEMO-1';
+export const DEMO_PLATE_NUMBER = 'MH-16-DM-101';
 export const DEMO_TRIP_ID = 'demo-trip-sim-001';
 
 export interface DemoStop {
@@ -13,7 +13,26 @@ export interface DemoStop {
   lng: number;
 }
 
-export const DEMO_STOPS: DemoStop[] = [
+export interface DemoBusDefinition {
+  id: string;
+  busNumber: string;
+  plateNumber: string;
+  tripId: string;
+  routeId: string;
+  routeNumber: string;
+  routeName: string;
+  origin: string;
+  destination: string;
+  color: string;
+  stops: DemoStop[];
+  waypoints: { lat: number; lng: number }[];
+  initialIndex: number;
+}
+
+// =========================================================================
+// CORRIDOR 1: Delhi Gate ↔ Dairy Chowk via Pipeline Road (Route 12)
+// =========================================================================
+export const DEMO_STOPS_BUS_1: DemoStop[] = [
   { id: 'stop-dg', name: 'Delhi Gate Terminal', lat: 19.109728, lng: 74.733295 },
   { id: 'stop-my', name: 'Market Yard Hub', lat: 19.121543, lng: 74.727673 },
   { id: 'stop-sv', name: 'Savedi Phata', lat: 19.135622, lng: 74.721761 },
@@ -22,7 +41,7 @@ export const DEMO_STOPS: DemoStop[] = [
   { id: 'stop-dc', name: 'Dairy Chowk Terminal', lat: 19.170628, lng: 74.697225 }
 ];
 
-export const DEMO_WAYPOINTS = [
+export const DEMO_WAYPOINTS_BUS_1 = [
   { lat: 19.109728, lng: 74.733295 },
   { lat: 19.111240, lng: 74.732810 },
   { lat: 19.112850, lng: 74.732200 },
@@ -64,6 +83,138 @@ export const DEMO_WAYPOINTS = [
   { lat: 19.170628, lng: 74.697225 }  // Dairy Chowk
 ];
 
+// Backward compatibility aliases
+export const DEMO_STOPS = DEMO_STOPS_BUS_1;
+export const DEMO_WAYPOINTS = DEMO_WAYPOINTS_BUS_1;
+
+// =========================================================================
+// CORRIDOR 2: Central Bus Stand ↔ MIDC Nagapur Sector 1 (Route 1)
+// =========================================================================
+export const DEMO_STOPS_BUS_2: DemoStop[] = [
+  { id: 'stop-cbs', name: 'Central Bus Stand (CBS)', lat: 19.0975, lng: 74.7420 },
+  { id: 'stop-swastik', name: 'Swastik Chowk Hub', lat: 19.0952, lng: 74.7496 },
+  { id: 'stop-delhi-gate', name: 'Delhi Gate Circle', lat: 19.1020, lng: 74.7480 },
+  { id: 'stop-premdan', name: 'Premdan Chowk', lat: 19.1130, lng: 74.7390 },
+  { id: 'stop-savedi', name: 'Savedi Terminal', lat: 19.1220, lng: 74.7350 },
+  { id: 'stop-midc', name: 'MIDC Nagapur Sector 1', lat: 19.1550, lng: 74.7180 }
+];
+
+export const DEMO_WAYPOINTS_BUS_2 = [
+  { lat: 19.0975, lng: 74.7420 }, // CBS
+  { lat: 19.0971, lng: 74.7441 },
+  { lat: 19.0963, lng: 74.7468 },
+  { lat: 19.0952, lng: 74.7496 }, // Swastik Chowk
+  { lat: 19.0970, lng: 74.7492 },
+  { lat: 19.0991, lng: 74.7487 },
+  { lat: 19.1020, lng: 74.7480 }, // Delhi Gate Circle
+  { lat: 19.1042, lng: 74.7458 },
+  { lat: 19.1068, lng: 74.7436 },
+  { lat: 19.1095, lng: 74.7412 },
+  { lat: 19.1130, lng: 74.7390 }, // Premdan Chowk
+  { lat: 19.1158, lng: 74.7378 },
+  { lat: 19.1189, lng: 74.7364 },
+  { lat: 19.1220, lng: 74.7350 }, // Savedi Terminal
+  { lat: 19.1265, lng: 74.7328 },
+  { lat: 19.1310, lng: 74.7302 },
+  { lat: 19.1360, lng: 74.7275 },
+  { lat: 19.1415, lng: 74.7248 },
+  { lat: 19.1470, lng: 74.7220 },
+  { lat: 19.1510, lng: 74.7200 },
+  { lat: 19.1550, lng: 74.7180 }  // MIDC Nagapur Sector 1
+];
+
+// =========================================================================
+// CORRIDOR 3: Savedi Terminal ↔ Central Railway Station (Route 4)
+// =========================================================================
+export const DEMO_STOPS_BUS_3: DemoStop[] = [
+  { id: 'stop-savedi', name: 'Savedi Bus Terminal', lat: 19.1220, lng: 74.7350 },
+  { id: 'stop-premdan', name: 'Premdan Chowk', lat: 19.1130, lng: 74.7390 },
+  { id: 'stop-wadia', name: 'Wadia Park Stadium', lat: 19.0980, lng: 74.7450 },
+  { id: 'stop-cbs', name: 'Central Bus Stand (CBS)', lat: 19.0975, lng: 74.7420 },
+  { id: 'stop-railway', name: 'Central Railway Station', lat: 19.0810, lng: 74.7380 }
+];
+
+export const DEMO_WAYPOINTS_BUS_3 = [
+  { lat: 19.1220, lng: 74.7350 }, // Savedi Terminal
+  { lat: 19.1192, lng: 74.7364 },
+  { lat: 19.1161, lng: 74.7377 },
+  { lat: 19.1130, lng: 74.7390 }, // Premdan Chowk
+  { lat: 19.1090, lng: 74.7408 },
+  { lat: 19.1052, lng: 74.7425 },
+  { lat: 19.1018, lng: 74.7441 },
+  { lat: 19.0980, lng: 74.7450 }, // Wadia Park
+  { lat: 19.0977, lng: 74.7435 },
+  { lat: 19.0975, lng: 74.7420 }, // Central Bus Stand
+  { lat: 19.0945, lng: 74.7412 },
+  { lat: 19.0912, lng: 74.7404 },
+  { lat: 19.0878, lng: 74.7395 },
+  { lat: 19.0845, lng: 74.7388 },
+  { lat: 19.0810, lng: 74.7380 }  // Central Railway Station
+];
+
+// =========================================================================
+// MULTI-BUS DEFINITION REGISTRY
+// =========================================================================
+export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
+  {
+    id: 'demo-bus-sim-01',
+    busNumber: 'MH-16-DEMO-1',
+    plateNumber: 'MH-16-DM-101',
+    tripId: 'demo-trip-sim-001',
+    routeId: 'route-12',
+    routeNumber: 'Route 12',
+    routeName: 'Delhi Gate ↔ Dairy Chowk (Pipeline Rd)',
+    origin: 'Delhi Gate Terminal',
+    destination: 'Dairy Chowk Terminal',
+    color: '#7847CB',
+    stops: DEMO_STOPS_BUS_1,
+    waypoints: DEMO_WAYPOINTS_BUS_1,
+    initialIndex: 0
+  },
+  {
+    id: 'demo-bus-sim-02',
+    busNumber: 'MH-16-DEMO-2',
+    plateNumber: 'MH-16-DM-102',
+    tripId: 'demo-trip-sim-002',
+    routeId: 'route-1',
+    routeNumber: 'Route 1',
+    routeName: 'CBS ↔ MIDC Nagapur Sector 1',
+    origin: 'Central Bus Stand (CBS)',
+    destination: 'MIDC Nagapur Sector 1',
+    color: '#2563eb',
+    stops: DEMO_STOPS_BUS_2,
+    waypoints: DEMO_WAYPOINTS_BUS_2,
+    initialIndex: 5
+  },
+  {
+    id: 'demo-bus-sim-03',
+    busNumber: 'MH-16-DEMO-3',
+    plateNumber: 'MH-16-DM-103',
+    tripId: 'demo-trip-sim-003',
+    routeId: 'route-4',
+    routeNumber: 'Route 4',
+    routeName: 'Savedi Terminal ↔ Central Railway Station',
+    origin: 'Savedi Bus Terminal',
+    destination: 'Central Railway Station',
+    color: '#059669',
+    stops: DEMO_STOPS_BUS_3,
+    waypoints: DEMO_WAYPOINTS_BUS_3,
+    initialIndex: 3
+  }
+];
+
+export interface BusSimRuntime {
+  id: string;
+  def: DemoBusDefinition;
+  isRunning: boolean;
+  currentIndex: number;
+  direction: 1 | -1;
+  speedMultiplier: number;
+  delayMinutes: number;
+  currentBus: Bus | null;
+  progressPercent: number;
+}
+
 export interface DemoSimulatorState {
   isRunning: boolean;
   currentIndex: number;
@@ -71,24 +222,34 @@ export interface DemoSimulatorState {
   delayMinutes: number;
   currentBus: Bus | null;
   progressPercent: number;
+  activeBusCount: number;
+  buses: Record<string, BusSimRuntime>;
 }
+
+// In-memory runtime instances for each bus
+const runtimeStore: Record<string, BusSimRuntime> = {};
+DEMO_BUS_DEFINITIONS.forEach(def => {
+  runtimeStore[def.id] = {
+    id: def.id,
+    def: def,
+    isRunning: false,
+    currentIndex: def.initialIndex,
+    direction: 1,
+    speedMultiplier: 1,
+    delayMinutes: 0,
+    currentBus: null,
+    progressPercent: Math.round((def.initialIndex / (def.waypoints.length - 1)) * 100)
+  };
+});
 
 let activeInterval: ReturnType<typeof setInterval> | null = null;
 let broadcastChannel: BroadcastChannel | null = null;
 
-const state: DemoSimulatorState = {
-  isRunning: false,
-  currentIndex: 0,
-  speedMultiplier: 1,
-  delayMinutes: 0,
-  currentBus: null,
-  progressPercent: 0
-};
-
 const listeners = new Set<(state: DemoSimulatorState) => void>();
 
 function notifyListeners() {
-  listeners.forEach(fn => fn({ ...state }));
+  const composite = getDemoSimulatorState();
+  listeners.forEach(fn => fn(composite));
 }
 
 function getBroadcastChannel(): BroadcastChannel | null {
@@ -102,55 +263,60 @@ function getBroadcastChannel(): BroadcastChannel | null {
 }
 
 /**
- * Builds a realistic Bus telemetry packet for the simulated vehicle
+ * Builds realistic Bus telemetry for a specific bus runtime
  */
-function buildDemoBusTelemetry(index: number): Bus {
-  const currentPt = DEMO_WAYPOINTS[index];
-  const nextPt = DEMO_WAYPOINTS[(index + 1) % DEMO_WAYPOINTS.length];
+function buildBusTelemetry(runtime: BusSimRuntime): Bus {
+  const { def, currentIndex, delayMinutes } = runtime;
+  const waypoints = def.waypoints;
+  const currentPt = waypoints[currentIndex];
+  
+  // Lookahead for bearing calculation
+  const nextIdx = (currentIndex + runtime.direction + waypoints.length) % waypoints.length;
+  const nextPt = waypoints[nextIdx];
   
   const heading = Math.round(getBearing(currentPt, nextPt));
-  const baseSpeed = 28 + Math.floor(Math.sin(index) * 8);
-  const speedKmh = Math.max(14, baseSpeed);
+  const baseSpeed = 28 + Math.floor(Math.sin(currentIndex) * 8);
+  const speedKmh = Math.max(16, baseSpeed);
 
   // Dynamic next-stop and ETA calculation
-  const progressRatio = index / (DEMO_WAYPOINTS.length - 1);
+  const progressRatio = currentIndex / (waypoints.length - 1);
   const stopIndex = Math.min(
-    DEMO_STOPS.length - 2,
-    Math.floor(progressRatio * (DEMO_STOPS.length - 1))
+    def.stops.length - 2,
+    Math.max(0, Math.floor(progressRatio * (def.stops.length - 1)))
   );
 
-  const curStop = DEMO_STOPS[stopIndex];
-  const nextStop = DEMO_STOPS[stopIndex + 1] || DEMO_STOPS[DEMO_STOPS.length - 1];
+  const curStop = def.stops[stopIndex];
+  const nextStop = def.stops[stopIndex + 1] || def.stops[def.stops.length - 1];
 
   const distToNext = getDistance(currentPt, nextStop);
   const nominalMinutes = Math.max(1, Math.round((distToNext / 1000) / (speedKmh / 60)));
-  const etaMinutes = nominalMinutes + state.delayMinutes;
+  const etaMinutes = nominalMinutes + delayMinutes;
 
-  const status = state.delayMinutes > 3 ? ('delayed' as const) : ('on_time' as const);
+  const status = delayMinutes > 3 ? ('delayed' as const) : ('on_time' as const);
 
   return {
-    id: DEMO_BUS_ID,
-    busNumber: DEMO_BUS_NUMBER,
-    plateNumber: DEMO_PLATE_NUMBER,
-    routeId: 'demo-route-delhi-dairy',
-    routeNumber: 'MH-16 (DEMO)',
-    routeName: 'Delhi Gate - Dairy Chowk (DEMO ROUTE)',
-    origin: 'Delhi Gate Terminal',
-    destination: 'Dairy Chowk Terminal',
+    id: def.id,
+    busNumber: def.busNumber,
+    plateNumber: def.plateNumber,
+    routeId: def.routeId,
+    routeNumber: `${def.routeNumber} (DEMO)`,
+    routeName: `${def.routeName} [DEMO]`,
+    origin: def.origin,
+    destination: def.destination,
     currentStopId: curStop.id,
     currentStopName: curStop.name,
     nextStopId: nextStop.id,
     nextStopName: nextStop.name,
     etaToNextMinutes: etaMinutes,
-    delayMinutes: state.delayMinutes,
+    delayMinutes: delayMinutes,
     speedKmh: speedKmh,
     occupancy: 'moderate',
     status: status,
     lat: currentPt.lat,
     lng: currentPt.lng,
     heading: heading,
-    driverName: 'Demo Simulation System',
-    conductorName: 'Simulated Duty',
+    driverName: `Demo Pilot (${def.busNumber})`,
+    conductorName: 'Simulated Crew',
     busType: 'EV Metro Shuttle',
     isDemo: true,
     lastUpdated: new Date().toISOString()
@@ -160,102 +326,255 @@ function buildDemoBusTelemetry(index: number): Bus {
 /**
  * Dispatches simulated telemetry to all map listeners (BroadcastChannel, LocalStorage, Socket)
  */
-function broadcastDemoLocation(bus: Bus) {
-  // 1. Cross-tab BroadcastChannel
+function broadcastBusLocation(bus: Bus) {
   const ch = getBroadcastChannel();
   if (ch) {
     ch.postMessage({ type: 'locationUpdate', data: bus });
   }
 
-  // 2. Storage event
   try {
-    localStorage.setItem('nagarst_demo_bus', JSON.stringify(bus));
-    localStorage.setItem('nagarst_live_bus_' + DEMO_BUS_ID, JSON.stringify(bus));
+    localStorage.setItem('nagarst_live_bus_' + bus.id, JSON.stringify(bus));
+    // Also save into aggregate demo map
+    const aggregate: Record<string, Bus> = {};
+    Object.values(runtimeStore).forEach(r => {
+      if (r.isRunning && r.currentBus) aggregate[r.id] = r.currentBus;
+    });
+    localStorage.setItem('nagarst_demo_buses', JSON.stringify(aggregate));
+    if (bus.id === DEMO_BUS_ID) {
+      localStorage.setItem('nagarst_demo_bus', JSON.stringify(bus));
+    }
   } catch (_) {}
 }
 
+function broadcastBusOffline(busId: string) {
+  const ch = getBroadcastChannel();
+  if (ch) {
+    ch.postMessage({ type: 'busOffline', busId });
+  }
+
+  try {
+    localStorage.removeItem('nagarst_live_bus_' + busId);
+    if (busId === DEMO_BUS_ID) {
+      localStorage.removeItem('nagarst_demo_bus');
+    }
+    const aggregate: Record<string, Bus> = {};
+    Object.values(runtimeStore).forEach(r => {
+      if (r.isRunning && r.currentBus && r.id !== busId) aggregate[r.id] = r.currentBus;
+    });
+    localStorage.setItem('nagarst_demo_buses', JSON.stringify(aggregate));
+  } catch (_) {}
+}
+
+/**
+ * Single tick across all active demo buses
+ */
 export function tickDemoSimulation() {
-  if (!state.isRunning) return;
+  const activeBuses = Object.values(runtimeStore).filter(r => r.isRunning);
+  if (activeBuses.length === 0) return;
 
-  state.currentIndex = (state.currentIndex + 1) % DEMO_WAYPOINTS.length;
-  state.progressPercent = Math.round((state.currentIndex / (DEMO_WAYPOINTS.length - 1)) * 100);
+  activeBuses.forEach(runtime => {
+    const waypoints = runtime.def.waypoints;
+    let nextIndex = runtime.currentIndex + runtime.direction;
 
-  const bus = buildDemoBusTelemetry(state.currentIndex);
-  state.currentBus = bus;
+    // Ping-pong reversal on route ends for realistic round trips
+    if (nextIndex >= waypoints.length) {
+      runtime.direction = -1;
+      nextIndex = waypoints.length - 2;
+    } else if (nextIndex < 0) {
+      runtime.direction = 1;
+      nextIndex = 1;
+    }
 
-  broadcastDemoLocation(bus);
+    runtime.currentIndex = Math.max(0, Math.min(waypoints.length - 1, nextIndex));
+    runtime.progressPercent = Math.round((runtime.currentIndex / (waypoints.length - 1)) * 100);
+
+    const bus = buildBusTelemetry(runtime);
+    runtime.currentBus = bus;
+
+    broadcastBusLocation(bus);
+  });
+
   notifyListeners();
 }
 
 /**
- * Start the realistic GPS demo simulator
+ * Resets or maintains the unified timer based on running buses
  */
-export function startDemoSimulation(options?: { speedMultiplier?: number; delayMinutes?: number }) {
-  if (options?.speedMultiplier) state.speedMultiplier = options.speedMultiplier;
-  if (options?.delayMinutes !== undefined) state.delayMinutes = options.delayMinutes;
+function ensureTimerRunning() {
+  const anyRunning = Object.values(runtimeStore).some(r => r.isRunning);
+  if (!anyRunning) {
+    if (activeInterval) {
+      clearInterval(activeInterval);
+      activeInterval = null;
+    }
+    return;
+  }
 
-  state.isRunning = true;
+  // Find max speed multiplier among running buses to set interval
+  const maxSpeed = Math.max(1, ...Object.values(runtimeStore).filter(r => r.isRunning).map(r => r.speedMultiplier));
+  const ms = Math.max(160, Math.round(1400 / maxSpeed));
+
   if (activeInterval) clearInterval(activeInterval);
-
-  // Interval adjusts according to speedMultiplier (1x = 1400ms, 2x = 700ms, 5x = 280ms, 10x = 140ms)
-  const ms = Math.max(140, Math.round(1400 / state.speedMultiplier));
   activeInterval = setInterval(tickDemoSimulation, ms);
-
-  // Immediate first tick
-  tickDemoSimulation();
 }
 
 /**
- * Stop and clean up the demo simulator
+ * Start a specific demo bus
  */
-export function stopDemoSimulation() {
-  state.isRunning = false;
+export function startBus(busId: string, options?: { speedMultiplier?: number; delayMinutes?: number }) {
+  const runtime = runtimeStore[busId];
+  if (!runtime) return;
+
+  if (options?.speedMultiplier) runtime.speedMultiplier = options.speedMultiplier;
+  if (options?.delayMinutes !== undefined) runtime.delayMinutes = options.delayMinutes;
+
+  runtime.isRunning = true;
+  
+  // Immediate initial packet
+  const bus = buildBusTelemetry(runtime);
+  runtime.currentBus = bus;
+  broadcastBusLocation(bus);
+
+  ensureTimerRunning();
+  notifyListeners();
+}
+
+/**
+ * Stop a specific demo bus
+ */
+export function stopBus(busId: string) {
+  const runtime = runtimeStore[busId];
+  if (!runtime) return;
+
+  runtime.isRunning = false;
+  runtime.currentBus = null;
+  broadcastBusOffline(busId);
+
+  ensureTimerRunning();
+  notifyListeners();
+}
+
+/**
+ * Start all available demo buses simultaneously
+ */
+export function startAllBuses(options?: { speedMultiplier?: number }) {
+  Object.keys(runtimeStore).forEach(busId => {
+    const runtime = runtimeStore[busId];
+    if (options?.speedMultiplier) runtime.speedMultiplier = options.speedMultiplier;
+    runtime.isRunning = true;
+    const bus = buildBusTelemetry(runtime);
+    runtime.currentBus = bus;
+    broadcastBusLocation(bus);
+  });
+
+  ensureTimerRunning();
+  notifyListeners();
+}
+
+/**
+ * Stop all running demo buses
+ */
+export function stopAllBuses() {
+  Object.keys(runtimeStore).forEach(busId => {
+    const runtime = runtimeStore[busId];
+    runtime.isRunning = false;
+    runtime.currentBus = null;
+    broadcastBusOffline(busId);
+  });
+
   if (activeInterval) {
     clearInterval(activeInterval);
     activeInterval = null;
   }
 
-  state.currentBus = null;
-
-  // Clean up storage & inform map
   try {
+    localStorage.removeItem('nagarst_demo_buses');
     localStorage.removeItem('nagarst_demo_bus');
-    localStorage.removeItem('nagarst_live_bus_' + DEMO_BUS_ID);
   } catch (_) {}
-
-  const ch = getBroadcastChannel();
-  if (ch) {
-    ch.postMessage({ type: 'busOffline', busId: DEMO_BUS_ID });
-  }
 
   notifyListeners();
 }
 
-export function setDemoReplaySpeed(multiplier: number) {
-  state.speedMultiplier = Math.min(10, Math.max(1, multiplier));
-  if (state.isRunning) {
-    startDemoSimulation();
-  } else {
-    notifyListeners();
+/**
+ * Adjust speed for a specific bus
+ */
+export function setBusSpeed(busId: string, speedMultiplier: number) {
+  const runtime = runtimeStore[busId];
+  if (!runtime) return;
+
+  runtime.speedMultiplier = Math.min(10, Math.max(1, speedMultiplier));
+  ensureTimerRunning();
+  notifyListeners();
+}
+
+/**
+ * Adjust speed for all demo buses
+ */
+export function setAllBusSpeed(speedMultiplier: number) {
+  const speed = Math.min(10, Math.max(1, speedMultiplier));
+  Object.values(runtimeStore).forEach(r => {
+    r.speedMultiplier = speed;
+  });
+  ensureTimerRunning();
+  notifyListeners();
+}
+
+/**
+ * Inject or clear traffic delay for a bus
+ */
+export function setBusDelay(busId: string, delayMinutes: number) {
+  const runtime = runtimeStore[busId];
+  if (!runtime) return;
+
+  runtime.delayMinutes = Math.max(0, delayMinutes);
+  if (runtime.isRunning && runtime.currentBus) {
+    const bus = buildBusTelemetry(runtime);
+    runtime.currentBus = bus;
+    broadcastBusLocation(bus);
   }
+  notifyListeners();
+}
+
+// =========================================================================
+// BACKWARD COMPATIBILITY EXPORTS (matches previous single-bus interface)
+// =========================================================================
+
+export function startDemoSimulation(options?: { speedMultiplier?: number; delayMinutes?: number }) {
+  startAllBuses(options);
+}
+
+export function stopDemoSimulation() {
+  stopAllBuses();
+}
+
+export function setDemoReplaySpeed(multiplier: number) {
+  setAllBusSpeed(multiplier);
 }
 
 export function setDemoDelay(minutes: number) {
-  state.delayMinutes = Math.max(0, minutes);
-  if (state.isRunning && state.currentBus) {
-    tickDemoSimulation();
-  } else {
-    notifyListeners();
-  }
+  Object.keys(runtimeStore).forEach(id => setBusDelay(id, minutes));
 }
 
 export function getDemoSimulatorState(): DemoSimulatorState {
-  return { ...state };
+  const bus1 = runtimeStore[DEMO_BUS_ID];
+  const anyRunning = Object.values(runtimeStore).some(r => r.isRunning);
+  const activeCount = Object.values(runtimeStore).filter(r => r.isRunning).length;
+
+  return {
+    isRunning: anyRunning,
+    currentIndex: bus1?.currentIndex || 0,
+    speedMultiplier: bus1?.speedMultiplier || 1,
+    delayMinutes: bus1?.delayMinutes || 0,
+    currentBus: bus1?.currentBus || null,
+    progressPercent: bus1?.progressPercent || 0,
+    activeBusCount: activeCount,
+    buses: { ...runtimeStore }
+  };
 }
 
 export function subscribeToDemoState(listener: (s: DemoSimulatorState) => void): () => void {
   listeners.add(listener);
-  listener({ ...state });
+  listener(getDemoSimulatorState());
   return () => {
     listeners.delete(listener);
   };

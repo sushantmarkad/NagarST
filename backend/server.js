@@ -99,141 +99,222 @@ function calculateBearing(lat1, lon1, lat2, lon2) {
 }
 
 // =========================================================================
-// SIMULATOR ENGINE (Server-Side)
+// MULTI-BUS SIMULATOR ENGINE (Server-Side)
 // =========================================================================
+const DEMO_FLEET_CONFIG = [
+  {
+    id: 'demo-bus-sim-01',
+    busNumber: 'MH-16-DEMO-1',
+    plateNumber: 'MH-16-DM-101',
+    routeId: 'route-12',
+    routeNumber: 'Route 12',
+    routeName: 'Delhi Gate ↔ Dairy Chowk (Pipeline Rd)',
+    origin: 'Delhi Gate Terminal',
+    destination: 'Dairy Chowk Terminal',
+    stops: DEMO_ROUTE_STOPS,
+    waypoints: DEMO_ROAD_WAYPOINTS,
+    currentIndex: 0,
+    direction: 1
+  },
+  {
+    id: 'demo-bus-sim-02',
+    busNumber: 'MH-16-DEMO-2',
+    plateNumber: 'MH-16-DM-102',
+    routeId: 'route-1',
+    routeNumber: 'Route 1',
+    routeName: 'CBS ↔ MIDC Nagapur Sector 1',
+    origin: 'Central Bus Stand (CBS)',
+    destination: 'MIDC Nagapur Sector 1',
+    stops: [
+      { id: 'stop-cbs', name: 'Central Bus Stand (CBS)', lat: 19.0975, lng: 74.7420 },
+      { id: 'stop-swastik', name: 'Swastik Chowk Hub', lat: 19.0952, lng: 74.7496 },
+      { id: 'stop-delhi-gate', name: 'Delhi Gate Circle', lat: 19.1020, lng: 74.7480 },
+      { id: 'stop-premdan', name: 'Premdan Chowk', lat: 19.1130, lng: 74.7390 },
+      { id: 'stop-savedi', name: 'Savedi Terminal', lat: 19.1220, lng: 74.7350 },
+      { id: 'stop-midc', name: 'MIDC Nagapur Sector 1', lat: 19.1550, lng: 74.7180 }
+    ],
+    waypoints: [
+      { lat: 19.0975, lng: 74.7420 },
+      { lat: 19.0971, lng: 74.7441 },
+      { lat: 19.0963, lng: 74.7468 },
+      { lat: 19.0952, lng: 74.7496 },
+      { lat: 19.0970, lng: 74.7492 },
+      { lat: 19.0991, lng: 74.7487 },
+      { lat: 19.1020, lng: 74.7480 },
+      { lat: 19.1042, lng: 74.7458 },
+      { lat: 19.1068, lng: 74.7436 },
+      { lat: 19.1095, lng: 74.7412 },
+      { lat: 19.1130, lng: 74.7390 },
+      { lat: 19.1158, lng: 74.7378 },
+      { lat: 19.1189, lng: 74.7364 },
+      { lat: 19.1220, lng: 74.7350 },
+      { lat: 19.1265, lng: 74.7328 },
+      { lat: 19.1310, lng: 74.7302 },
+      { lat: 19.1360, lng: 74.7275 },
+      { lat: 19.1415, lng: 74.7248 },
+      { lat: 19.1470, lng: 74.7220 },
+      { lat: 19.1510, lng: 74.7200 },
+      { lat: 19.1550, lng: 74.7180 }
+    ],
+    currentIndex: 4,
+    direction: 1
+  },
+  {
+    id: 'demo-bus-sim-03',
+    busNumber: 'MH-16-DEMO-3',
+    plateNumber: 'MH-16-DM-103',
+    routeId: 'route-4',
+    routeNumber: 'Route 4',
+    routeName: 'Savedi Terminal ↔ Central Railway Station',
+    origin: 'Savedi Bus Terminal',
+    destination: 'Central Railway Station',
+    stops: [
+      { id: 'stop-savedi', name: 'Savedi Bus Terminal', lat: 19.1220, lng: 74.7350 },
+      { id: 'stop-premdan', name: 'Premdan Chowk', lat: 19.1130, lng: 74.7390 },
+      { id: 'stop-wadia', name: 'Wadia Park Stadium', lat: 19.0980, lng: 74.7450 },
+      { id: 'stop-cbs', name: 'Central Bus Stand (CBS)', lat: 19.0975, lng: 74.7420 },
+      { id: 'stop-railway', name: 'Central Railway Station', lat: 19.0810, lng: 74.7380 }
+    ],
+    waypoints: [
+      { lat: 19.1220, lng: 74.7350 },
+      { lat: 19.1192, lng: 74.7364 },
+      { lat: 19.1161, lng: 74.7377 },
+      { lat: 19.1130, lng: 74.7390 },
+      { lat: 19.1090, lng: 74.7408 },
+      { lat: 19.1052, lng: 74.7425 },
+      { lat: 19.1018, lng: 74.7441 },
+      { lat: 19.0980, lng: 74.7450 },
+      { lat: 19.0977, lng: 74.7435 },
+      { lat: 19.0975, lng: 74.7420 },
+      { lat: 19.0945, lng: 74.7412 },
+      { lat: 19.0912, lng: 74.7404 },
+      { lat: 19.0878, lng: 74.7395 },
+      { lat: 19.0845, lng: 74.7388 },
+      { lat: 19.0810, lng: 74.7380 }
+    ],
+    currentIndex: 2,
+    direction: 1
+  }
+];
+
 let demoInterval = null;
 let demoState = {
   isRunning: false,
-  currentIndex: 0,
   speedMultiplier: 1,
   delayMinutes: 0,
-  busId: 'demo-bus-sim-01',
-  busNumber: 'MH-16-DEMO',
-  plateNumber: 'MH-16-DEMO-SIM',
-  tripId: 'demo-trip-sim-001',
-  routeNumber: 'MH-16 (DEMO)',
-  routeName: 'Delhi Gate - Dairy Chowk (DEMO ROUTE)',
-  currentStopName: 'Delhi Gate Terminal',
-  nextStopName: 'Market Yard Hub',
-  etaToNextMinutes: 4,
-  speedKmh: 32,
-  lat: DEMO_ROAD_WAYPOINTS[0].lat,
-  lng: DEMO_ROAD_WAYPOINTS[0].lng,
-  heading: 320,
-  status: 'on_time'
+  activeBusCount: 0
 };
 
 function tickDemoSimulator() {
   if (!demoState.isRunning) return;
 
-  const waypoints = DEMO_ROAD_WAYPOINTS;
-  demoState.currentIndex = (demoState.currentIndex + 1) % waypoints.length;
-  
-  const currentPt = waypoints[demoState.currentIndex];
-  const nextPt = waypoints[(demoState.currentIndex + 1) % waypoints.length];
-  
-  const heading = Math.round(calculateBearing(currentPt.lat, currentPt.lng, nextPt.lat, nextPt.lng));
-  const baseSpeed = 30 + Math.floor(Math.sin(demoState.currentIndex) * 8);
-  const currentSpeed = Math.max(15, baseSpeed);
+  DEMO_FLEET_CONFIG.forEach(busConfig => {
+    const waypoints = busConfig.waypoints;
+    let nextIdx = busConfig.currentIndex + busConfig.direction;
+    if (nextIdx >= waypoints.length) {
+      busConfig.direction = -1;
+      nextIdx = waypoints.length - 2;
+    } else if (nextIdx < 0) {
+      busConfig.direction = 1;
+      nextIdx = 1;
+    }
+    busConfig.currentIndex = Math.max(0, Math.min(waypoints.length - 1, nextIdx));
 
-  // Determine current and next stop
-  const progressRatio = demoState.currentIndex / (waypoints.length - 1);
-  const stopIndex = Math.min(
-    DEMO_ROUTE_STOPS.length - 2,
-    Math.floor(progressRatio * (DEMO_ROUTE_STOPS.length - 1))
-  );
-  
-  const curStop = DEMO_ROUTE_STOPS[stopIndex];
-  const nextStop = DEMO_ROUTE_STOPS[stopIndex + 1] || DEMO_ROUTE_STOPS[DEMO_ROUTE_STOPS.length - 1];
+    const currentPt = waypoints[busConfig.currentIndex];
+    const lookaheadIdx = (busConfig.currentIndex + busConfig.direction + waypoints.length) % waypoints.length;
+    const nextPt = waypoints[lookaheadIdx];
 
-  const distToNextStop = calculateDistance(currentPt.lat, currentPt.lng, nextStop.lat, nextStop.lng);
-  const nominalMinutes = Math.max(1, Math.round((distToNextStop / 1000) / (currentSpeed / 60)));
-  const etaMinutes = nominalMinutes + (demoState.delayMinutes || 0);
+    const heading = Math.round(calculateBearing(currentPt.lat, currentPt.lng, nextPt.lat, nextPt.lng));
+    const baseSpeed = 28 + Math.floor(Math.sin(busConfig.currentIndex) * 7);
+    const currentSpeed = Math.max(16, baseSpeed);
 
-  const status = demoState.delayMinutes > 3 ? 'delayed' : 'on_time';
+    const progressRatio = busConfig.currentIndex / (waypoints.length - 1);
+    const stopIndex = Math.min(
+      busConfig.stops.length - 2,
+      Math.max(0, Math.floor(progressRatio * (busConfig.stops.length - 1)))
+    );
 
-  const telemetryPayload = {
-    id: demoState.busId,
-    busId: demoState.busId,
-    busNumber: demoState.busNumber,
-    plateNumber: demoState.plateNumber,
-    routeId: 'demo-route-delhi-dairy',
-    routeNumber: demoState.routeNumber,
-    routeName: demoState.routeName,
-    origin: 'Delhi Gate Terminal',
-    destination: 'Dairy Chowk Terminal',
-    currentStopId: curStop.id,
-    currentStopName: curStop.name,
-    nextStopId: nextStop.id,
-    nextStopName: nextStop.name,
-    etaToNextMinutes: etaMinutes,
-    delayMinutes: demoState.delayMinutes,
-    speedKmh: currentSpeed,
-    occupancy: 'moderate',
-    status: status,
-    lat: currentPt.lat,
-    lng: currentPt.lng,
-    heading: heading,
-    driverName: 'Demo Simulation System',
-    conductorName: 'Simulated Duty',
-    busType: 'EV Metro Shuttle',
-    isDemo: true,
-    lastUpdated: new Date().toISOString()
-  };
+    const curStop = busConfig.stops[stopIndex];
+    const nextStop = busConfig.stops[stopIndex + 1] || busConfig.stops[busConfig.stops.length - 1];
 
-  // Update isolated demo storage
-  demoBuses.set(demoState.busId, telemetryPayload);
-  demoState.lat = currentPt.lat;
-  demoState.lng = currentPt.lng;
-  demoState.speedKmh = currentSpeed;
-  demoState.heading = heading;
-  demoState.currentStopName = curStop.name;
-  demoState.nextStopName = nextStop.name;
-  demoState.etaToNextMinutes = etaMinutes;
-  demoState.status = status;
+    const distToNextStop = calculateDistance(currentPt.lat, currentPt.lng, nextStop.lat, nextStop.lng);
+    const nominalMinutes = Math.max(1, Math.round((distToNextStop / 1000) / (currentSpeed / 60)));
+    const etaMinutes = nominalMinutes + (demoState.delayMinutes || 0);
+    const status = demoState.delayMinutes > 3 ? 'delayed' : 'on_time';
 
-  // Broadcast to demo room AND main locationUpdate channel so passenger/admin maps receive it
-  io.emit('locationUpdate', telemetryPayload);
-  io.to('demo-tracking').emit('demoLocationUpdate', telemetryPayload);
+    const telemetryPayload = {
+      id: busConfig.id,
+      busId: busConfig.id,
+      busNumber: busConfig.busNumber,
+      plateNumber: busConfig.plateNumber,
+      routeId: busConfig.routeId,
+      routeNumber: `${busConfig.routeNumber} (DEMO)`,
+      routeName: `${busConfig.routeName} [DEMO]`,
+      origin: busConfig.origin,
+      destination: busConfig.destination,
+      currentStopId: curStop.id,
+      currentStopName: curStop.name,
+      nextStopId: nextStop.id,
+      nextStopName: nextStop.name,
+      etaToNextMinutes: etaMinutes,
+      delayMinutes: demoState.delayMinutes,
+      speedKmh: currentSpeed,
+      occupancy: 'moderate',
+      status: status,
+      lat: currentPt.lat,
+      lng: currentPt.lng,
+      heading: heading,
+      driverName: `Demo Pilot (${busConfig.busNumber})`,
+      conductorName: 'Simulated Crew',
+      busType: 'EV Metro Shuttle',
+      isDemo: true,
+      lastUpdated: new Date().toISOString()
+    };
+
+    demoBuses.set(busConfig.id, telemetryPayload);
+
+    io.emit('locationUpdate', telemetryPayload);
+    io.to('demo-tracking').emit('demoLocationUpdate', telemetryPayload);
+  });
 }
 
 function startDemoSimulator(options = {}) {
   const speedMult = Math.min(10, Math.max(1, options.speedMultiplier || 1));
   const delay = Math.max(0, options.delayMinutes || 0);
-  
+
   demoState.isRunning = true;
   demoState.speedMultiplier = speedMult;
   demoState.delayMinutes = delay;
+  demoState.activeBusCount = DEMO_FLEET_CONFIG.length;
 
   if (demoInterval) clearInterval(demoInterval);
-  
-  // Calculate interval based on speed: base is 1.5 seconds per waypoint
-  const intervalMs = Math.max(300, Math.round(1500 / speedMult));
+
+  const intervalMs = Math.max(250, Math.round(1400 / speedMult));
   demoInterval = setInterval(tickDemoSimulator, intervalMs);
 
-  // Trigger immediate tick
   tickDemoSimulator();
-  
+
   io.emit('demoStatus', { isRunning: true, ...demoState });
-  return { success: true, message: 'Demo Simulator started', state: demoState };
+  return { success: true, message: 'Multi-bus Demo Simulator started', state: demoState };
 }
 
 function stopDemoSimulator() {
   demoState.isRunning = false;
+  demoState.activeBusCount = 0;
   if (demoInterval) {
     clearInterval(demoInterval);
     demoInterval = null;
   }
 
-  // Clean up demo bus from active in-memory list
-  demoBuses.delete(demoState.busId);
-  
-  // Inform all maps to clean up the demo marker
-  io.emit('busOffline', demoState.busId);
-  io.to('demo-tracking').emit('demoStopped', { busId: demoState.busId });
+  DEMO_FLEET_CONFIG.forEach(b => {
+    demoBuses.delete(b.id);
+    io.emit('busOffline', b.id);
+  });
+
+  io.to('demo-tracking').emit('demoStopped', { all: true });
   io.emit('demoStatus', { isRunning: false, ...demoState });
 
-  return { success: true, message: 'Demo Simulator stopped' };
+  return { success: true, message: 'All Demo Buses stopped' };
 }
 
 // =========================================================================
@@ -250,9 +331,9 @@ io.on('connection', (socket) => {
   // Allow clients to join the dedicated demo room
   socket.on('joinDemoRoom', () => {
     socket.join('demo-tracking');
-    if (demoBuses.has(demoState.busId)) {
-      socket.emit('demoLocationUpdate', demoBuses.get(demoState.busId));
-    }
+    demoBuses.forEach((bus) => {
+      socket.emit('demoLocationUpdate', bus);
+    });
   });
 
   // PRODUCTION GPS LOCATION UPDATES (from real mobile drivers)
@@ -260,7 +341,7 @@ io.on('connection', (socket) => {
     if (!data || !data.busId) return;
 
     // Prevent simulated or demo data from ever writing to activeBuses
-    if (data.isDemo || data.id === demoState.busId) {
+    if (data.isDemo || String(data.busId).startsWith('demo-') || String(data.id).startsWith('demo-')) {
       demoBuses.set(data.busId, { ...data, isDemo: true });
       io.emit('locationUpdate', { ...data, isDemo: true });
       io.to('demo-tracking').emit('demoLocationUpdate', { ...data, isDemo: true });
@@ -274,8 +355,9 @@ io.on('connection', (socket) => {
 
   // PRODUCTION BUS OFFLINE
   socket.on('stopTrip', (busId) => {
-    if (busId === demoState.busId) {
-      stopDemoSimulator();
+    if (String(busId).startsWith('demo-')) {
+      demoBuses.delete(busId);
+      io.emit('busOffline', busId);
     } else {
       activeBuses.delete(busId);
       io.emit('busOffline', busId);

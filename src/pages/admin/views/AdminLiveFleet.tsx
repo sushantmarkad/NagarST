@@ -22,12 +22,18 @@ import { DemoSimulatorPanel } from '../../../components/admin/DemoSimulatorPanel
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
 
+import { MOCK_ROUTES } from '../../../data/mockRoutes';
+
 export const AdminLiveFleet: React.FC = () => {
   const { buses, stops, routes } = useApp();
   const toast = useToast();
   const prompt = usePrompt();
   const [selectedBus, setSelectedBus] = useState<BusType | null>(buses.length > 0 ? buses[0] : null);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
+
+  const allRoutes = routes.length > 0 ? routes : MOCK_ROUTES;
+  const liveCount = buses.filter(b => !b.isDemo && !b.id?.startsWith('demo-')).length;
+  const demoCount = buses.filter(b => b.isDemo || b.id?.startsWith('demo-')).length;
 
   const handleSendDispatch = async () => {
     if (!selectedBus) return;
@@ -62,7 +68,7 @@ export const AdminLiveFleet: React.FC = () => {
         <LiveMap
           buses={buses}
           stops={stops}
-          routes={routes}
+          routes={allRoutes}
           selectedBusId={selectedBus?.id || null}
           selectedRouteId={selectedBus?.routeId || null}
           onSelectBus={(bus) => setSelectedBus(bus)}
@@ -81,7 +87,7 @@ export const AdminLiveFleet: React.FC = () => {
           <div>
             <span className="text-slate-900 font-bold block text-xs md:text-sm leading-tight">Live Urban Fleet Radar</span>
             <span className="text-[11px] text-slate-500 font-normal">
-              {buses.length} active GPS transponder{buses.length === 1 ? '' : 's'} broadcasting in NagarST network
+              {buses.length} active vehicle{buses.length === 1 ? '' : 's'} ({liveCount} Live GPS Drivers, {demoCount} Demo Buses)
             </span>
           </div>
         </div>
@@ -95,17 +101,13 @@ export const AdminLiveFleet: React.FC = () => {
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
             <span className="text-slate-700">Delay</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-            <span className="text-slate-700">Off Route</span>
-          </div>
 
           <button
             type="button"
             onClick={() => setIsSimulatorOpen(!isSimulatorOpen)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-sm transition-all active:scale-95 ml-1"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#7847CB] hover:bg-purple-800 text-white font-black text-xs shadow-sm transition-all active:scale-95 ml-1"
           >
-            <Play className="w-3.5 h-3.5 fill-slate-950" />
+            <Play className="w-3.5 h-3.5 fill-white" />
             <span>GPS Simulator</span>
           </button>
         </div>
@@ -113,12 +115,12 @@ export const AdminLiveFleet: React.FC = () => {
 
       {/* FLOATING DEMO SIMULATOR MODAL / DRAWER */}
       {isSimulatorOpen && (
-        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg">
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <button
               type="button"
               onClick={() => setIsSimulatorOpen(false)}
-              className="absolute -top-3 -right-3 z-30 p-2 rounded-full bg-slate-800 text-white hover:bg-slate-700 shadow-lg border border-slate-700"
+              className="absolute top-3 right-3 z-30 p-2 rounded-full bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100 shadow-md border border-slate-200 transition-all"
               title="Close Simulator"
             >
               <X className="w-4 h-4" />
@@ -137,13 +139,28 @@ export const AdminLiveFleet: React.FC = () => {
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="px-2.5 py-1.5 min-w-[42px] rounded-xl bg-[#7847CB] text-white flex items-center justify-center font-black text-xs shadow-xs shadow-[#7847CB]/30 shrink-0 whitespace-nowrap">
+                  <div className={`px-2.5 py-1.5 min-w-[42px] rounded-xl flex items-center justify-center font-black text-xs shadow-xs shrink-0 whitespace-nowrap ${
+                    selectedBus.isDemo || selectedBus.id?.startsWith('demo-')
+                      ? 'bg-amber-500 text-slate-950 shadow-amber-500/20'
+                      : 'bg-[#7847CB] text-white shadow-[#7847CB]/30'
+                  }`}>
                     {selectedBus.busNumber}
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900 leading-tight">
-                      Bus {selectedBus.busNumber}
-                    </h3>
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-sm font-bold text-slate-900 leading-tight">
+                        Bus {selectedBus.busNumber}
+                      </h3>
+                      {Boolean(selectedBus.isDemo || selectedBus.id?.startsWith('demo-')) ? (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                          DEMO
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          LIVE
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[11px] font-mono text-slate-500">{selectedBus.plateNumber}</span>
                   </div>
                 </div>

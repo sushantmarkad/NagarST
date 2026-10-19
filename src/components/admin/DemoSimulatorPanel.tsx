@@ -11,34 +11,40 @@ import {
   MapPin,
   AlertTriangle,
   Activity,
-  Sparkles,
   ShieldAlert,
-  Navigation,
-  ExternalLink
+  ExternalLink,
+  Bus as BusIcon,
+  CheckCircle2,
+  SlidersHorizontal
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import {
-  startDemoSimulation,
-  stopDemoSimulation,
-  setDemoReplaySpeed,
-  setDemoDelay,
+  startAllBuses,
+  stopAllBuses,
+  startBus,
+  stopBus,
+  setAllBusSpeed,
+  setBusSpeed,
+  setBusDelay,
   subscribeToDemoState,
   getDemoSimulatorState,
-  DEMO_BUS_NUMBER,
-  DEMO_STOPS,
-  type DemoSimulatorState
+  DEMO_BUS_DEFINITIONS,
+  type DemoSimulatorState,
+  type BusSimRuntime
 } from '../../utils/demoSimulatorEngine';
 import { Link } from 'react-router-dom';
 
 interface DemoSimulatorPanelProps {
   onSelectBusOnMap?: (busId: string) => void;
+  selectedBusId?: string;
   className?: string;
   isCompact?: boolean;
 }
 
 export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   onSelectBusOnMap,
+  selectedBusId: externalSelectedBusId,
   className = '',
   isCompact = false
 }) => {
@@ -46,7 +52,16 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   const toast = useToast();
 
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
-  const [isDelayActive, setIsDelayActive] = useState<boolean>(simState.delayMinutes > 0);
+  const [selectedBusId, setSelectedBusId] = useState<string>(
+    externalSelectedBusId || DEMO_BUS_DEFINITIONS[0].id
+  );
+
+  // Sync external selected bus if provided
+  useEffect(() => {
+    if (externalSelectedBusId) {
+      setSelectedBusId(externalSelectedBusId);
+    }
+  }, [externalSelectedBusId]);
 
   // Authorization Check
   const allowedRoles = ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'];
@@ -55,51 +70,66 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   useEffect(() => {
     const unsubscribe = subscribeToDemoState((newState) => {
       setSimState(newState);
-      setIsDelayActive(newState.delayMinutes > 0);
     });
     return () => unsubscribe();
   }, []);
 
-  const handleStart = () => {
+  const activeBusRuntime: BusSimRuntime | undefined = simState.buses[selectedBusId] || Object.values(simState.buses)[0];
+  const isSelectedBusRunning = Boolean(activeBusRuntime?.isRunning);
+  const isSelectedDelayActive = Boolean(activeBusRuntime && activeBusRuntime.delayMinutes > 0);
+
+  const handleStartAll = () => {
     if (!isAuthorized) {
-      toast.error('Unauthorized: Demo simulator requires Administrator authorization.');
+      toast.error('Unauthorized: Multi-bus simulator requires Administrator authorization.');
       return;
     }
-    startDemoSimulation({ speedMultiplier: simState.speedMultiplier, delayMinutes: isDelayActive ? 5 : 0 });
-    toast.success('GPS Demo Simulator is now live! Broadcasting realistic road telemetry.', 'Demo Active');
-    onSelectBusOnMap?.('demo-bus-sim-01');
+    startAllBuses({ speedMultiplier: simState.speedMultiplier });
+    toast.success('All 3 demo buses are now running simultaneously across Ahilyanagar corridors!', 'Fleet Live');
+    onSelectBusOnMap?.(selectedBusId);
   };
 
-  const handleStop = () => {
+  const handleStopAll = () => {
     if (!isAuthorized) return;
-    stopDemoSimulation();
-    toast.info('Demo simulation stopped and simulated bus cleared from all maps.');
+    stopAllBuses();
+    toast.info('All simulated demo buses stopped and cleared from live maps.');
+  };
+
+  const handleToggleSelectedBus = () => {
+    if (!isAuthorized || !activeBusRuntime) return;
+    if (isSelectedBusRunning) {
+      stopBus(activeBusRuntime.id);
+      toast.info(`Stopped ${activeBusRuntime.def.busNumber}.`);
+    } else {
+      startBus(activeBusRuntime.id, { speedMultiplier: activeBusRuntime.speedMultiplier });
+      toast.success(`${activeBusRuntime.def.busNumber} started on ${activeBusRuntime.def.routeNumber}.`);
+      onSelectBusOnMap?.(activeBusRuntime.id);
+    }
   };
 
   const handleSpeedChange = (mult: number) => {
-    setDemoReplaySpeed(mult);
-    toast.info(`Simulation replay speed adjusted to ${mult}x.`);
+    setAllBusSpeed(mult);
+    toast.info(`Simulation speed adjusted to ${mult}x for all buses.`);
   };
 
   const handleToggleDelay = () => {
-    const next = !isDelayActive;
-    setIsDelayActive(next);
-    setDemoDelay(next ? 5 : 0);
+    if (!activeBusRuntime) return;
+    const next = !isSelectedDelayActive;
+    setBusDelay(activeBusRuntime.id, next ? 5 : 0);
     if (next) {
-      toast.warning('Injected 5-minute traffic delay into demo bus schedule.', 'Traffic Delay Active');
+      toast.warning(`Injected 5-minute traffic congestion delay into ${activeBusRuntime.def.busNumber}.`, 'Delay Active');
     } else {
-      toast.success('Removed traffic delay. Demo bus back on scheduled corridor ETA.');
+      toast.success(`Cleared traffic delay for ${activeBusRuntime.def.busNumber}. Back on nominal ETA.`);
     }
   };
 
   if (!isAuthorized) {
     return (
-      <div className={`p-6 rounded-3xl bg-slate-900 border border-slate-800 text-white shadow-xl ${className}`}>
-        <div className="flex items-center gap-3 text-amber-400 mb-2">
+      <div className={`p-6 rounded-3xl bg-white border border-slate-200/90 shadow-sm text-slate-800 ${className}`}>
+        <div className="flex items-center gap-3 text-amber-600 mb-2">
           <ShieldAlert className="w-5 h-5 shrink-0" />
           <h3 className="font-bold text-sm">Demo Simulation Access Restricted</h3>
         </div>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-500">
           Only Municipal Transit Administrators and Dispatch Managers are authorized to control live GPS simulators.
         </p>
       </div>
@@ -107,65 +137,66 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   }
 
   return (
-    <div className={`bg-slate-950 text-white rounded-3xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col ${className}`}>
-      {/* Top Banner / Status */}
-      <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
-            <Activity className="w-4 h-4 animate-pulse" />
+    <div className={`bg-white text-slate-900 rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col ${className}`}>
+      
+      {/* Top Header Card */}
+      <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-purple-50 border border-purple-100 text-[#7847CB] flex items-center justify-center font-bold shadow-xs">
+            <Activity className="w-5 h-5 animate-pulse" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-extrabold text-white tracking-wide">
-                GPS Demo Simulator
+              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
+                GPS Multi-Bus Simulator
               </h2>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                Sandbox
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200">
+                SANDBOX
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">
-              Replays real Ahilyanagar road coordinates to commuter & admin maps
+            <p className="text-xs text-slate-500">
+              Simulates multiple autonomous buses concurrently on predefined road routes
             </p>
           </div>
         </div>
 
         <Badge variant={simState.isRunning ? 'brand' : 'neutral'} size="sm" dot>
-          {simState.isRunning ? 'Broadcasting Live' : 'Simulator Standby'}
+          {simState.activeBusCount > 0 ? `${simState.activeBusCount} Buses Active` : 'Simulator Standby'}
         </Badge>
       </div>
 
       <div className="p-4 sm:p-5 space-y-5">
-        {/* Primary Action Buttons */}
+        
+        {/* Master Start All / Stop All Action Buttons */}
         <div className="grid grid-cols-2 gap-3">
           <Button
-            onClick={handleStart}
-            disabled={simState.isRunning}
+            onClick={handleStartAll}
             size="lg"
-            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold shadow-lg shadow-emerald-950/50 disabled:opacity-40"
+            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md shadow-emerald-600/20"
             leftIcon={<Play className="w-4 h-4 fill-white" />}
           >
-            Start Demo
+            Start All Demos
           </Button>
 
           <Button
-            onClick={handleStop}
+            onClick={handleStopAll}
             disabled={!simState.isRunning}
             size="lg"
             variant="outline"
-            className="w-full border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 font-extrabold disabled:opacity-40"
-            leftIcon={<Square className="w-4 h-4 fill-rose-300" />}
+            className="w-full border-rose-200 bg-rose-50/60 text-rose-700 hover:bg-rose-100/70 font-bold disabled:opacity-40"
+            leftIcon={<Square className="w-4 h-4 fill-rose-600 text-rose-600" />}
           >
-            Stop Demo
+            Stop All
           </Button>
         </div>
 
-        {/* Speed Multipliers & Scenario Toggles */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-bold">
+        {/* Global Replay Velocity Selector */}
+        <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
             <span className="flex items-center gap-1.5">
-              <FastForward className="w-3.5 h-3.5 text-amber-400" /> Replay Speed
+              <FastForward className="w-4 h-4 text-[#7847CB]" /> Replay Speed Multiplier
             </span>
-            <span className="text-amber-400 font-mono">{simState.speedMultiplier}x Normal Velocity</span>
+            <span className="font-mono text-purple-700 font-black">{simState.speedMultiplier}x Velocity</span>
           </div>
 
           <div className="grid grid-cols-4 gap-2">
@@ -174,10 +205,10 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                 key={mult}
                 type="button"
                 onClick={() => handleSpeedChange(mult)}
-                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all text-center border ${
+                className={`py-1.5 rounded-xl font-mono text-xs font-black transition-all ${
                   simState.speedMultiplier === mult
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
-                    : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
+                    ? 'bg-[#7847CB] text-white shadow-xs'
+                    : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
                 }`}
               >
                 {mult}x
@@ -186,105 +217,164 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
           </div>
         </div>
 
-        {/* Traffic Delay Simulator Injection */}
-        <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <Clock className={`w-4 h-4 ${isDelayActive ? 'text-rose-400 animate-spin' : 'text-slate-400'}`} />
-            <div>
-              <span className="text-xs font-bold text-slate-200 block">Traffic Delay Scenario</span>
-              <span className="text-[10px] text-slate-400 block">+5 min ETA congestion delay</span>
-            </div>
+        {/* Multi-Bus Fleet Tabs */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-tight flex items-center gap-1.5">
+              <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" /> Demo Fleet Selection ({DEMO_BUS_DEFINITIONS.length})
+            </span>
+            <span className="text-[11px] text-slate-400">Click to inspect or toggle</span>
           </div>
 
-          <button
-            type="button"
-            onClick={handleToggleDelay}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-              isDelayActive
-                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-sm'
-                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-            }`}
-          >
-            {isDelayActive ? 'Delay Active' : 'Inject Delay'}
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {DEMO_BUS_DEFINITIONS.map((def) => {
+              const runtime = simState.buses[def.id];
+              const isSelected = selectedBusId === def.id;
+              const isRunning = Boolean(runtime?.isRunning);
+
+              return (
+                <div
+                  key={def.id}
+                  onClick={() => {
+                    setSelectedBusId(def.id);
+                    onSelectBusOnMap?.(def.id);
+                  }}
+                  className={`p-3 rounded-2xl border text-left cursor-pointer transition-all ${
+                    isSelected
+                      ? 'bg-purple-50/70 border-purple-300 ring-2 ring-purple-500/20 shadow-xs'
+                      : 'bg-white hover:bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span
+                      className="px-2 py-0.5 rounded-md text-[11px] font-black text-white"
+                      style={{ backgroundColor: def.color }}
+                    >
+                      {def.busNumber}
+                    </span>
+                    <span className={`w-2.5 h-2.5 rounded-full ${isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                  </div>
+                  <h4 className="font-bold text-xs text-slate-900 truncate">{def.routeNumber}</h4>
+                  <p className="text-[11px] text-slate-500 truncate">{def.destination}</p>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Live Telemetry HUD */}
-        {simState.isRunning && simState.currentBus && (
-          <div className="p-4 rounded-2xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800/90 space-y-3">
-            <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="font-extrabold text-amber-300">{DEMO_BUS_NUMBER}</span>
-                <span className="text-slate-500 text-[10px]">({simState.currentBus.plateNumber})</span>
+        {/* Selected Bus Live HUD Card */}
+        {activeBusRuntime && (
+          <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/90 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-sm text-slate-900">
+                    {activeBusRuntime.def.busNumber}
+                  </span>
+                  <span className="text-xs font-mono text-slate-400">
+                    ({activeBusRuntime.def.plateNumber})
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 font-medium">{activeBusRuntime.def.routeName}</p>
               </div>
-              <Badge variant={isDelayActive ? 'danger' : 'success'} size="sm">
-                {isDelayActive ? 'Traffic Delayed' : 'On Schedule'}
-              </Badge>
+
+              <button
+                type="button"
+                onClick={handleToggleSelectedBus}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+                  isSelectedBusRunning
+                    ? 'bg-rose-100 text-rose-800 hover:bg-rose-200 border border-rose-200'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs'
+                }`}
+              >
+                {isSelectedBusRunning ? (
+                  <>
+                    <Square className="w-3.5 h-3.5 fill-rose-800" /> Stop Bus
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-white" /> Start Bus
+                  </>
+                )}
+              </button>
             </div>
 
-            {/* Route Progress Bar */}
+            {/* Live Metrics Grid */}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block flex items-center justify-center gap-1">
+                  <Gauge className="w-3 h-3 text-[#7847CB]" /> Velocity
+                </span>
+                <span className="font-mono font-black text-sm text-slate-900">
+                  {activeBusRuntime.currentBus?.speedKmh || 30} <span className="text-[10px] text-slate-500 font-normal">km/h</span>
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block flex items-center justify-center gap-1">
+                  <Compass className="w-3 h-3 text-blue-500" /> Heading
+                </span>
+                <span className="font-mono font-black text-sm text-slate-900">
+                  {activeBusRuntime.currentBus?.heading || 0}°
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block flex items-center justify-center gap-1">
+                  <Clock className="w-3 h-3 text-amber-500" /> Stop ETA
+                </span>
+                <span className="font-mono font-black text-sm text-purple-700">
+                  {activeBusRuntime.currentBus?.etaToNextMinutes || 1} <span className="text-[10px] font-normal">min</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Approaching stop & delay injector */}
+            <div className="p-3 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between text-xs">
+              <div className="min-w-0 pr-2">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Approaching Next Stop</span>
+                <span className="font-bold text-slate-800 truncate block">
+                  {activeBusRuntime.currentBus?.nextStopName || activeBusRuntime.def.stops[1]?.name}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleToggleDelay}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                  isSelectedDelayActive
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+                title="Inject 5-minute simulated traffic delay"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                {isSelectedDelayActive ? '+5m Active' : 'Inject Delay'}
+              </button>
+            </div>
+
+            {/* Progress Bar */}
             <div className="space-y-1">
-              <div className="flex justify-between text-[11px] text-slate-400 font-semibold">
+              <div className="flex justify-between text-[11px] text-slate-500 font-semibold">
                 <span>Route Progress</span>
-                <span className="text-amber-400 font-mono font-bold">{simState.progressPercent}%</span>
+                <span className="font-mono">{activeBusRuntime.progressPercent}%</span>
               </div>
-              <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+              <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-300 ease-out"
-                  style={{ width: `${simState.progressPercent}%` }}
+                  className="h-full bg-gradient-to-r from-[#7847CB] to-purple-500 transition-all duration-300"
+                  style={{ width: `${Math.max(5, activeBusRuntime.progressPercent)}%` }}
                 />
-              </div>
-            </div>
-
-            {/* Telemetry Stats Matrix */}
-            <div className="grid grid-cols-3 gap-2 pt-1 text-center font-mono">
-              <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
-                <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400 uppercase font-sans font-bold">
-                  <Gauge className="w-3 h-3 text-emerald-400" /> Speed
-                </div>
-                <div className="text-xs font-bold text-white mt-0.5">{simState.currentBus.speedKmh} km/h</div>
-              </div>
-
-              <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
-                <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400 uppercase font-sans font-bold">
-                  <Compass className="w-3 h-3 text-cyan-400" /> Bearing
-                </div>
-                <div className="text-xs font-bold text-white mt-0.5">{simState.currentBus.heading}°</div>
-              </div>
-
-              <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
-                <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400 uppercase font-sans font-bold">
-                  <Clock className="w-3 h-3 text-amber-400" /> Next ETA
-                </div>
-                <div className="text-xs font-bold text-amber-300 mt-0.5">{simState.currentBus.etaToNextMinutes} min</div>
-              </div>
-            </div>
-
-            {/* Current & Next Stop details */}
-            <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] space-y-1">
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-slate-500" /> Passing Stop:
-                </span>
-                <span className="text-slate-200 font-bold">{simState.currentBus.currentStopName}</span>
-              </div>
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="flex items-center gap-1">
-                  <Navigation className="w-3 h-3 text-amber-400" /> Approaching:
-                </span>
-                <span className="text-amber-300 font-bold">{simState.currentBus.nextStopName}</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* Footer Link to Commuter Live Map */}
-        <div className="pt-2 flex items-center justify-between text-xs text-slate-400">
-          <span className="text-[11px]">View on Passenger Map:</span>
+        {/* Quick Link to Commuter Tracking Map */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+          <span className="text-slate-500">View on Passenger Tracking Map:</span>
           <Link
-            to="/app/tracking"
-            className="flex items-center gap-1 text-[#a855f7] hover:text-[#c084fc] font-bold transition-colors"
+            to="/tracking"
+            className="flex items-center gap-1 text-[#7847CB] hover:text-purple-800 font-bold hover:underline"
           >
             <span>Open Commuter Map</span>
             <ExternalLink className="w-3.5 h-3.5" />

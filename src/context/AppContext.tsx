@@ -350,11 +350,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setBuses(prev => prev.filter(b => b.id !== busId));
     };
 
-    // Load active demo bus if one is running in storage
+    // Load active demo buses if running in storage
     try {
-      const demoRaw = localStorage.getItem('nagarst_demo_bus');
-      if (demoRaw) {
-        handleBusUpdate(JSON.parse(demoRaw));
+      const demoBusesRaw = localStorage.getItem('nagarst_demo_buses');
+      if (demoBusesRaw) {
+        const parsedMap = JSON.parse(demoBusesRaw);
+        Object.values(parsedMap).forEach((b: any) => handleBusUpdate(b));
+      }
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('nagarst_live_bus_demo-')) {
+          const val = localStorage.getItem(k);
+          if (val) handleBusUpdate(JSON.parse(val));
+        }
       }
     } catch (_) {}
 
@@ -382,8 +390,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const parsed = JSON.parse(e.newValue);
           handleBusUpdate(parsed);
         } catch (_) {}
-      } else if (e.key === 'nagarst_demo_bus' && !e.newValue) {
-        handleBusOffline('demo-bus-sim-01');
+      } else if (e.key?.startsWith('nagarst_live_bus_') && !e.newValue) {
+        const busId = e.key.replace('nagarst_live_bus_', '');
+        handleBusOffline(busId);
+      } else if (e.key === 'nagarst_demo_buses' && !e.newValue) {
+        setBuses(prev => prev.filter(b => !b.isDemo && !b.id.startsWith('demo-')));
       }
     };
     window.addEventListener('storage', onStorage);
