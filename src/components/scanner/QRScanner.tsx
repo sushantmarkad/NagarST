@@ -7,7 +7,7 @@ import {
   type ScannerMode,
   type VerificationResultData
 } from './ScannerComponents';
-import { Camera, QrCode } from 'lucide-react';
+import { Camera, QrCode, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export const QRScanner: React.FC = () => {
@@ -209,42 +209,48 @@ export const QRScanner: React.FC = () => {
                   <>
                     <button
                       onClick={() => handleSimulateScan('valid_ticket')}
-                      className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition"
+                      className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition flex items-center justify-center gap-1.5"
                     >
-                      ✓ Valid Ticket
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Valid Ticket</span>
                     </button>
                     <button
                       onClick={() => handleSimulateScan('expired_ticket')}
-                      className="p-2.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition"
+                      className="p-2.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition flex items-center justify-center gap-1.5"
                     >
-                      ⚠ Expired Ticket
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Expired Ticket</span>
                     </button>
                     <button
                       onClick={() => handleSimulateScan('used_ticket')}
-                      className="p-2.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
+                      className="p-2.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition flex items-center justify-center gap-1.5"
                     >
-                      ✕ Already Used
+                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Already Used</span>
                     </button>
                     <button
                       onClick={() => handleSimulateScan('invalid_ticket')}
-                      className="p-2.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
+                      className="p-2.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition flex items-center justify-center gap-1.5"
                     >
-                      ✕ Invalid Ticket
+                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Invalid Ticket</span>
                     </button>
                   </>
                 ) : (
                   <>
                     <button
                       onClick={() => handleSimulateScan('valid_pass')}
-                      className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition"
+                      className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition flex items-center justify-center gap-1.5"
                     >
-                      ✓ Valid Pass
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Valid Pass</span>
                     </button>
                     <button
                       onClick={() => handleSimulateScan('invalid_pass')}
-                      className="p-2.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
+                      className="p-2.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition flex items-center justify-center gap-1.5"
                     >
-                      ✕ Expired / Invalid
+                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Expired / Invalid</span>
                     </button>
                   </>
                 )}

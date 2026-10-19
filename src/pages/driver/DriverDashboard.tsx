@@ -13,7 +13,8 @@ import {
   Calendar,
   Gauge,
   Wifi,
-  WifiOff
+  WifiOff,
+  CheckCircle2
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -162,7 +163,7 @@ export const DriverDashboard: React.FC = () => {
 
       socketRef.current.on('dispatchMessage', (data: { busId: string, message: string }) => {
         if (data.busId === user?.assignedBusId) {
-          toast.warning(data.message, '🚨 City Admin Dispatch Alert 🚨', 8000);
+          toast.warning(data.message, 'City Admin Dispatch Alert', 8000);
         }
       });
     });
@@ -489,7 +490,7 @@ export const DriverDashboard: React.FC = () => {
 
   const handleTriggerSOS = async () => {
     const sosConfirmed = await confirm({
-      title: '🚨 TRIGGER EMERGENCY SOS 🚨',
+      title: 'TRIGGER EMERGENCY SOS DISPATCH',
       message: 'This will instantly alert the Municipal Transit Control Room, dispatch emergency response units, and flag your bus on all administrative monitors.',
       confirmText: 'CONFIRM SOS EMERGENCY',
       isDestructive: true,
@@ -895,8 +896,9 @@ export const DriverDashboard: React.FC = () => {
                       </div>
                     ))}
                     {currentStopIndex >= tripStops.length && (
-                      <div className="text-center text-xs font-bold text-emerald-600 p-3">
-                        ✓ All scheduled route stops completed!
+                      <div className="text-center text-xs font-bold text-emerald-600 p-3 flex items-center justify-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>All scheduled route stops completed!</span>
                       </div>
                     )}
                   </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../../context/AppContext';
+import { useToast } from '../../../context/FeedbackContext';
 import { LiveMap } from '../../../components/map/LiveMap';
 import { DemoSimulatorPanel } from '../../../components/admin/DemoSimulatorPanel';
 import { Badge } from '../../../components/ui/Badge';
@@ -7,16 +8,24 @@ import {
   DEMO_BUS_DEFINITIONS,
   getDemoSimulatorState,
   subscribeToDemoState,
+  addStopToBusRoute,
   type DemoBusDefinition,
   type DemoSimulatorState
 } from '../../../utils/demoSimulatorEngine';
+import { reverseGeocodeLatLng } from '../../../utils/routing';
 import { MOCK_ROUTES } from '../../../data/mockRoutes';
-import { Route, Layers, ShieldCheck, Bus as BusIcon, MapPin, Clock } from 'lucide-react';
+import { Route, Layers, ShieldCheck, Bus as BusIcon, MapPin, Clock, Flag, Target } from 'lucide-react';
 
 export const AdminDemoSimulator: React.FC = () => {
   const { buses, stops, routes } = useApp();
+  const toast = useToast();
   const [selectedBusId, setSelectedBusId] = useState<string>(DEMO_BUS_DEFINITIONS[0].id);
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
+
+  // Interactive Pin & Stop Placement Mode
+  const [interactiveMode, setInteractiveMode] = useState<'view' | 'mark_start_pin' | 'mark_end_pin' | 'add_stop'>('view');
+  const [customStartPin, setCustomStartPin] = useState<{ lat: number; lng: number; name?: string } | null>(null);
+  const [customEndPin, setCustomEndPin] = useState<{ lat: number; lng: number; name?: string } | null>(null);
 
   React.useEffect(() => {
     const unsub = subscribeToDemoState((newState) => {
@@ -29,6 +38,38 @@ export const AdminDemoSimulator: React.FC = () => {
   const selectedDef = currentRuntime?.def || DEMO_BUS_DEFINITIONS.find(d => d.id === selectedBusId) || DEMO_BUS_DEFINITIONS[0];
   const selectedBus = buses.find(b => b.id === selectedBusId);
   const activeDemoBuses = buses.filter(b => b.isDemo || b.id?.startsWith('demo-'));
+
+  // Handle clicks directly on the Leaflet map in interactive mode
+  const handleMapClick = async (coords: { lat: number; lng: number }) => {
+    if (interactiveMode === 'mark_start_pin') {
+      const name = await reverseGeocodeLatLng(coords.lat, coords.lng);
+      setCustomStartPin({ lat: coords.lat, lng: coords.lng, name });
+      toast.success(`Start Terminal Pin placed at "${name}". Now mark End Pin or compute corridor!`, 'Start Pin Set');
+      setInteractiveMode('view');
+    } else if (interactiveMode === 'mark_end_pin') {
+      const name = await reverseGeocodeLatLng(coords.lat, coords.lng);
+      setCustomEndPin({ lat: coords.lat, lng: coords.lng, name });
+      toast.success(`End Terminal Pin placed at "${name}". Click "Auto-Select Shortest Road Corridor" to snap!`, 'End Pin Set');
+      setInteractiveMode('view');
+    } else if (interactiveMode === 'add_stop') {
+      const name = await reverseGeocodeLatLng(coords.lat, coords.lng);
+      const newStop = {
+        id: `stop-custom-${Date.now()}`,
+        name,
+        lat: coords.lat,
+        lng: coords.lng
+      };
+      addStopToBusRoute(selectedBusId, newStop);
+      toast.success(`Added new stop "${name}" along route corridor!`, 'Stop Created');
+      setInteractiveMode('view');
+    }
+  };
+
+  const handleClearCustomPins = () => {
+    setCustomStartPin(null);
+    setCustomEndPin(null);
+    setInteractiveMode('view');
+  };
 
   // Combine loaded routes or fallback to mock routes for demo paths, augmented with active simulator corridor definitions & marked terminal pins
   const demoRoutes = React.useMemo(() => {
@@ -104,6 +145,11 @@ export const AdminDemoSimulator: React.FC = () => {
           <DemoSimulatorPanel
             selectedBusId={selectedBusId}
             onSelectBusOnMap={(id) => setSelectedBusId(id)}
+            interactiveMode={interactiveMode}
+            onSetInteractiveMode={(mode) => setInteractiveMode(mode)}
+            customStartPin={customStartPin}
+            customEndPin={customEndPin}
+            onClearCustomPins={handleClearCustomPins}
           />
 
           {/* Planned Corridor Stops Summary for Selected Bus */}
@@ -193,6 +239,11 @@ export const AdminDemoSimulator: React.FC = () => {
               routes={allRoutes}
               selectedBusId={selectedBusId}
               onSelectBus={(bus) => setSelectedBusId(bus.id)}
+              interactiveMode={interactiveMode}
+              onCancelInteractive={() => setInteractiveMode('view')}
+              onMapClick={handleMapClick}
+              customStartPin={customStartPin}
+              customEndPin={customEndPin}
               className="w-full h-full rounded-none"
             />
           </div>

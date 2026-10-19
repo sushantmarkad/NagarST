@@ -21,10 +21,16 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
-  Pin,
   Lock,
   RotateCcw,
-  Layers
+  Layers,
+  Flag,
+  Target,
+  Plus,
+  Loader2,
+  X,
+  Crosshair,
+  Check
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
@@ -40,12 +46,18 @@ import {
   setAllBusesAssignedRoute,
   subscribeToDemoState,
   getDemoSimulatorState,
+  addNewCustomBus,
+  addNewCustomRoute,
+  setBusCustomCorridor,
   DEMO_BUS_DEFINITIONS,
   AVAILABLE_DEMO_ROUTES,
   type DemoSimulatorState,
   type BusSimRuntime,
-  type DemoRoutePreset
+  type DemoRoutePreset,
+  type DemoStop
 } from '../../utils/demoSimulatorEngine';
+import { fetchShortestRoadCorridor, findStopsAlongRoad } from '../../utils/routing';
+import { MOCK_BUS_STOPS } from '../../data/mockStops';
 import { Link } from 'react-router-dom';
 
 interface DemoSimulatorPanelProps {
@@ -53,13 +65,23 @@ interface DemoSimulatorPanelProps {
   selectedBusId?: string;
   className?: string;
   isCompact?: boolean;
+  interactiveMode?: 'view' | 'mark_start_pin' | 'mark_end_pin' | 'add_stop';
+  onSetInteractiveMode?: (mode: 'view' | 'mark_start_pin' | 'mark_end_pin' | 'add_stop') => void;
+  customStartPin?: { lat: number; lng: number; name?: string } | null;
+  customEndPin?: { lat: number; lng: number; name?: string } | null;
+  onClearCustomPins?: () => void;
 }
 
 export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   onSelectBusOnMap,
   selectedBusId: externalSelectedBusId,
   className = '',
-  isCompact = false
+  isCompact = false,
+  interactiveMode = 'view',
+  onSetInteractiveMode,
+  customStartPin,
+  customEndPin,
+  onClearCustomPins
 }) => {
   const { user } = useAuth();
   const toast = useToast();
@@ -73,6 +95,22 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   const [showStopsList, setShowStopsList] = useState<boolean>(true);
   const [startTerminalPinId, setStartTerminalPinId] = useState<string>('');
   const [endTerminalPinId, setEndTerminalPinId] = useState<string>('');
+
+  // Road snapping & route computation states
+  const [isComputingCorridor, setIsComputingCorridor] = useState<boolean>(false);
+  const [showAddBusModal, setShowAddBusModal] = useState<boolean>(false);
+  const [showSaveRouteModal, setShowSaveRouteModal] = useState<boolean>(false);
+
+  // Add Bus Form State
+  const [newBusNumber, setNewBusNumber] = useState<string>('MH-16 BT-');
+  const [newBusPlate, setNewBusPlate] = useState<string>('MH-16 BT-');
+  const [newBusColor, setNewBusColor] = useState<string>('#7847CB');
+  const [newBusRouteId, setNewBusRouteId] = useState<string>('route-12');
+  const [newBusType, setNewBusType] = useState<'EV Metro Shuttle' | 'AC Express' | 'Standard City'>('Standard City');
+
+  // Save Route Form State
+  const [newRouteNumber, setNewRouteNumber] = useState<string>('Route 99');
+  const [newRouteName, setNewRouteName] = useState<string>('Custom Shortest Corridor');
 
   // Sync external selected bus if provided
   useEffect(() => {
@@ -159,7 +197,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     if (!activeBusRuntime) return;
     setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, isReverseDirection, newStartPin, endTerminalPinId);
     const stopObj = activePreset.stops.find((s) => s.id === newStartPin);
-    toast.info(`🏁 Start Terminal Pin marked: ${stopObj?.name || newStartPin}`);
+    toast.info(`Start Terminal Pin set to ${stopObj?.name || newStartPin}`);
     onSelectBusOnMap?.(activeBusRuntime.id);
   };
 
@@ -168,7 +206,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     if (!activeBusRuntime) return;
     setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, isReverseDirection, startTerminalPinId, newEndPin);
     const stopObj = activePreset.stops.find((s) => s.id === newEndPin);
-    toast.info(`🎯 End Terminal Pin marked: ${stopObj?.name || newEndPin}`);
+    toast.info(`End Terminal Pin set to ${stopObj?.name || newEndPin}`);
     onSelectBusOnMap?.(activeBusRuntime.id);
   };
 
@@ -189,9 +227,10 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     const endPin = activePreset.stops[activePreset.stops.length - 1]?.id || '';
     setStartTerminalPinId(startPin);
     setEndTerminalPinId(endPin);
+    onClearCustomPins?.();
     if (!activeBusRuntime) return;
     setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, isReverseDirection, startPin, endPin);
-    toast.success(`Reset terminal pins to full corridor (${activePreset.origin} ↔ ${activePreset.destination}).`);
+    toast.success(`Reset terminal pins to full corridor (${activePreset.origin} to ${activePreset.destination}).`);
   };
 
   const handleApplyTerminalsToAllBuses = () => {
@@ -203,6 +242,137 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
       'Fleet Synchronized'
     );
     onSelectBusOnMap?.(selectedBusId);
+  };
+
+  // Compute Shortest Road Corridor between marked pins via OSRM
+  const handleAutoComputeShortestCorridor = async () => {
+    if (!activeBusRuntime) return;
+
+    let originCoords: { lat: number; lng: number; name: string };
+    let destCoords: { lat: number; lng: number; name: string };
+
+    if (customStartPin) {
+      originCoords = { lat: customStartPin.lat, lng: customStartPin.lng, name: customStartPin.name || 'Custom Origin' };
+    } else {
+      const startStop = activeBusRuntime.def.stops[0];
+      originCoords = { lat: startStop.lat, lng: startStop.lng, name: startStop.name };
+    }
+
+    if (customEndPin) {
+      destCoords = { lat: customEndPin.lat, lng: customEndPin.lng, name: customEndPin.name || 'Custom Destination' };
+    } else {
+      const endStop = activeBusRuntime.def.stops[activeBusRuntime.def.stops.length - 1];
+      destCoords = { lat: endStop.lat, lng: endStop.lng, name: endStop.name };
+    }
+
+    try {
+      setIsComputingCorridor(true);
+      toast.info('Calculating shortest road path and detecting transit stops along street corridor...');
+
+      const result = await fetchShortestRoadCorridor(originCoords, destCoords);
+      if (!result.path || result.path.length < 2) {
+        toast.error('Could not compute road path between marked points.');
+        return;
+      }
+
+      // Collect candidate stops from all known sources
+      const allCandidateStops: DemoStop[] = [
+        ...MOCK_BUS_STOPS.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng })),
+        ...AVAILABLE_DEMO_ROUTES.flatMap((r) => r.stops)
+      ];
+
+      // Remove duplicate stop IDs
+      const uniqueCandidateStops = Array.from(
+        new Map(allCandidateStops.map((item) => [item.id, item])).values()
+      );
+
+      // Detect and sequence stops situated along this road corridor (within 250m)
+      const detectedIntermediateStops = findStopsAlongRoad(result.path, uniqueCandidateStops, 300);
+
+      // Create sequence with origin at start, destination at end
+      const originStop: DemoStop = {
+        id: `stop-start-${Date.now()}`,
+        name: originCoords.name,
+        lat: originCoords.lat,
+        lng: originCoords.lng
+      };
+      const destStop: DemoStop = {
+        id: `stop-dest-${Date.now()}`,
+        name: destCoords.name,
+        lat: destCoords.lat,
+        lng: destCoords.lng
+      };
+
+      const finalStopSequence: DemoStop[] = [
+        originStop,
+        ...detectedIntermediateStops.filter(
+          (s) => s.id !== originStop.id && s.id !== destStop.id
+        ),
+        destStop
+      ];
+
+      // Lock selected bus to this shortest road corridor
+      setBusCustomCorridor(
+        activeBusRuntime.id,
+        originStop,
+        destStop,
+        result.path,
+        detectedIntermediateStops.filter((s) => s.id !== originStop.id && s.id !== destStop.id)
+      );
+
+      toast.success(
+        `Shortest road route snapped! ${finalStopSequence.length} stops included along ${(result.distanceMeters / 1000).toFixed(1)} km road corridor.`,
+        'Road Snapped'
+      );
+      onSelectBusOnMap?.(activeBusRuntime.id);
+    } catch (err) {
+      console.error('Error computing shortest road corridor:', err);
+      toast.error('Failed to compute road route.');
+    } finally {
+      setIsComputingCorridor(false);
+    }
+  };
+
+  // Add new bus submit
+  const handleAddNewBusSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBusNumber.trim()) {
+      toast.error('Please enter a valid Bus Number.');
+      return;
+    }
+
+    const created = addNewCustomBus({
+      busNumber: newBusNumber.trim(),
+      plateNumber: newBusPlate.trim() || newBusNumber.trim(),
+      routeId: newBusRouteId,
+      color: newBusColor,
+      busType: newBusType
+    });
+
+    setSelectedBusId(created.id);
+    setShowAddBusModal(false);
+    toast.success(`Bus ${created.def.busNumber} added to fleet and assigned to ${created.def.routeNumber}!`, 'Bus Created');
+    onSelectBusOnMap?.(created.id);
+  };
+
+  // Save custom route submit
+  const handleSaveRouteSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBusRuntime) return;
+
+    const preset = addNewCustomRoute({
+      routeNumber: newRouteNumber.trim() || 'Custom Route',
+      routeName: newRouteName.trim() || `${activeBusRuntime.def.origin} to ${activeBusRuntime.def.destination}`,
+      origin: activeBusRuntime.def.origin,
+      destination: activeBusRuntime.def.destination,
+      color: activeBusRuntime.def.color,
+      stops: [...activeBusRuntime.def.stops],
+      waypoints: [...activeBusRuntime.def.waypoints]
+    });
+
+    setSelectedRoutePresetId(preset.id);
+    setShowSaveRouteModal(false);
+    toast.success(`Route ${preset.routeNumber} saved! Available to all buses in fleet.`, 'Route Created');
   };
 
   const handleSpeedChange = (mult: number) => {
@@ -217,7 +387,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     if (next) {
       toast.warning(`Injected 5-minute traffic delay into ${activeBusRuntime.def.busNumber}.`, 'Delay Active');
     } else {
-      toast.success(`Cleared traffic delay for ${activeBusRuntime.def.busNumber}. Back on nominal ETA.`);
+      toast.success(`Cleared traffic delay for ${activeBusRuntime.def.busNumber}. Nominal ETA restored.`);
     }
   };
 
@@ -254,7 +424,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Select predefined corridors, inspect route stops, and broadcast road GPS coordinates
+              Select road corridors, mark terminal pins, snap shortest routes & broadcast real GPS
             </p>
           </div>
         </div>
@@ -316,13 +486,20 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
           </div>
         </div>
 
-        {/* Multi-Bus Fleet Tabs */}
+        {/* 1. Multi-Bus Fleet Tabs & Add Bus Option */}
         <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-700 uppercase tracking-tight flex items-center gap-1.5">
-              <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" /> 1. Select Demo Bus ({DEMO_BUS_DEFINITIONS.length})
+              <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" /> 1. Fleet Buses ({DEMO_BUS_DEFINITIONS.length})
             </span>
-            <span className="text-[11px] text-slate-400">Click to configure</span>
+            <button
+              type="button"
+              onClick={() => setShowAddBusModal(true)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#7847CB] text-[11px] font-bold border border-purple-200/80 transition-colors shadow-2xs"
+            >
+              <Plus className="w-3 h-3 text-[#7847CB]" />
+              <span>Add New Bus</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -365,12 +542,12 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
           </div>
         </div>
 
-        {/* 2. ROUTE & TERMINAL PINS CONFIGURATION BEFORE STARTING */}
+        {/* 2. ROUTE CORRIDOR SELECTION & FLIP */}
         {activeBusRuntime && (
           <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-200/80 space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
-                <Route className="w-3.5 h-3.5 text-[#7847CB]" /> 2. Choose Route Corridor & Direction
+                <Route className="w-3.5 h-3.5 text-[#7847CB]" /> 2. Assign Route to {activeBusRuntime.def.busNumber}
               </span>
               <button
                 type="button"
@@ -386,7 +563,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
             {/* Route Dropdown */}
             <div className="space-y-1">
               <label className="text-[11px] font-semibold text-slate-500 block">
-                Assign Corridor for {activeBusRuntime.def.busNumber}:
+                Corridor:
               </label>
               <select
                 value={selectedRoutePresetId}
@@ -395,78 +572,134 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
               >
                 {AVAILABLE_DEMO_ROUTES.map((preset) => (
                   <option key={preset.id} value={preset.id}>
-                    {preset.routeNumber} — {preset.origin} ➔ {preset.destination} ({preset.stops.length} stops)
+                    {preset.routeNumber} — {preset.origin} to {preset.destination} ({preset.stops.length} stops)
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* 3. MARK TERMINAL PINS UI */}
+            {/* 3. MANUALLY MARK START & END TERMINAL PINS ON MAP */}
             <div className="p-3.5 bg-white rounded-xl border border-purple-200 shadow-2xs space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Pin className="w-3.5 h-3.5 text-emerald-600" /> Mark Route Terminal Pins (Lock Route)
+                  <Crosshair className="w-3.5 h-3.5 text-purple-600" /> Manual Terminal Pins & Road Snapping
                 </span>
                 <button
                   type="button"
                   onClick={handleResetTerminals}
                   className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-purple-700 transition-colors"
-                  title="Reset to full corridor ends"
+                  title="Reset to default corridor ends"
                 >
                   <RotateCcw className="w-3 h-3" />
-                  <span>Reset Ends</span>
+                  <span>Reset</span>
                 </button>
               </div>
 
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Mark the Start & End terminal pins on the route. Buses will stay strictly inside these terminal anchors and turn around dynamically without wandering off-route.
+                Click map buttons below to mark Start and End pins anywhere on the road. NagarST will auto-select the shortest street path and include all transit stops along the road corridor.
               </p>
 
-              {/* Pin Dropdown Selectors */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-emerald-700 flex items-center gap-1">
-                    <span>🏁 Start Terminal Pin</span>
-                  </label>
-                  <select
-                    value={startTerminalPinId}
-                    onChange={(e) => handleStartTerminalPinChange(e.target.value)}
-                    className="w-full p-2 bg-emerald-50/40 border border-emerald-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-emerald-500"
-                  >
-                    {activePreset.stops.map((stop) => (
-                      <option key={stop.id} value={stop.id}>
-                        {stop.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* Interactive Map Buttons */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSetInteractiveMode?.(interactiveMode === 'mark_start_pin' ? 'view' : 'mark_start_pin')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all border ${
+                    interactiveMode === 'mark_start_pin'
+                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                      : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                  }`}
+                >
+                  <Flag className="w-3.5 h-3.5" />
+                  <span>{customStartPin ? 'Change Start Pin' : 'Mark Start on Map'}</span>
+                </button>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-rose-700 flex items-center gap-1">
-                    <span>🎯 End Terminal Pin</span>
-                  </label>
-                  <select
-                    value={endTerminalPinId}
-                    onChange={(e) => handleEndTerminalPinChange(e.target.value)}
-                    className="w-full p-2 bg-rose-50/40 border border-rose-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500"
-                  >
-                    {activePreset.stops.map((stop) => (
-                      <option key={stop.id} value={stop.id}>
-                        {stop.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => onSetInteractiveMode?.(interactiveMode === 'mark_end_pin' ? 'view' : 'mark_end_pin')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all border ${
+                    interactiveMode === 'mark_end_pin'
+                      ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                      : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                  }`}
+                >
+                  <Target className="w-3.5 h-3.5" />
+                  <span>{customEndPin ? 'Change End Pin' : 'Mark End on Map'}</span>
+                </button>
               </div>
 
-              {/* Apply Route & Terminal Pins to ALL Demo Buses Button */}
+              {/* Currently Marked Pins Status */}
+              {(customStartPin || customEndPin) && (
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
+                  {customStartPin && (
+                    <div className="flex items-center justify-between text-emerald-900 font-medium">
+                      <span className="flex items-center gap-1 font-bold">
+                        <Flag className="w-3.5 h-3.5 text-emerald-600" /> Start Pin:
+                      </span>
+                      <span className="truncate max-w-[180px]">{customStartPin.name || `${customStartPin.lat.toFixed(4)}, ${customStartPin.lng.toFixed(4)}`}</span>
+                    </div>
+                  )}
+                  {customEndPin && (
+                    <div className="flex items-center justify-between text-rose-900 font-medium">
+                      <span className="flex items-center gap-1 font-bold">
+                        <Target className="w-3.5 h-3.5 text-rose-600" /> End Pin:
+                      </span>
+                      <span className="truncate max-w-[180px]">{customEndPin.name || `${customEndPin.lat.toFixed(4)}, ${customEndPin.lng.toFixed(4)}`}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Auto-Compute Shortest Road Route & Include Stops */}
+              <button
+                type="button"
+                onClick={handleAutoComputeShortestCorridor}
+                disabled={isComputingCorridor}
+                className="w-full py-2.5 px-3 rounded-xl bg-[#7847CB] hover:bg-[#6839b8] text-white text-xs font-black transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-60"
+              >
+                {isComputingCorridor ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                ) : (
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                )}
+                <span>Auto-Select Shortest Road Corridor & Stops</span>
+              </button>
+
+              {/* Add Intermediate Stop & Save Route Buttons */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => onSetInteractiveMode?.(interactiveMode === 'add_stop' ? 'view' : 'add_stop')}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all border ${
+                    interactiveMode === 'add_stop'
+                      ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="Click anywhere along the road to place a new stop"
+                >
+                  <Plus className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Add Stop on Map</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowSaveRouteModal(true)}
+                  className="py-2 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 shadow-2xs transition-all"
+                  title="Save current road corridor and stops as a new route"
+                >
+                  <Route className="w-3.5 h-3.5 text-[#7847CB]" />
+                  <span>Save as Route</span>
+                </button>
+              </div>
+
+              {/* Apply Route to ALL Demo Buses Button */}
               <button
                 type="button"
                 onClick={handleApplyTerminalsToAllBuses}
-                className="w-full py-2.5 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#7847CB] text-xs font-black transition-all flex items-center justify-center gap-2 border border-purple-200/90 shadow-2xs"
+                className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#7847CB] text-xs font-black transition-all flex items-center justify-center gap-2 border border-purple-200/90 shadow-2xs"
               >
                 <Layers className="w-4 h-4 text-[#7847CB]" />
-                <span>Apply Route & Terminal Pins to ALL Demo Buses</span>
+                <span>Apply Current Route to ALL Fleet Buses</span>
               </button>
             </div>
 
@@ -474,22 +707,22 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
             <div className="p-3 bg-white rounded-xl border border-purple-100 shadow-2xs space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-extrabold text-[#7847CB] flex items-center gap-1">
-                  <Lock className="w-3.5 h-3.5" /> Locked Corridor
+                  <Lock className="w-3.5 h-3.5" /> Locked Road Corridor
                 </span>
                 <span className="text-[11px] text-slate-400 font-mono">
-                  {activeBusRuntime.def.stops.length} Stops Inside Terminal Pins
+                  {activeBusRuntime.def.stops.length} Stops along Streets
                 </span>
               </div>
 
               <div className="flex items-center gap-2 text-xs font-bold text-slate-900 bg-slate-50 p-2 rounded-lg">
-                <div className="min-w-0 truncate text-emerald-800">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block">🏁 START PIN</span>
-                  {activeBusRuntime.def.origin}
+                <div className="min-w-0 truncate text-emerald-800 flex items-center gap-1">
+                  <Flag className="w-3 h-3 text-emerald-600 shrink-0" />
+                  <span className="truncate">{activeBusRuntime.def.origin}</span>
                 </div>
                 <ArrowRight className="w-4 h-4 text-[#7847CB] shrink-0" />
-                <div className="min-w-0 truncate text-rose-800">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block">🎯 END PIN</span>
-                  {activeBusRuntime.def.destination}
+                <div className="min-w-0 truncate text-rose-800 flex items-center gap-1">
+                  <Target className="w-3 h-3 text-rose-600 shrink-0" />
+                  <span className="truncate">{activeBusRuntime.def.destination}</span>
                 </div>
               </div>
             </div>
@@ -537,7 +770,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                           <span className="font-semibold truncate">{stop.name}</span>
                         </div>
                         <span className="text-[10px] font-bold font-mono">
-                          {isStartPin ? '🏁 START PIN' : isEndPin ? '🎯 END PIN' : 'Way Stop'}
+                          {isStartPin ? 'START PIN' : isEndPin ? 'END PIN' : 'Way Stop'}
                         </span>
                       </div>
                     );
@@ -667,6 +900,189 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
           </Link>
         </div>
       </div>
+
+      {/* Modal: Add New Bus to Fleet */}
+      {showAddBusModal && (
+        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <BusIcon className="w-5 h-5 text-[#7847CB]" />
+                <h3 className="font-black text-slate-900 text-base">Add New Bus to Fleet</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddBusModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddNewBusSubmit} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Bus Number (e.g. MH-16 BT-4500)</label>
+                <input
+                  type="text"
+                  required
+                  value={newBusNumber}
+                  onChange={(e) => setNewBusNumber(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+                  placeholder="e.g. MH-16 BT-4500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Plate Number</label>
+                <input
+                  type="text"
+                  value={newBusPlate}
+                  onChange={(e) => setNewBusPlate(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+                  placeholder="e.g. MH-16 BT-4500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Bus Type</label>
+                <select
+                  value={newBusType}
+                  onChange={(e) => setNewBusType(e.target.value as any)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+                >
+                  <option value="Standard City">Standard City Transit</option>
+                  <option value="AC Express">AC Express</option>
+                  <option value="EV Metro Shuttle">EV Metro Shuttle</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Assign Route Corridor</label>
+                <select
+                  value={newBusRouteId}
+                  onChange={(e) => setNewBusRouteId(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+                >
+                  {AVAILABLE_DEMO_ROUTES.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.routeNumber} — {r.origin} to {r.destination}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Bus Marker Color</label>
+                <div className="flex items-center gap-2">
+                  {['#7847CB', '#059669', '#2563eb', '#d97706', '#e11d48', '#0891b2'].map((col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => setNewBusColor(col)}
+                      className={`w-7 h-7 rounded-full border-2 transition-transform ${
+                        newBusColor === col ? 'scale-110 border-slate-900 shadow-xs' : 'border-white'
+                      }`}
+                      style={{ backgroundColor: col }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddBusModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="bg-[#7847CB] text-white hover:bg-[#6839b8] font-bold"
+                  leftIcon={<Check className="w-4 h-4" />}
+                >
+                  Add Bus to Fleet
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Save Corridor as New Route */}
+      {showSaveRouteModal && activeBusRuntime && (
+        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Route className="w-5 h-5 text-[#7847CB]" />
+                <h3 className="font-black text-slate-900 text-base">Save as New Route</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSaveRouteModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRouteSubmit} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Route Identifier (e.g. Route 99)</label>
+                <input
+                  type="text"
+                  required
+                  value={newRouteNumber}
+                  onChange={(e) => setNewRouteNumber(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+                  placeholder="e.g. Route 99"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Route Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newRouteName}
+                  onChange={(e) => setNewRouteName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+                  placeholder="e.g. Savedi - MIDC Direct Corridor"
+                />
+              </div>
+
+              <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-200 text-slate-700 space-y-1">
+                <div className="font-bold text-purple-900">Corridor Details</div>
+                <div>Origin: <b>{activeBusRuntime.def.origin}</b></div>
+                <div>Destination: <b>{activeBusRuntime.def.destination}</b></div>
+                <div>Total Stops: <b>{activeBusRuntime.def.stops.length} stops</b></div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSaveRouteModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="bg-[#7847CB] text-white hover:bg-[#6839b8] font-bold"
+                  leftIcon={<Check className="w-4 h-4" />}
+                >
+                  Save Route
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

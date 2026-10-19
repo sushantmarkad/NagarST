@@ -5,7 +5,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { BusStopCard } from '../components/cards/BusStopCard';
 import { ETAIndicator } from '../components/common/ETAIndicator';
 import { OccupancyBadge, BusStatusBadge } from '../components/common/StatusBadge';
-import { MapPin, Search } from 'lucide-react';
+import { MapPin, Search, Check } from 'lucide-react';
 
 export const BusStopDetails: React.FC = () => {
   const { language, t } = useLanguage();
@@ -101,8 +101,9 @@ export const BusStopDetails: React.FC = () => {
                 Facilities:
               </span>
               {currentStop.facilities.map((fac) => (
-                <span key={fac} className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-700">
-                  ✓ {fac}
+                <span key={fac} className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 flex items-center gap-1.5">
+                  <Check className="w-3 h-3 text-emerald-600" />
+                  <span>{fac}</span>
                 </span>
               ))}
             </div>

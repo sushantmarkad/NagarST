@@ -1,4 +1,11 @@
 import type { Route } from '../types';
+import {
+  DEMO_WAYPOINTS_BUS_1,
+  DEMO_WAYPOINTS_BUS_2,
+  DEMO_WAYPOINTS_BUS_3,
+  DEMO_WAYPOINTS_BUS_24,
+  DEMO_WAYPOINTS_BUS_7
+} from '../utils/demoSimulatorEngine';
 
 export const MOCK_ROUTES: Route[] = [
   {
@@ -18,6 +25,7 @@ export const MOCK_ROUTES: Route[] = [
     color: '#7847CB',
     activeBusesCount: 4,
     status: 'normal',
+    route_path: DEMO_WAYPOINTS_BUS_1,
     stops: [
       { stopId: 'stop-cbs', stopName: 'Central Bus Stand (CBS)', stopNameMarathi: 'मध्यवर्ती बस स्थानक', sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, isMajorHub: true, lat: 19.0975, lng: 74.7420 },
       { stopId: 'stop-wadia-park', stopName: 'Wadia Park Stadium', stopNameMarathi: 'वाडिया पार्क स्टेडीअम', sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 5, lat: 19.0980, lng: 74.7450 },
@@ -46,6 +54,7 @@ export const MOCK_ROUTES: Route[] = [
     color: '#2563eb',
     activeBusesCount: 3,
     status: 'detour',
+    route_path: DEMO_WAYPOINTS_BUS_2,
     stops: [
       { stopId: 'stop-cbs', stopName: 'Central Bus Stand (CBS)', stopNameMarathi: 'मध्यवर्ती बस स्थानक', sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, isMajorHub: true, lat: 19.0975, lng: 74.7420 },
       { stopId: 'stop-swastik', stopName: 'Swastik Chowk', stopNameMarathi: 'स्वस्तिक चौक', sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 6, isMajorHub: true, lat: 19.0952, lng: 74.7496 },
@@ -72,6 +81,7 @@ export const MOCK_ROUTES: Route[] = [
     color: '#059669',
     activeBusesCount: 2,
     status: 'normal',
+    route_path: DEMO_WAYPOINTS_BUS_3,
     stops: [
       { stopId: 'stop-savedi', stopName: 'Savedi Bus Terminal', stopNameMarathi: 'सावेडी बस टर्मिनस', sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, isMajorHub: true, lat: 19.1220, lng: 74.7350 },
       { stopId: 'stop-premdan', stopName: 'Premdan Chowk', stopNameMarathi: 'प्रेमदान चौक', sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 8, lat: 19.1130, lng: 74.7390 },
@@ -96,6 +106,7 @@ export const MOCK_ROUTES: Route[] = [
     color: '#d97706',
     activeBusesCount: 2,
     status: 'normal',
+    route_path: DEMO_WAYPOINTS_BUS_24,
     stops: [
       { stopId: 'stop-market-yard', stopName: 'Market Yard', stopNameMarathi: 'मार्केट यार्ड', sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, isMajorHub: true, lat: 19.0880, lng: 74.7560 },
       { stopId: 'stop-swastik', stopName: 'Swastik Chowk', stopNameMarathi: 'स्वस्तिक चौक', sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 8, isMajorHub: true, lat: 19.0952, lng: 74.7496 },
@@ -121,6 +132,7 @@ export const MOCK_ROUTES: Route[] = [
     color: '#7c3aed',
     activeBusesCount: 2,
     status: 'normal',
+    route_path: DEMO_WAYPOINTS_BUS_7,
     stops: [
       { stopId: 'stop-delhi-gate', stopName: 'Delhi Gate Circle', stopNameMarathi: 'दिल्ली गेट परिसर', sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, isMajorHub: true, lat: 19.1020, lng: 74.7480 },
       { stopId: 'stop-swastik', stopName: 'Swastik Chowk', stopNameMarathi: 'स्वस्तिक चौक', sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 6, isMajorHub: true, lat: 19.0952, lng: 74.7496 },

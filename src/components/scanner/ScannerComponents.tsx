@@ -75,7 +75,7 @@ export const TicketVerificationResult: React.FC<TicketVerificationResultProps> =
           <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
         </div>
         <div className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 uppercase tracking-wider">
-          ✓ Valid Municipal Ticket
+          Valid Municipal Ticket
         </div>
 
         <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 text-left text-xs space-y-2">
@@ -120,7 +120,7 @@ export const TicketVerificationResult: React.FC<TicketVerificationResultProps> =
           <AlertTriangle className="w-8 h-8 stroke-[2]" />
         </div>
         <div className="inline-block px-3 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200 uppercase tracking-wider">
-          ⚠ Ticket Expired
+          Ticket Expired
         </div>
         <p className="text-xs text-slate-600">This ticket expired at {data.expiredAt || '10:45 AM'}</p>
 
@@ -143,7 +143,7 @@ export const TicketVerificationResult: React.FC<TicketVerificationResultProps> =
           <XCircle className="w-8 h-8 stroke-[2]" />
         </div>
         <div className="inline-block px-3 py-1 rounded-full bg-rose-50 text-rose-800 text-xs font-bold border border-rose-200 uppercase tracking-wider">
-          ✕ Ticket Already Used
+          Ticket Already Used
         </div>
 
         <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-left text-xs space-y-2">
@@ -175,7 +175,7 @@ export const TicketVerificationResult: React.FC<TicketVerificationResultProps> =
         <XCircle className="w-8 h-8 stroke-[2]" />
       </div>
       <div className="inline-block px-3 py-1 rounded-full bg-rose-50 text-rose-800 text-xs font-bold border border-rose-200 uppercase tracking-wider">
-        ✕ Invalid Ticket
+        Invalid Ticket
       </div>
       <p className="text-xs text-slate-600">
         Reason: {data.reason || 'Invalid QR code signature or wrong route'}
@@ -206,9 +206,9 @@ export const PassVerificationResult: React.FC<PassVerificationResultProps> = ({ 
           <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
         </div>
         <div className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 uppercase tracking-wider">
-          ✓ Valid Municipal Bus Pass
+          Valid Municipal Bus Pass
         </div>
-
+        
         <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 text-left text-xs space-y-2">
           <div className="flex justify-between border-b border-slate-200 pb-2">
             <span className="text-slate-500">Passenger:</span>
@@ -252,7 +252,7 @@ export const PassVerificationResult: React.FC<PassVerificationResultProps> = ({ 
         <XCircle className="w-8 h-8 stroke-[2]" />
       </div>
       <div className="inline-block px-3 py-1 rounded-full bg-rose-50 text-rose-800 text-xs font-bold border border-rose-200 uppercase tracking-wider">
-        ✕ Invalid Bus Pass
+        Invalid Bus Pass
       </div>
       <p className="text-xs text-slate-600">
         Reason: {data.reason || 'Pass expired or identity verification failed'}

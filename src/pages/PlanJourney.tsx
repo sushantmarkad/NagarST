@@ -16,7 +16,9 @@ import {
   Ticket as TicketIcon,
   ArrowRight,
   Bus as BusIcon,
-  Sparkles
+  Sparkles,
+  Zap,
+  Banknote
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -190,35 +192,38 @@ export const PlanJourney: React.FC = () => {
           <button
             type="button"
             onClick={() => setSortBy('fastest')}
-            className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
               sortBy === 'fastest'
                 ? 'bg-white text-[#7847CB] shadow-xs shadow-[#7847CB]/10'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            ⚡ {t('Fastest', 'सर्वात जलद')}
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <span>{t('Fastest', 'सर्वात जलद')}</span>
           </button>
           <button
             type="button"
             onClick={() => setSortBy('cheapest')}
-            className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
               sortBy === 'cheapest'
                 ? 'bg-white text-[#7847CB] shadow-xs shadow-[#7847CB]/10'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            💰 {t('Cheapest', 'सर्वात स्वस्त')}
+            <Banknote className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{t('Cheapest', 'सर्वात स्वस्त')}</span>
           </button>
           <button
             type="button"
             onClick={() => setSortBy('fewer_transfers')}
-            className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
               sortBy === 'fewer_transfers'
                 ? 'bg-white text-[#7847CB] shadow-xs shadow-[#7847CB]/10'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            🚌 {t('Direct Bus', 'थेट बस')}
+            <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" />
+            <span>{t('Direct Bus', 'थेट बस')}</span>
           </button>
         </div>
 

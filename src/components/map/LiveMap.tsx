@@ -3,8 +3,9 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { Bus, BusStop, Route } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
-import { MapPin, Crosshair, Loader2, AlertCircle, X, Navigation } from 'lucide-react';
+import { MapPin, Crosshair, Loader2, AlertCircle, X, Navigation, Flag, Target, Plus } from 'lucide-react';
 import { createModernBusIcon } from './busMarkerIcon';
+import { fetchOSRMRoute } from '../../utils/routing';
 
 interface LiveMapProps {
   buses?: Bus[];
@@ -18,6 +19,11 @@ interface LiveMapProps {
   height?: string;
   showUserLocation?: boolean;
   onUserLocationChange?: (location: { lat: number; lng: number } | null) => void;
+  onMapClick?: (latlng: { lat: number; lng: number }) => void;
+  interactiveMode?: 'view' | 'mark_start_pin' | 'mark_end_pin' | 'add_stop';
+  onCancelInteractive?: () => void;
+  customStartPin?: { lat: number; lng: number; name?: string } | null;
+  customEndPin?: { lat: number; lng: number; name?: string } | null;
   className?: string;
 }
 
@@ -33,6 +39,11 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   height = '100%',
   showUserLocation = true,
   onUserLocationChange,
+  onMapClick,
+  interactiveMode = 'view',
+  onCancelInteractive,
+  customStartPin,
+  customEndPin,
   className = '',
 }) => {
   const mapRef = useRef<L.Map | null>(null);
@@ -41,7 +52,11 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const polylinesRef = useRef<L.Polyline[]>([]);
   const userCircleRef = useRef<L.Circle | null>(null);
   const watchIdRef = useRef<number | null>(null);
+  const onMapClickRef = useRef(onMapClick);
+  onMapClickRef.current = onMapClick;
+
   const { language } = useLanguage();
+  const [roadSnappedVersion, setRoadSnappedVersion] = useState(0);
   
   const [isFollowing, setIsFollowing] = useState(true);
   const isFollowingRef = useRef(true);
@@ -80,7 +95,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     const accuracyText = accuracy ? `±${Math.round(accuracy)}m` : 'High';
     const popupContent = `
       <div style="text-align: center; padding: 4px; font-family: system-ui, -apple-system, sans-serif;">
-        <strong style="color: #2563eb; font-size: 13px;">📍 ${language === 'mr' ? 'आपले सध्याचे स्थान' : 'Your Live Location'}</strong><br/>
+        <strong style="color: #2563eb; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          ${language === 'mr' ? 'आपले सध्याचे स्थान' : 'Your Live Location'}
+        </strong><br/>
         <span style="font-size: 11px; color: #64748b;">${language === 'mr' ? 'GPS अचूकता' : 'GPS Accuracy'}: ${accuracyText}</span>
       </div>
     `;
@@ -207,6 +225,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       isFollowingRef.current = false;
     });
 
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      onMapClickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng });
+    });
+
     mapRef.current = map;
 
     // Request user location if enabled
@@ -269,18 +291,27 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     polylinesRef.current = [];
 
     routes.forEach((route) => {
-      const pathPoints = (route.route_path && route.route_path.length > 0) 
+      let pathPoints: [number, number][] = (route.route_path && route.route_path.length > 1) 
         ? route.route_path.map((p) => [p.lat, p.lng] as [number, number])
         : (route.stops ? route.stops.map((s) => [s.lat, s.lng] as [number, number]) : []);
 
+      // If route_path is missing or has fewer than 3 points while stops >= 2, fetch real road curve asynchronously from OSRM
+      if ((!route.route_path || route.route_path.length <= 2) && route.stops && route.stops.length >= 2) {
+        fetchOSRMRoute(route.stops.map((s) => ({ lat: s.lat, lng: s.lng }))).then((snapped) => {
+          if (snapped && snapped.length > 2) {
+            route.route_path = snapped;
+            setRoadSnappedVersion((v) => v + 1);
+          }
+        });
+      }
+
       if (pathPoints.length > 1) {
         const isSelected = selectedRouteId === route.id;
-        
         let splitIndex = -1;
 
         // If this route is selected, AND a specific bus is selected on this route, split the path
         if (isSelected && selectedBusId) {
-          const selectedBus = buses.find(b => b.id === selectedBusId && b.routeId === route.id);
+          const selectedBus = buses.find((b) => b.id === selectedBusId && b.routeId === route.id);
           if (selectedBus) {
             const busLatLng = L.latLng(selectedBus.lat, selectedBus.lng);
             let minDistance = Infinity;
@@ -299,7 +330,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           const travelledPoints = pathPoints.slice(0, splitIndex + 1);
           if (travelledPoints.length > 1) {
             const travelledLine = L.polyline(travelledPoints, {
-              color: '#94a3b8', // slate-400
+              color: '#94a3b8',
               weight: 5,
               opacity: 0.6,
               dashArray: '8, 8',
@@ -322,14 +353,14 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           const polyline = L.polyline(pathPoints, {
             color: route.color || '#7847CB',
             weight: isSelected ? 5 : 3,
-            opacity: isSelected ? 0.9 : 0.6,
+            opacity: isSelected ? 0.95 : 0.7,
             dashArray: (!route.route_path || route.route_path.length === 0) ? '10, 10' : (route.status === 'detour' ? '6, 6' : undefined),
           }).addTo(map);
           polylinesRef.current.push(polyline);
         }
       }
     });
-  }, [routes, selectedRouteId, selectedBusId, buses]);
+  }, [routes, selectedRouteId, selectedBusId, buses, roadSnappedVersion]);
 
   // Update Bus Stop Markers
   useEffect(() => {
@@ -388,7 +419,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       const startStop = route.stops[0];
       const endStop = route.stops[route.stops.length - 1];
 
-      // 1. START TERMINAL PIN (🏁 Origin Anchor)
+      // 1. START TERMINAL PIN (Origin Anchor with SVG Flag)
       const startKey = `terminal-start-${route.id}`;
       activeTerminalKeys.add(startKey);
 
@@ -398,22 +429,23 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             background: #ffffff;
             color: #065f46;
             border: 2px solid #059669;
-            box-shadow: 0 4px 12px rgba(5,150,105,0.3);
+            box-shadow: 0 4px 12px rgba(5,150,105,0.25);
             border-radius: 8px;
-            padding: 2px 6px;
+            padding: 2px 7px;
             font-family: system-ui, -apple-system, sans-serif;
             font-size: 10px;
             font-weight: 800;
             white-space: nowrap;
             display: flex;
             align-items: center;
-            gap: 4px;
-            margin-bottom: 2px;
+            gap: 5px;
+            margin-bottom: 3px;
           ">
-            <span style="background: #059669; color: #ffffff; padding: 1px 4px; border-radius: 4px; font-size: 8px; font-weight: 900;">
+            <span style="background: #059669; color: #ffffff; padding: 2px 5px; border-radius: 4px; font-size: 8px; font-weight: 900; display: inline-flex; align-items: center; gap: 3px;">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
               START TERMINAL
             </span>
-            <span style="max-width: 120px; overflow: hidden; text-overflow: ellipsis;">
+            <span style="max-width: 130px; overflow: hidden; text-overflow: ellipsis; color: #0f172a;">
               ${startStop.stopName}
             </span>
           </div>
@@ -421,8 +453,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           <div style="position: relative; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;">
             <div style="
               position: absolute;
-              width: 28px;
-              height: 28px;
+              width: 30px;
+              height: 30px;
               border-radius: 50%;
               background: #059669;
               opacity: 0.35;
@@ -439,9 +471,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               align-items: center;
               justify-content: center;
               color: #ffffff;
-              font-size: 11px;
             ">
-              🏁
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.8"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
             </div>
           </div>
         </div>
@@ -463,7 +494,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         markersRef.current[startKey].setLatLng([startStop.lat, startStop.lng]);
       }
 
-      // 2. END TERMINAL PIN (🎯 Destination Anchor)
+      // 2. END TERMINAL PIN (Destination Anchor with SVG Target)
       const endKey = `terminal-end-${route.id}`;
       activeTerminalKeys.add(endKey);
 
@@ -473,22 +504,23 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             background: #ffffff;
             color: #9f1239;
             border: 2px solid #e11d48;
-            box-shadow: 0 4px 12px rgba(225,29,72,0.3);
+            box-shadow: 0 4px 12px rgba(225,29,72,0.25);
             border-radius: 8px;
-            padding: 2px 6px;
+            padding: 2px 7px;
             font-family: system-ui, -apple-system, sans-serif;
             font-size: 10px;
             font-weight: 800;
             white-space: nowrap;
             display: flex;
             align-items: center;
-            gap: 4px;
-            margin-bottom: 2px;
+            gap: 5px;
+            margin-bottom: 3px;
           ">
-            <span style="background: #e11d48; color: #ffffff; padding: 1px 4px; border-radius: 4px; font-size: 8px; font-weight: 900;">
+            <span style="background: #e11d48; color: #ffffff; padding: 2px 5px; border-radius: 4px; font-size: 8px; font-weight: 900; display: inline-flex; align-items: center; gap: 3px;">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
               END TERMINAL
             </span>
-            <span style="max-width: 120px; overflow: hidden; text-overflow: ellipsis;">
+            <span style="max-width: 130px; overflow: hidden; text-overflow: ellipsis; color: #0f172a;">
               ${endStop.stopName}
             </span>
           </div>
@@ -496,8 +528,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           <div style="position: relative; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;">
             <div style="
               position: absolute;
-              width: 28px;
-              height: 28px;
+              width: 30px;
+              height: 30px;
               border-radius: 50%;
               background: #e11d48;
               opacity: 0.35;
@@ -514,9 +546,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               align-items: center;
               justify-content: center;
               color: #ffffff;
-              font-size: 11px;
             ">
-              🎯
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.8"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
             </div>
           </div>
         </div>
@@ -539,6 +570,68 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       }
     });
 
+    // Handle Custom Start Pin if user is manually placing pin on map
+    if (customStartPin) {
+      const customStartKey = 'custom-start-anchor-pin';
+      activeTerminalKeys.add(customStartKey);
+
+      const customStartHtml = `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center; pointer-events: auto; z-index: 750;">
+          <div style="background: #059669; color: #ffffff; font-weight: 900; font-size: 9px; padding: 2px 7px; border-radius: 6px; box-shadow: 0 3px 10px rgba(0,0,0,0.25); margin-bottom: 2px; display: flex; align-items: center; gap: 3px;">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            ${customStartPin.name || 'MARKED START PIN'}
+          </div>
+          <div style="width: 24px; height: 24px; border-radius: 50%; background: #059669; border: 3px solid #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: #ffffff;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+          </div>
+        </div>
+      `;
+
+      const startDivIcon = L.divIcon({
+        className: 'custom-manual-start-pin',
+        html: customStartHtml,
+        iconSize: [120, 48],
+        iconAnchor: [60, 44]
+      });
+
+      if (!markersRef.current[customStartKey]) {
+        markersRef.current[customStartKey] = L.marker([customStartPin.lat, customStartPin.lng], { icon: startDivIcon, zIndexOffset: 850 }).addTo(map);
+      } else {
+        markersRef.current[customStartKey].setLatLng([customStartPin.lat, customStartPin.lng]).setIcon(startDivIcon);
+      }
+    }
+
+    // Handle Custom End Pin if user is manually placing pin on map
+    if (customEndPin) {
+      const customEndKey = 'custom-end-anchor-pin';
+      activeTerminalKeys.add(customEndKey);
+
+      const customEndHtml = `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center; pointer-events: auto; z-index: 750;">
+          <div style="background: #e11d48; color: #ffffff; font-weight: 900; font-size: 9px; padding: 2px 7px; border-radius: 6px; box-shadow: 0 3px 10px rgba(0,0,0,0.25); margin-bottom: 2px; display: flex; align-items: center; gap: 3px;">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            ${customEndPin.name || 'MARKED END PIN'}
+          </div>
+          <div style="width: 24px; height: 24px; border-radius: 50%; background: #e11d48; border: 3px solid #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: #ffffff;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+          </div>
+        </div>
+      `;
+
+      const endDivIcon = L.divIcon({
+        className: 'custom-manual-end-pin',
+        html: customEndHtml,
+        iconSize: [120, 48],
+        iconAnchor: [60, 44]
+      });
+
+      if (!markersRef.current[customEndKey]) {
+        markersRef.current[customEndKey] = L.marker([customEndPin.lat, customEndPin.lng], { icon: endDivIcon, zIndexOffset: 850 }).addTo(map);
+      } else {
+        markersRef.current[customEndKey].setLatLng([customEndPin.lat, customEndPin.lng]).setIcon(endDivIcon);
+      }
+    }
+
     // Cleanup inactive terminal markers
     Object.keys(markersRef.current).forEach((key) => {
       if (key.startsWith('terminal-') && !activeTerminalKeys.has(key)) {
@@ -546,7 +639,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         delete markersRef.current[key];
       }
     });
-  }, [routes]);
+  }, [routes, customStartPin, customEndPin]);
 
   // Update Live Bus Markers
   useEffect(() => {
@@ -570,11 +663,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         ? `${bus.origin} ➔ ${bus.destination}`
         : (bus.routeName || 'In Transit');
 
-      const tooltipHtml = isDemo ? `
+      const tooltipHtml = `
         <div style="text-align: center; font-family: system-ui, sans-serif; padding: 2px;">
           <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
-            <span style="background: #F59E0B; color: #000; font-size: 9px; font-weight: 900; padding: 1px 4px; border-radius: 4px;">DEMO</span>
-            <b style="color: #d97706; font-size: 12px;">${bus.busNumber}</b>
+            <span style="background: ${isDemo ? '#F59E0B' : '#10B981'}; color: #fff; font-size: 9px; font-weight: 800; padding: 1px 4px; border-radius: 4px;">
+              ${isDemo ? 'DEMO' : 'LIVE'}
+            </span>
+            <b style="color: ${isDemo ? '#d97706' : '#7847CB'}; font-size: 12px;">${bus.busNumber}</b>
           </div>
           <div style="font-size: 11px; font-weight: 700; color: #0f172a; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
             ${destinationText}
@@ -582,24 +677,9 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
             Next: <b style="color: #7847CB;">${bus.nextStopName}</b> (${bus.etaToNextMinutes || 1}m) • ${bus.speedKmh} km/h
           </div>
-          <div style="font-size: 9px; color: #7847CB; font-weight: 700; margin-top: 3px; border-top: 1px dashed #e2e8f0; padding-top: 2px;">
-            👆 Click bus icon for all route stops
-          </div>
-        </div>
-      ` : `
-        <div style="text-align: center; font-family: system-ui, sans-serif; padding: 2px;">
-          <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
-            <span style="background: #10B981; color: #fff; font-size: 9px; font-weight: 800; padding: 1px 4px; border-radius: 4px;">LIVE</span>
-            <b style="color: #7847CB; font-size: 12px;">${bus.busNumber}</b>
-          </div>
-          <div style="font-size: 11px; font-weight: 700; color: #0f172a; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            ${destinationText}
-          </div>
-          <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
-            Next: <b style="color: #7847CB;">${bus.nextStopName}</b> (${bus.etaToNextMinutes || 1}m) • ${bus.speedKmh} km/h
-          </div>
-          <div style="font-size: 9px; color: #7847CB; font-weight: 700; margin-top: 3px; border-top: 1px dashed #e2e8f0; padding-top: 2px;">
-            👆 Click bus icon for all route stops
+          <div style="font-size: 9px; color: #7847CB; font-weight: 700; margin-top: 3px; border-top: 1px dashed #e2e8f0; padding-top: 2px; display: flex; align-items: center; justify-content: center; gap: 3px;">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Click bus icon for all route stops
           </div>
         </div>
       `;
@@ -720,6 +800,27 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Interactive Marking Guide Banner */}
+      {interactiveMode && interactiveMode !== 'view' && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[450] bg-slate-900/95 text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-3 border border-slate-700/80 animate-in fade-in zoom-in-95 backdrop-blur-md max-w-[90%]">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+          <span className="text-xs font-bold leading-tight">
+            {interactiveMode === 'mark_start_pin' && 'Click anywhere on road to set Start Terminal Pin'}
+            {interactiveMode === 'mark_end_pin' && 'Click anywhere on road to set End Terminal Pin'}
+            {interactiveMode === 'add_stop' && 'Click on the road to place a new Bus Stop'}
+          </span>
+          {onCancelInteractive && (
+            <button
+              type="button"
+              onClick={onCancelInteractive}
+              className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold border border-slate-600 transition-colors shrink-0"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Map Legend Overlay (Mobile: Bottom Left, Desktop: Top Left) */}
       <div className="absolute bottom-4 md:bottom-auto md:top-4 left-3 md:left-4 z-[390] bg-white/95 backdrop-blur-md p-2 md:p-2.5 rounded-2xl border border-slate-200/90 shadow-md text-xs space-y-1 md:space-y-1.5 pointer-events-none select-none">

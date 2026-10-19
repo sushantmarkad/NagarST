@@ -59,32 +59,146 @@ export function getDistanceToPolyline(p: LatLng, polyline: LatLng[]): number {
   return minDistance;
 }
 
+const osrmCache = new Map<string, LatLng[]>();
+
 /**
- * Fetches the snapped road path (polyline) from OSRM given an array of stops.
+ * Fetches the snapped road path (polyline) from OSRM given an array of stops, with caching.
  */
 export async function fetchOSRMRoute(stops: LatLng[]): Promise<LatLng[]> {
   if (stops.length < 2) return [];
 
   // OSRM format: lng,lat;lng,lat
-  const coordinates = stops.map((s) => `${s.lng},${s.lat}`).join(';');
+  const coordinates = stops.map((s) => `${s.lng.toFixed(5)},${s.lat.toFixed(5)}`).join(';');
+  if (osrmCache.has(coordinates)) {
+    return osrmCache.get(coordinates)!;
+  }
+
   const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`;
 
   try {
-    const response = await fetch(url);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
     const data = await response.json();
 
     if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
       const geojsonPath = data.routes[0].geometry.coordinates;
       // GeoJSON is [lng, lat], we need [lat, lng] for Leaflet
-      return geojsonPath.map((coord: [number, number]) => ({
+      const path = geojsonPath.map((coord: [number, number]) => ({
         lat: coord[1],
         lng: coord[0],
       }));
+      osrmCache.set(coordinates, path);
+      return path;
     }
     return [];
   } catch (error) {
-    console.error('Error fetching OSRM route:', error);
-    return [];
+    console.warn('OSRM route fetch fallback:', error);
+    // Return straight interpolation if network fails
+    return stops;
+  }
+}
+
+/**
+ * Fetches the shortest road corridor between origin and destination with distance and duration
+ */
+export async function fetchShortestRoadCorridor(
+  origin: LatLng,
+  destination: LatLng
+): Promise<{ path: LatLng[]; distanceMeters: number; durationMinutes: number }> {
+  const coordinates = `${origin.lng.toFixed(5)},${origin.lat.toFixed(5)};${destination.lng.toFixed(5)},${destination.lat.toFixed(5)}`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    const data = await response.json();
+
+    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      const route = data.routes[0];
+      const geojsonPath = route.geometry.coordinates;
+      const path = geojsonPath.map((coord: [number, number]) => ({
+        lat: coord[1],
+        lng: coord[0],
+      }));
+      osrmCache.set(coordinates, path);
+      return {
+        path,
+        distanceMeters: Math.round(route.distance),
+        durationMinutes: Math.max(1, Math.round(route.duration / 60))
+      };
+    }
+  } catch (err) {
+    console.warn('Shortest road corridor fetch failed:', err);
+  }
+
+  // Fallback direct distance
+  const directDist = getDistance(origin, destination);
+  return {
+    path: [origin, destination],
+    distanceMeters: Math.round(directDist),
+    durationMinutes: Math.max(1, Math.round((directDist / 1000) / (25 / 60)))
+  };
+}
+
+/**
+ * Finds and sequences all stops in Ahilyanagar that lie within maxDistanceMeters of the road path.
+ * Returns stops sorted chronologically from origin to destination along the road.
+ */
+export function findStopsAlongRoad<T extends { id: string; name: string; lat: number; lng: number }>(
+  roadPath: LatLng[],
+  candidateStops: T[],
+  maxDistanceMeters = 250
+): T[] {
+  if (roadPath.length < 2 || candidateStops.length === 0) return [];
+
+  const matched: { stop: T; closestIndex: number }[] = [];
+
+  candidateStops.forEach((stop) => {
+    let minD = Infinity;
+    let closestWpIdx = -1;
+
+    for (let i = 0; i < roadPath.length; i++) {
+      const d = getDistance({ lat: stop.lat, lng: stop.lng }, roadPath[i]);
+      if (d < minD) {
+        minD = d;
+        closestWpIdx = i;
+      }
+    }
+
+    if (minD <= maxDistanceMeters && closestWpIdx !== -1) {
+      matched.push({ stop, closestIndex: closestWpIdx });
+    }
+  });
+
+  // Sort along the road path sequence
+  matched.sort((a, b) => a.closestIndex - b.closestIndex);
+  return matched.map((m) => m.stop);
+}
+
+/**
+ * Reverse geocodes coordinates to a human-readable street or area name in Ahilyanagar
+ */
+export async function reverseGeocodeLatLng(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+      headers: { 'Accept-Language': 'en' }
+    });
+    const data = await res.json();
+    const addr = data.address;
+    return (
+      addr?.bus_stop ||
+      addr?.road ||
+      addr?.suburb ||
+      addr?.neighbourhood ||
+      addr?.city_district ||
+      `Stop at ${lat.toFixed(4)}, ${lng.toFixed(4)}`
+    );
+  } catch (_) {
+    return `Stop (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
   }
 }
 

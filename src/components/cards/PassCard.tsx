@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { BusPass } from '../../types';
-import { QrCode, Calendar, User } from 'lucide-react';
+import { QrCode, Calendar, User, Building2 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { QRModal } from '../common/QRModal';
 
@@ -58,8 +58,9 @@ export const PassCard: React.FC<PassCardProps> = ({ pass, onRenew }) => {
         </div>
 
         {pass.institutionOrOrg && (
-          <div className="text-xs text-purple-200 font-medium mb-3 relative z-10">
-            🏢 {pass.institutionOrOrg}
+          <div className="text-xs text-purple-200 font-medium mb-3 relative z-10 flex items-center gap-1.5">
+            <Building2 className="w-3.5 h-3.5 text-purple-200 shrink-0" />
+            <span>{pass.institutionOrOrg}</span>
           </div>
         )}
 
