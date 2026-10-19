@@ -15,7 +15,12 @@ import {
   ExternalLink,
   Bus as BusIcon,
   CheckCircle2,
-  SlidersHorizontal
+  Route,
+  ArrowRight,
+  ArrowLeftRight,
+  ChevronDown,
+  ChevronUp,
+  Sparkles
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
@@ -27,11 +32,14 @@ import {
   setAllBusSpeed,
   setBusSpeed,
   setBusDelay,
+  setBusAssignedRoute,
   subscribeToDemoState,
   getDemoSimulatorState,
   DEMO_BUS_DEFINITIONS,
+  AVAILABLE_DEMO_ROUTES,
   type DemoSimulatorState,
-  type BusSimRuntime
+  type BusSimRuntime,
+  type DemoRoutePreset
 } from '../../utils/demoSimulatorEngine';
 import { Link } from 'react-router-dom';
 
@@ -55,6 +63,9 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   const [selectedBusId, setSelectedBusId] = useState<string>(
     externalSelectedBusId || DEMO_BUS_DEFINITIONS[0].id
   );
+  const [selectedRoutePresetId, setSelectedRoutePresetId] = useState<string>('route-12');
+  const [isReverseDirection, setIsReverseDirection] = useState<boolean>(false);
+  const [showStopsList, setShowStopsList] = useState<boolean>(true);
 
   // Sync external selected bus if provided
   useEffect(() => {
@@ -78,13 +89,23 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   const isSelectedBusRunning = Boolean(activeBusRuntime?.isRunning);
   const isSelectedDelayActive = Boolean(activeBusRuntime && activeBusRuntime.delayMinutes > 0);
 
+  // Sync route preset ID when active bus changes
+  useEffect(() => {
+    if (activeBusRuntime?.def.routeId) {
+      setSelectedRoutePresetId(activeBusRuntime.def.routeId);
+    }
+  }, [selectedBusId]);
+
+  const activePreset: DemoRoutePreset =
+    AVAILABLE_DEMO_ROUTES.find((r) => r.id === selectedRoutePresetId) || AVAILABLE_DEMO_ROUTES[0];
+
   const handleStartAll = () => {
     if (!isAuthorized) {
       toast.error('Unauthorized: Multi-bus simulator requires Administrator authorization.');
       return;
     }
     startAllBuses({ speedMultiplier: simState.speedMultiplier });
-    toast.success('All 3 demo buses are now running simultaneously across Ahilyanagar corridors!', 'Fleet Live');
+    toast.success('All demo buses are now running simultaneously across Ahilyanagar corridors!', 'Fleet Live');
     onSelectBusOnMap?.(selectedBusId);
   };
 
@@ -106,6 +127,22 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     }
   };
 
+  const handleRouteChange = (newRouteId: string) => {
+    setSelectedRoutePresetId(newRouteId);
+    if (!activeBusRuntime) return;
+    setBusAssignedRoute(activeBusRuntime.id, newRouteId, isReverseDirection);
+    toast.info(`Assigned ${newRouteId.toUpperCase()} to ${activeBusRuntime.def.busNumber}.`);
+    onSelectBusOnMap?.(activeBusRuntime.id);
+  };
+
+  const handleToggleDirection = () => {
+    const nextReverse = !isReverseDirection;
+    setIsReverseDirection(nextReverse);
+    if (!activeBusRuntime) return;
+    setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, nextReverse);
+    toast.info(`Reversed route direction for ${activeBusRuntime.def.busNumber}.`);
+  };
+
   const handleSpeedChange = (mult: number) => {
     setAllBusSpeed(mult);
     toast.info(`Simulation speed adjusted to ${mult}x for all buses.`);
@@ -116,7 +153,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     const next = !isSelectedDelayActive;
     setBusDelay(activeBusRuntime.id, next ? 5 : 0);
     if (next) {
-      toast.warning(`Injected 5-minute traffic congestion delay into ${activeBusRuntime.def.busNumber}.`, 'Delay Active');
+      toast.warning(`Injected 5-minute traffic delay into ${activeBusRuntime.def.busNumber}.`, 'Delay Active');
     } else {
       toast.success(`Cleared traffic delay for ${activeBusRuntime.def.busNumber}. Back on nominal ETA.`);
     }
@@ -155,7 +192,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Simulates multiple autonomous buses concurrently on predefined road routes
+              Select predefined corridors, inspect route stops, and broadcast road GPS coordinates
             </p>
           </div>
         </div>
@@ -221,9 +258,9 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
         <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-700 uppercase tracking-tight flex items-center gap-1.5">
-              <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" /> Demo Fleet Selection ({DEMO_BUS_DEFINITIONS.length})
+              <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" /> 1. Select Demo Bus ({DEMO_BUS_DEFINITIONS.length})
             </span>
-            <span className="text-[11px] text-slate-400">Click to inspect or toggle</span>
+            <span className="text-[11px] text-slate-400">Click to configure</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -248,19 +285,118 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                   <div className="flex items-center justify-between mb-1.5">
                     <span
                       className="px-2 py-0.5 rounded-md text-[11px] font-black text-white"
-                      style={{ backgroundColor: def.color }}
+                      style={{ backgroundColor: runtime?.def.color || def.color }}
                     >
                       {def.busNumber}
                     </span>
                     <span className={`w-2.5 h-2.5 rounded-full ${isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
                   </div>
-                  <h4 className="font-bold text-xs text-slate-900 truncate">{def.routeNumber}</h4>
-                  <p className="text-[11px] text-slate-500 truncate">{def.destination}</p>
+                  <h4 className="font-bold text-xs text-slate-900 truncate">
+                    {runtime?.def.routeNumber || def.routeNumber}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    {runtime?.def.destination || def.destination}
+                  </p>
                 </div>
               );
             })}
           </div>
         </div>
+
+        {/* 2. ROUTE & STOPS SELECTION BEFORE STARTING */}
+        {activeBusRuntime && (
+          <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
+                <Route className="w-3.5 h-3.5 text-[#7847CB]" /> 2. Choose Route Corridor & Direction
+              </span>
+              <button
+                type="button"
+                onClick={handleToggleDirection}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white text-slate-700 hover:text-purple-700 border border-slate-200 text-[11px] font-bold shadow-2xs transition-colors"
+                title="Reverse Start and End terminals"
+              >
+                <ArrowLeftRight className="w-3 h-3 text-[#7847CB]" />
+                <span>Flip Direction</span>
+              </button>
+            </div>
+
+            {/* Route Dropdown */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-slate-500 block">
+                Assign Corridor for {activeBusRuntime.def.busNumber}:
+              </label>
+              <select
+                value={selectedRoutePresetId}
+                onChange={(e) => handleRouteChange(e.target.value)}
+                className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+              >
+                {AVAILABLE_DEMO_ROUTES.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.routeNumber} — {preset.origin} ➔ {preset.destination} ({preset.stops.length} stops)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Where to Where Banner */}
+            <div className="p-3 bg-white rounded-xl border border-purple-100 shadow-2xs space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-extrabold text-[#7847CB]">
+                  {activeBusRuntime.def.routeNumber} Corridor
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {activeBusRuntime.def.stops.length} Scheduled Stops
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 bg-slate-50 p-2 rounded-lg">
+                <div className="min-w-0 truncate text-purple-900">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block">ORIGIN</span>
+                  {activeBusRuntime.def.origin}
+                </div>
+                <ArrowRight className="w-4 h-4 text-[#7847CB] shrink-0" />
+                <div className="min-w-0 truncate text-emerald-900">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block">DESTINATION</span>
+                  {activeBusRuntime.def.destination}
+                </div>
+              </div>
+            </div>
+
+            {/* Stops along this route preview */}
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={() => setShowStopsList(!showStopsList)}
+                className="w-full flex items-center justify-between text-xs font-bold text-slate-700 py-1"
+              >
+                <span>Stops on this Route ({activeBusRuntime.def.stops.length})</span>
+                {showStopsList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+
+              {showStopsList && (
+                <div className="p-2 bg-white rounded-xl border border-slate-200/80 max-h-40 overflow-y-auto space-y-1.5 text-xs">
+                  {activeBusRuntime.def.stops.map((stop, i) => (
+                    <div
+                      key={stop.id}
+                      className="flex items-center justify-between p-1.5 rounded-lg hover:bg-slate-50 text-slate-700"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-5 h-5 rounded-full bg-purple-100 text-[#7847CB] font-mono text-[10px] font-black flex items-center justify-center shrink-0">
+                          {i + 1}
+                        </span>
+                        <span className="font-semibold truncate">{stop.name}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {i === 0 ? 'Depot Start' : i === activeBusRuntime.def.stops.length - 1 ? 'Terminal Hub' : 'Way Stop'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Selected Bus Live HUD Card */}
         {activeBusRuntime && (
@@ -281,7 +417,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
               <button
                 type="button"
                 onClick={handleToggleSelectedBus}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
                   isSelectedBusRunning
                     ? 'bg-rose-100 text-rose-800 hover:bg-rose-200 border border-rose-200'
                     : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs'
@@ -293,7 +429,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                   </>
                 ) : (
                   <>
-                    <Play className="w-3.5 h-3.5 fill-white" /> Start Bus
+                    <Play className="w-3.5 h-3.5 fill-white" /> Start Bus on Route
                   </>
                 )}
               </button>
@@ -334,7 +470,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
               <div className="min-w-0 pr-2">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Approaching Next Stop</span>
                 <span className="font-bold text-slate-800 truncate block">
-                  {activeBusRuntime.currentBus?.nextStopName || activeBusRuntime.def.stops[1]?.name}
+                  {activeBusRuntime.currentBus?.nextStopName || activeBusRuntime.def.stops[1]?.name || 'Depot'}
                 </span>
               </div>
 

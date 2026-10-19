@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { useLanguage } from '../context/LanguageContext';
 import { LiveMap } from '../components/map/LiveMap';
-import { BottomSheet } from '../components/common/BottomSheet';
 import { OccupancyBadge, BusStatusBadge } from '../components/common/StatusBadge';
 import { ETAIndicator } from '../components/common/ETAIndicator';
 import {
@@ -14,15 +13,23 @@ import {
   ChevronRight,
   MapPin,
   Clock,
-  Compass,
   Radio,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  X,
+  CheckCircle2,
+  Gauge,
+  Crosshair,
+  ShieldCheck,
+  Compass,
+  Route as RouteIcon
 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
-import type { BusStop, Bus } from '../types';
+import { Button } from '../components/ui/Button';
+import type { BusStop, Bus, Route as RouteType } from '../types';
 import { getDistance } from '../utils/routing';
 import { MOCK_ROUTES } from '../data/mockRoutes';
+import { AVAILABLE_DEMO_ROUTES } from '../utils/demoSimulatorEngine';
 
 export const LiveTracking: React.FC = () => {
   const { t } = useLanguage();
@@ -38,7 +45,6 @@ export const LiveTracking: React.FC = () => {
   const allRoutes = routes.length > 0 ? routes : MOCK_ROUTES;
 
   const selectedBus = selectedBusId ? buses.find((b) => b.id === selectedBusId) : null;
-  const selectedRoute = allRoutes.find((r) => r.id === selectedBus?.routeId);
 
   // Filtered buses list
   const filteredBuses = useMemo(() => {
@@ -53,16 +59,64 @@ export const LiveTracking: React.FC = () => {
     });
   }, [buses, filterRoute, searchQuery]);
 
+  // Resolves complete route stops and details for the selected bus (from routes, mock routes, or demo presets)
+  const selectedBusRoute = useMemo<RouteType | null>(() => {
+    if (!selectedBus) return null;
+
+    // 1. Direct DB or mock route match
+    const directRoute = allRoutes.find((r) => r.id === selectedBus.routeId);
+    if (directRoute && directRoute.stops && directRoute.stops.length > 0) {
+      return directRoute;
+    }
+
+    // 2. Demo Route Presets match
+    const preset = AVAILABLE_DEMO_ROUTES.find(
+      (p) => p.id === selectedBus.routeId || selectedBus.routeName?.includes(p.routeNumber)
+    );
+    if (preset) {
+      return {
+        id: preset.id,
+        routeNumber: preset.routeNumber,
+        name: preset.routeName,
+        nameMarathi: preset.routeName,
+        origin: preset.origin,
+        destination: preset.destination,
+        firstBus: '06:00 AM',
+        lastBus: '10:00 PM',
+        frequencyMinutes: 15,
+        baseFare: 10,
+        maxFare: 25,
+        totalStops: preset.stops.length,
+        durationMinutes: 30,
+        color: preset.color,
+        activeBusesCount: 1,
+        status: 'normal' as const,
+        stops: preset.stops.map((s, idx) => ({
+          stopId: s.id,
+          stopName: s.name,
+          stopNameMarathi: s.name,
+          sequence: idx + 1,
+          fareFromOrigin: idx * 5,
+          estimatedMinutesFromOrigin: idx * 5,
+          isMajorHub: idx === 0 || idx === preset.stops.length - 1,
+          lat: s.lat,
+          lng: s.lng,
+        })),
+      };
+    }
+
+    return directRoute || null;
+  }, [selectedBus, allRoutes]);
+
   // Routes to display on map: shows all active corridor paths
   const routesToDisplay = useMemo(() => {
-    if (selectedRoute) return [selectedRoute];
+    if (selectedBusRoute) return [selectedBusRoute];
     if (filterRoute !== 'all') return allRoutes.filter((r) => r.id === filterRoute);
-    
-    // Display route lines for all buses active in service
+
     const activeRouteIds = new Set(filteredBuses.map((b) => b.routeId).filter(Boolean));
     const matched = allRoutes.filter((r) => activeRouteIds.has(r.id));
     return matched.length > 0 ? matched : allRoutes;
-  }, [selectedRoute, filterRoute, allRoutes, filteredBuses]);
+  }, [selectedBusRoute, filterRoute, allRoutes, filteredBuses]);
 
   // Calculate nearest stop to the commuter's live location
   const nearestStopInfo = useMemo<{ stop: BusStop; distanceMeters: number } | null>(() => {
@@ -92,10 +146,8 @@ export const LiveTracking: React.FC = () => {
     const commuterPos = userLocation || { lat: 19.0975, lng: 74.7420 };
 
     return filteredBuses.map((bus) => {
-      // Direct geometric distance to commuter
       const directDist = getDistance(commuterPos, { lat: bus.lat, lng: bus.lng });
 
-      // Target reference stop: commuter's nearest stop if found, or the bus's approaching stop
       let stopDist = directDist;
       let targetStopName = nearestStopInfo?.stop.name || bus.nextStopName || 'Your Corridor Stop';
       let etaToCommuterStopMinutes = bus.etaToNextMinutes || 1;
@@ -117,15 +169,24 @@ export const LiveTracking: React.FC = () => {
         directDistanceMeters: Math.round(directDist),
         stopDistanceMeters: Math.round(stopDist),
         targetStopName,
-        etaToCommuterStopMinutes
+        etaToCommuterStopMinutes,
       };
     }).sort((a, b) => a.stopDistanceMeters - b.stopDistanceMeters);
   }, [filteredBuses, userLocation, nearestStopInfo]);
 
+  // Determine stop progress index for selected bus
+  const currentStopProgressIndex = useMemo(() => {
+    if (!selectedBus || !selectedBusRoute?.stops) return -1;
+    const nextIdx = selectedBusRoute.stops.findIndex(
+      (s) => s.stopName === selectedBus.nextStopName || s.stopId === selectedBus.nextStopId
+    );
+    return nextIdx !== -1 ? nextIdx : 0;
+  }, [selectedBus, selectedBusRoute]);
+
   return (
     <div className="relative flex-1 w-full h-full overflow-hidden flex flex-col md:p-4 md:gap-3 bg-[#f8f9fc]">
       
-      {/* 1. EDGE-TO-EDGE FULL-SCREEN MAP CANVAS (Mobile: 100% full viewport background, Desktop: embedded flex card) */}
+      {/* 1. EDGE-TO-EDGE FULL-SCREEN MAP CANVAS */}
       <div className="absolute inset-0 md:relative md:inset-auto md:flex-1 flex gap-3 w-full h-full md:rounded-2xl md:border md:border-slate-200/90 md:shadow-2xs overflow-hidden z-0">
         
         {/* Leaflet Live Map Canvas */}
@@ -141,47 +202,6 @@ export const LiveTracking: React.FC = () => {
             onUserLocationChange={setUserLocation}
             className="w-full h-full rounded-none md:rounded-2xl border-0 md:border md:border-slate-200/90"
           />
-
-          {/* Floating Selected Bus Quick Card (Desktop) */}
-          {selectedBus && (
-            <div className="hidden lg:block absolute top-4 left-4 z-20 w-84 bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-slate-200/90 shadow-xl space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`px-2.5 py-0.5 rounded-lg text-white font-black text-xs ${
-                      selectedBus.isDemo || selectedBus.id?.startsWith('demo-') ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB]'
-                    }`}>
-                      {selectedBus.busNumber}
-                    </span>
-                    {Boolean(selectedBus.isDemo || selectedBus.id?.startsWith('demo-')) && (
-                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
-                        DEMO
-                      </span>
-                    )}
-                  </div>
-                  <h4 className="font-bold text-slate-900 text-sm mt-1.5">{selectedBus.routeName}</h4>
-                  <p className="text-xs text-slate-500 font-mono">{selectedBus.plateNumber}</p>
-                </div>
-                <ETAIndicator minutes={selectedBus.etaToNextMinutes} size="sm" />
-              </div>
-
-              <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Next Stop</span>
-                  <span className="font-bold text-slate-900 truncate block">{selectedBus.nextStopName}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Speed & Status</span>
-                  <span className="font-bold text-slate-900 block">{selectedBus.speedKmh} km/h • {selectedBus.status}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <OccupancyBadge level={selectedBus.occupancy} compact />
-                <span className="text-[11px] text-slate-500">Driver: {selectedBus.driverName}</span>
-              </div>
-            </div>
-          )}
 
           {/* Floating Mobile Nearby Buses Quick Pill */}
           <div className="lg:hidden absolute bottom-5 left-3 z-[400]">
@@ -247,7 +267,7 @@ export const LiveTracking: React.FC = () => {
                 )}
 
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-tight block px-1">
-                  Approaching Buses (Sorted by ETA)
+                  Approaching Buses (Click to view stops)
                 </span>
 
                 {nearbyBuses.map((bus) => {
@@ -285,7 +305,6 @@ export const LiveTracking: React.FC = () => {
                         <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                       </div>
 
-                      {/* Real-time Distance & ETA */}
                       <div className="mt-2.5 p-2 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
                         <div>
                           <span className="text-[10px] uppercase font-bold text-slate-400 block">Distance to Stop</span>
@@ -396,7 +415,7 @@ export const LiveTracking: React.FC = () => {
           </div>
         </div>
 
-        {/* Nearest Stop Pill (if user location is active) */}
+        {/* Nearest Stop Pill */}
         {nearestStopInfo && (
           <button
             type="button"
@@ -453,133 +472,313 @@ export const LiveTracking: React.FC = () => {
         </div>
       </div>
 
-      {/* Mobile Drawer for Nearby Buses */}
-      <BottomSheet
-        isOpen={isNearbyDrawerOpen}
-        onClose={() => setIsNearbyDrawerOpen(false)}
-        title="Nearby Buses to Your Stop"
-        subtitle={nearestStopInfo ? `Nearest: ${nearestStopInfo.stop.name} (${nearestStopInfo.distanceMeters}m)` : 'Real-time transit proximity'}
-      >
-        <div className="space-y-3 p-1">
-          {nearbyBuses.map((bus) => (
-            <div
-              key={bus.id}
-              onClick={() => {
-                setSelectedBusId(bus.id);
-                setIsNearbyDrawerOpen(false);
-              }}
-              className="p-3.5 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-2 active:bg-slate-50"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 text-xs font-black rounded-md ${
-                    bus.isDemo || bus.id?.startsWith('demo-') ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
-                  }`}>
-                    {bus.busNumber}
-                  </span>
-                  {Boolean(bus.isDemo || bus.id?.startsWith('demo-')) && (
-                    <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
-                      DEMO
-                    </span>
-                  )}
-                  <span className="font-bold text-xs text-slate-900">{bus.routeName}</span>
+      {/* =========================================================================
+          FULL POPUP MODAL: BUS DETAILS & ALL ROUTE STOPS (Opens on bus icon click)
+          ========================================================================= */}
+      {selectedBus && (
+        <div className="fixed inset-0 z-[650] flex items-center justify-center p-3 sm:p-4 bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[90vh] text-slate-900 animate-in zoom-in-95 duration-200">
+            
+            {/* Top Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`px-3 py-1.5 rounded-xl font-black text-sm text-white shadow-xs ${
+                    selectedBus.isDemo || selectedBus.id?.startsWith('demo-')
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-[#7847CB]'
+                  }`}
+                >
+                  {selectedBus.busNumber}
                 </div>
-                <span className="font-mono font-black text-purple-700 text-xs">
-                  ~{bus.etaToCommuterStopMinutes} min
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center text-xs text-slate-500">
-                <span>Distance: <strong className="text-slate-800">{bus.stopDistanceMeters > 1000 ? `${(bus.stopDistanceMeters / 1000).toFixed(1)} km` : `${bus.stopDistanceMeters} m`}</strong></span>
-                <span className="text-emerald-600 font-bold">{bus.speedKmh} km/h</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </BottomSheet>
-
-      {/* Selected Bus Mobile Bottom Sheet */}
-      <BottomSheet
-        isOpen={!!selectedBus}
-        onClose={() => setSelectedBusId(null)}
-        title={`${selectedBus?.busNumber} (${selectedBus?.plateNumber})`}
-        subtitle={selectedBus?.routeName}
-      >
-        {selectedBus && (
-          <div className="space-y-4">
-            {Boolean(selectedBus.isDemo || selectedBus.id?.startsWith('demo-')) && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-900 text-xs font-bold">
-                <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[9px] font-black uppercase tracking-wider shrink-0">
-                  SIMULATION
-                </span>
-                <span>Predefined road route replay for testing. Not in passenger revenue service.</span>
-              </div>
-            )}
-            <div className="p-3.5 bg-purple-50/60 rounded-xl border border-purple-100 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                  {t('Arriving At Next Stop', 'पुढील थांब्यावर आगमन')}
-                </span>
-                <span className="font-extrabold text-slate-900 text-base">{selectedBus.nextStopName}</span>
-              </div>
-              <ETAIndicator minutes={selectedBus.etaToNextMinutes} size="lg" />
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Speed</span>
-                <span className="font-bold text-slate-900 text-sm">{selectedBus.speedKmh} km/h</span>
-              </div>
-
-              <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Occupancy</span>
-                <div className="mt-0.5">
-                  <OccupancyBadge level={selectedBus.occupancy} compact />
-                </div>
-              </div>
-
-              <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Status</span>
-                <div className="mt-0.5">
-                  <BusStatusBadge status={selectedBus.status} delayMinutes={selectedBus.delayMinutes} />
-                </div>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-slate-400" />
                 <div>
-                  <span className="font-semibold text-slate-800">Driver: {selectedBus.driverName}</span>
-                  <span className="text-slate-400 block text-[10px]">Conductor: {selectedBus.conductorName}</span>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-sm sm:text-base text-slate-900">
+                      Bus {selectedBus.busNumber}
+                    </h3>
+                    {Boolean(selectedBus.isDemo || selectedBus.id?.startsWith('demo-')) ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                        DEMO SIMULATOR
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        LIVE GPS
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 font-mono">
+                    {selectedBus.plateNumber} • {selectedBus.busType}
+                  </p>
                 </div>
               </div>
-              <span className="px-2 py-0.5 bg-purple-50 text-[#7847CB] text-[10px] font-bold rounded">
-                {selectedBus.busType}
-              </span>
+
+              <button
+                type="button"
+                onClick={() => setSelectedBusId(null)}
+                className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+                aria-label="Close bus details"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {selectedRoute && (
-              <div className="space-y-2">
-                <h5 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
-                  {t('Route Progress', 'प्रवास प्रगती')}
-                </h5>
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 max-h-36 overflow-y-auto space-y-2 text-xs">
-                  {selectedRoute.stops.map((stop) => (
-                    <div key={stop.stopId} className="flex items-center justify-between font-medium">
-                      <span className="flex items-center gap-2 text-slate-700">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#7847CB]" />
-                        {stop.stopName}
-                      </span>
-                      <span className="text-slate-400 text-[10px]">{stop.estimatedMinutesFromOrigin} min</span>
-                    </div>
-                  ))}
+            {/* Scrollable Body Content */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
+              
+              {/* "Which bus is going where" (Corridor & Direction Banner) */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50/50 to-purple-50 border border-purple-200/80 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold text-[#7847CB] flex items-center gap-1.5">
+                    <RouteIcon className="w-4 h-4" />
+                    {selectedBus.routeNumber ? `Route ${selectedBus.routeNumber}` : 'Corridor Route'}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {selectedBusRoute?.stops.length || 0} Total Route Stops
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 p-2.5 bg-white/90 rounded-xl border border-purple-100 text-xs font-bold shadow-2xs">
+                  <div className="min-w-0 flex-1 truncate text-purple-950">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block">START TERMINAL</span>
+                    {selectedBus.origin || selectedBusRoute?.origin || 'Depot'}
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-[#7847CB] shrink-0" />
+                  <div className="min-w-0 flex-1 truncate text-emerald-950">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block">GOING TO (DESTINATION)</span>
+                    {selectedBus.destination || selectedBusRoute?.destination || 'Terminal'}
+                  </div>
                 </div>
               </div>
-            )}
+
+              {/* Next Approaching Stop & ETA Alert */}
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-[#7847CB]" /> Approaching Next Stop
+                  </span>
+                  <span className="font-extrabold text-slate-900 text-sm sm:text-base mt-0.5 block truncate max-w-[200px] sm:max-w-none">
+                    {selectedBus.nextStopName}
+                  </span>
+                </div>
+                <ETAIndicator minutes={selectedBus.etaToNextMinutes} size="lg" />
+              </div>
+
+              {/* Proximity to Passenger's Stop (if commuter location is known) */}
+              {nearestStopInfo && (
+                <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between text-xs">
+                  <div className="min-w-0 pr-2">
+                    <span className="text-[10px] uppercase font-bold text-emerald-800 block">
+                      To Your Nearest Stop ({nearestStopInfo.stop.name})
+                    </span>
+                    <span className="font-bold text-emerald-950 truncate block">
+                      Distance: ~{nearestStopInfo.distanceMeters > 1000 ? `${(nearestStopInfo.distanceMeters / 1000).toFixed(1)} km` : `${nearestStopInfo.distanceMeters} m`}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] uppercase font-bold text-emerald-800 block">Arrival</span>
+                    <span className="font-black text-emerald-700 font-mono text-sm">
+                      ~{selectedBus.etaToNextMinutes || 3} min
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Real-time Telemetry Metrics */}
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Velocity</span>
+                  <span className="font-extrabold text-slate-900 font-mono text-sm">
+                    {selectedBus.speedKmh} km/h
+                  </span>
+                </div>
+
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Passenger Load</span>
+                  <div className="mt-0.5">
+                    <OccupancyBadge level={selectedBus.occupancy} compact />
+                  </div>
+                </div>
+
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Schedule</span>
+                  <div className="mt-0.5">
+                    <BusStatusBadge status={selectedBus.status} delayMinutes={selectedBus.delayMinutes} />
+                  </div>
+                </div>
+              </div>
+
+              {/* "Which are the stops there in those routes" (Complete Route Stop Timeline) */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-tight flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-[#7847CB]" />
+                    All Scheduled Stops in this Route ({selectedBusRoute?.stops.length || 0})
+                  </h4>
+                  <span className="text-[11px] text-slate-400">Sequential Corridor Order</span>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 max-h-56 overflow-y-auto space-y-2 text-xs">
+                  {selectedBusRoute?.stops && selectedBusRoute.stops.length > 0 ? (
+                    selectedBusRoute.stops.map((stop, idx) => {
+                      const isNext = stop.stopName === selectedBus.nextStopName;
+                      const isPassed = idx < currentStopProgressIndex;
+                      const isUserStop = nearestStopInfo?.stop.name === stop.stopName;
+
+                      return (
+                        <div
+                          key={stop.stopId || idx}
+                          className={`p-2 rounded-xl border flex items-center justify-between transition-all ${
+                            isNext
+                              ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold shadow-2xs'
+                              : isUserStop
+                              ? 'bg-purple-50 border-purple-300 text-purple-950 font-bold shadow-2xs'
+                              : isPassed
+                              ? 'bg-white/60 border-slate-100 text-slate-400'
+                              : 'bg-white border-slate-200/70 text-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {isPassed ? (
+                              <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              </div>
+                            ) : isNext ? (
+                              <div className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 font-mono text-[10px] font-black flex items-center justify-center shrink-0 shadow-xs">
+                                {idx + 1}
+                              </div>
+                            ) : (
+                              <div className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
+                                {idx + 1}
+                              </div>
+                            )}
+
+                            <div className="min-w-0">
+                              <span className="truncate block font-semibold">{stop.stopName}</span>
+                              {stop.stopNameMarathi && stop.stopNameMarathi !== stop.stopName && (
+                                <span className="text-[10px] text-slate-400 block truncate">{stop.stopNameMarathi}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            {isUserStop && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                                YOUR STOP
+                              </span>
+                            )}
+
+                            {isNext ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950 shadow-2xs flex items-center gap-1">
+                                <Clock className="w-3 h-3" /> NEXT ({selectedBus.etaToNextMinutes || 1}m)
+                              </span>
+                            ) : isPassed ? (
+                              <span className="text-[10px] font-semibold text-emerald-600">Passed</span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                +{Math.max(1, (idx - currentStopProgressIndex) * 4)}m
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-4 text-slate-400 text-xs">
+                      Corridor stops list unavailable.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Crew & Transponder Info */}
+              <div className="p-3 rounded-xl border border-slate-200/80 bg-white flex items-center justify-between text-xs text-slate-600">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-slate-400" />
+                  <div>
+                    <span className="font-semibold text-slate-800">Operator: {selectedBus.driverName}</span>
+                    <span className="text-slate-400 block text-[10px]">Conductor: {selectedBus.conductorName}</span>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 bg-purple-50 text-[#7847CB] text-[10px] font-bold rounded-lg border border-purple-100">
+                  {selectedBus.busType}
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Bottom Actions */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center gap-2 shrink-0">
+              <Button
+                onClick={() => setSelectedBusId(null)}
+                variant="outline"
+                size="md"
+                className="flex-1"
+              >
+                Close Details
+              </Button>
+            </div>
           </div>
-        )}
-      </BottomSheet>
+        </div>
+      )}
+
+      {/* Mobile Drawer for Nearby Buses list */}
+      {isNearbyDrawerOpen && (
+        <div className="fixed inset-0 z-[600] flex items-end justify-center bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-150 lg:hidden">
+          <div className="w-full bg-white rounded-t-3xl max-h-[80vh] flex flex-col p-4 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">Nearby Buses to You</h3>
+                <p className="text-xs text-slate-500">
+                  {nearestStopInfo ? `Nearest: ${nearestStopInfo.stop.name}` : 'Real-time proximity'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsNearbyDrawerOpen(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto space-y-2 flex-1">
+              {nearbyBuses.map((bus) => (
+                <div
+                  key={bus.id}
+                  onClick={() => {
+                    setSelectedBusId(bus.id);
+                    setIsNearbyDrawerOpen(false);
+                  }}
+                  className="p-3.5 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-2 active:bg-slate-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 text-xs font-black rounded-md ${
+                        bus.isDemo || bus.id?.startsWith('demo-') ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
+                      }`}>
+                        {bus.busNumber}
+                      </span>
+                      {Boolean(bus.isDemo || bus.id?.startsWith('demo-')) && (
+                        <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
+                          DEMO
+                        </span>
+                      )}
+                      <span className="font-bold text-xs text-slate-900">{bus.routeName}</span>
+                    </div>
+                    <span className="font-mono font-black text-purple-700 text-xs">
+                      ~{bus.etaToCommuterStopMinutes} min
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs text-slate-500">
+                    <span>Distance: <strong className="text-slate-800">{bus.stopDistanceMeters > 1000 ? `${(bus.stopDistanceMeters / 1000).toFixed(1)} km` : `${bus.stopDistanceMeters} m`}</strong></span>
+                    <span className="text-emerald-600 font-bold">{bus.speedKmh} km/h</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

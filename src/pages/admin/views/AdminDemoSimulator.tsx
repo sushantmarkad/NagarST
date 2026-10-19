@@ -5,7 +5,10 @@ import { DemoSimulatorPanel } from '../../../components/admin/DemoSimulatorPanel
 import { Badge } from '../../../components/ui/Badge';
 import {
   DEMO_BUS_DEFINITIONS,
-  type DemoBusDefinition
+  getDemoSimulatorState,
+  subscribeToDemoState,
+  type DemoBusDefinition,
+  type DemoSimulatorState
 } from '../../../utils/demoSimulatorEngine';
 import { MOCK_ROUTES } from '../../../data/mockRoutes';
 import { Route, Layers, ShieldCheck, Bus as BusIcon, MapPin, Clock } from 'lucide-react';
@@ -13,8 +16,17 @@ import { Route, Layers, ShieldCheck, Bus as BusIcon, MapPin, Clock } from 'lucid
 export const AdminDemoSimulator: React.FC = () => {
   const { buses, stops, routes } = useApp();
   const [selectedBusId, setSelectedBusId] = useState<string>(DEMO_BUS_DEFINITIONS[0].id);
+  const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
 
-  const selectedDef = DEMO_BUS_DEFINITIONS.find(d => d.id === selectedBusId) || DEMO_BUS_DEFINITIONS[0];
+  React.useEffect(() => {
+    const unsub = subscribeToDemoState((newState) => {
+      setSimState(newState);
+    });
+    return () => unsub();
+  }, []);
+
+  const currentRuntime = simState.buses[selectedBusId];
+  const selectedDef = currentRuntime?.def || DEMO_BUS_DEFINITIONS.find(d => d.id === selectedBusId) || DEMO_BUS_DEFINITIONS[0];
   const selectedBus = buses.find(b => b.id === selectedBusId);
   const activeDemoBuses = buses.filter(b => b.isDemo || b.id?.startsWith('demo-'));
 

@@ -153,6 +153,121 @@ export const DEMO_WAYPOINTS_BUS_3 = [
 ];
 
 // =========================================================================
+// CORRIDOR 4: Market Yard ↔ Bolhegaon Phata via Savedi (Route 24)
+// =========================================================================
+export const DEMO_STOPS_BUS_24: DemoStop[] = [
+  { id: 'stop-market-yard', name: 'Market Yard Hub', lat: 19.0880, lng: 74.7560 },
+  { id: 'stop-swastik', name: 'Swastik Chowk Hub', lat: 19.0952, lng: 74.7496 },
+  { id: 'stop-cbs', name: 'Central Bus Stand (CBS)', lat: 19.0975, lng: 74.7420 },
+  { id: 'stop-savedi', name: 'Savedi Terminal', lat: 19.1220, lng: 74.7350 },
+  { id: 'stop-bolhegaon', name: 'Bolhegaon Phata', lat: 19.1390, lng: 74.7250 }
+];
+
+export const DEMO_WAYPOINTS_BUS_24 = [
+  { lat: 19.0880, lng: 74.7560 },
+  { lat: 19.0915, lng: 74.7525 },
+  { lat: 19.0952, lng: 74.7496 },
+  { lat: 19.0975, lng: 74.7420 },
+  { lat: 19.1020, lng: 74.7400 },
+  { lat: 19.1090, lng: 74.7390 },
+  { lat: 19.1150, lng: 74.7370 },
+  { lat: 19.1220, lng: 74.7350 },
+  { lat: 19.1310, lng: 74.7300 },
+  { lat: 19.1390, lng: 74.7250 }
+];
+
+// =========================================================================
+// CORRIDOR 5: Delhi Gate Circle ↔ Kedgaon Naka (Route 7)
+// =========================================================================
+export const DEMO_STOPS_BUS_7: DemoStop[] = [
+  { id: 'stop-delhi-gate', name: 'Delhi Gate Circle', lat: 19.1020, lng: 74.7480 },
+  { id: 'stop-swastik', name: 'Swastik Chowk Hub', lat: 19.0952, lng: 74.7496 },
+  { id: 'stop-railway', name: 'Railway Station Junction', lat: 19.0810, lng: 74.7380 },
+  { id: 'stop-kedgaon', name: 'Kedgaon Naka', lat: 19.0620, lng: 74.7290 }
+];
+
+export const DEMO_WAYPOINTS_BUS_7 = [
+  { lat: 19.1020, lng: 74.7480 },
+  { lat: 19.0980, lng: 74.7490 },
+  { lat: 19.0952, lng: 74.7496 },
+  { lat: 19.0975, lng: 74.7420 },
+  { lat: 19.0890, lng: 74.7400 },
+  { lat: 19.0810, lng: 74.7380 },
+  { lat: 19.0715, lng: 74.7335 },
+  { lat: 19.0620, lng: 74.7290 }
+];
+
+export interface DemoRoutePreset {
+  id: string;
+  routeNumber: string;
+  routeName: string;
+  origin: string;
+  destination: string;
+  color: string;
+  description: string;
+  stops: DemoStop[];
+  waypoints: { lat: number; lng: number }[];
+}
+
+export const AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [
+  {
+    id: 'route-12',
+    routeNumber: 'Route 12',
+    routeName: 'Delhi Gate ↔ Dairy Chowk via Pipeline Rd',
+    origin: 'Delhi Gate Terminal',
+    destination: 'Dairy Chowk Terminal',
+    color: '#7847CB',
+    description: 'Major arterial corridor along State Highway 10 and Pipeline Road',
+    stops: DEMO_STOPS_BUS_1,
+    waypoints: DEMO_WAYPOINTS_BUS_1
+  },
+  {
+    id: 'route-1',
+    routeNumber: 'Route 1',
+    routeName: 'Central Bus Stand ↔ MIDC Nagapur Sector 1',
+    origin: 'Central Bus Stand (CBS)',
+    destination: 'MIDC Nagapur Sector 1',
+    color: '#2563eb',
+    description: 'Industrial commuter artery linking CBS with Nagapur MIDC manufacturing hub',
+    stops: DEMO_STOPS_BUS_2,
+    waypoints: DEMO_WAYPOINTS_BUS_2
+  },
+  {
+    id: 'route-4',
+    routeNumber: 'Route 4',
+    routeName: 'Savedi Terminal ↔ Central Railway Station',
+    origin: 'Savedi Bus Terminal',
+    destination: 'Central Railway Station',
+    color: '#059669',
+    description: 'Transit spine connecting residential Savedi to Ahilyanagar Railway Station',
+    stops: DEMO_STOPS_BUS_3,
+    waypoints: DEMO_WAYPOINTS_BUS_3
+  },
+  {
+    id: 'route-24',
+    routeNumber: 'Route 24',
+    routeName: 'Market Yard ↔ Bolhegaon Phata via Savedi',
+    origin: 'Market Yard',
+    destination: 'Bolhegaon Phata',
+    color: '#d97706',
+    description: 'Commercial connecting route from Market Yard via Savedi to northern Bolhegaon',
+    stops: DEMO_STOPS_BUS_24,
+    waypoints: DEMO_WAYPOINTS_BUS_24
+  },
+  {
+    id: 'route-7',
+    routeNumber: 'Route 7',
+    routeName: 'Delhi Gate Circle ↔ Kedgaon Naka',
+    origin: 'Delhi Gate Circle',
+    destination: 'Kedgaon Naka',
+    color: '#7c3aed',
+    description: 'Cross-city corridor linking historic Delhi Gate with Kedgaon industrial belt',
+    stops: DEMO_STOPS_BUS_7,
+    waypoints: DEMO_WAYPOINTS_BUS_7
+  }
+];
+
+// =========================================================================
 // MULTI-BUS DEFINITION REGISTRY
 // =========================================================================
 export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
@@ -532,6 +647,44 @@ export function setBusDelay(busId: string, delayMinutes: number) {
     runtime.currentBus = bus;
     broadcastBusLocation(bus);
   }
+  notifyListeners();
+}
+
+/**
+ * Assign a specific route corridor to a demo bus (before starting or dynamically)
+ */
+export function setBusAssignedRoute(busId: string, routePresetId: string, isReverse = false) {
+  const runtime = runtimeStore[busId];
+  const preset = AVAILABLE_DEMO_ROUTES.find(r => r.id === routePresetId);
+  if (!runtime || !preset) return;
+
+  const stops = isReverse ? [...preset.stops].reverse() : [...preset.stops];
+  const waypoints = isReverse ? [...preset.waypoints].reverse() : [...preset.waypoints];
+  const origin = isReverse ? preset.destination : preset.origin;
+  const destination = isReverse ? preset.origin : preset.destination;
+
+  runtime.def = {
+    ...runtime.def,
+    routeId: preset.id,
+    routeNumber: preset.routeNumber,
+    routeName: `${preset.routeNumber}: ${origin} ↔ ${destination}`,
+    origin,
+    destination,
+    color: preset.color,
+    stops,
+    waypoints
+  };
+
+  runtime.currentIndex = 0;
+  runtime.direction = 1;
+  runtime.progressPercent = 0;
+
+  if (runtime.isRunning) {
+    const bus = buildBusTelemetry(runtime);
+    runtime.currentBus = bus;
+    broadcastBusLocation(bus);
+  }
+
   notifyListeners();
 }
 

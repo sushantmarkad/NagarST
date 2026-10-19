@@ -393,16 +393,41 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       });
 
       const key = `bus-${bus.id}`;
+      const destinationText = (bus.origin && bus.destination)
+        ? `${bus.origin} ➔ ${bus.destination}`
+        : (bus.routeName || 'In Transit');
+
       const tooltipHtml = isDemo ? `
-        <div style="text-align: center;">
-          <span style="background: #F59E0B; color: #000; font-size: 9px; font-weight: 900; padding: 1px 4px; border-radius: 4px;">DEMO</span>
-          <b style="color: #F59E0B; margin-left: 4px;">${bus.busNumber}</b><br/>
-          <span style="font-size: 10px; color: #64748b;">${bus.speedKmh} km/h • Simulated Route</span>
+        <div style="text-align: center; font-family: system-ui, sans-serif; padding: 2px;">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
+            <span style="background: #F59E0B; color: #000; font-size: 9px; font-weight: 900; padding: 1px 4px; border-radius: 4px;">DEMO</span>
+            <b style="color: #d97706; font-size: 12px;">${bus.busNumber}</b>
+          </div>
+          <div style="font-size: 11px; font-weight: 700; color: #0f172a; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            ${destinationText}
+          </div>
+          <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
+            Next: <b style="color: #7847CB;">${bus.nextStopName}</b> (${bus.etaToNextMinutes || 1}m) • ${bus.speedKmh} km/h
+          </div>
+          <div style="font-size: 9px; color: #7847CB; font-weight: 700; margin-top: 3px; border-top: 1px dashed #e2e8f0; padding-top: 2px;">
+            👆 Click bus icon for all route stops
+          </div>
         </div>
       ` : `
-        <div style="text-align: center;">
-          <b style="color: #7847CB;">${bus.busNumber}</b><br/>
-          <span style="font-size: 10px; color: #64748b;">${bus.speedKmh} km/h • ${bus.status}</span>
+        <div style="text-align: center; font-family: system-ui, sans-serif; padding: 2px;">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
+            <span style="background: #10B981; color: #fff; font-size: 9px; font-weight: 800; padding: 1px 4px; border-radius: 4px;">LIVE</span>
+            <b style="color: #7847CB; font-size: 12px;">${bus.busNumber}</b>
+          </div>
+          <div style="font-size: 11px; font-weight: 700; color: #0f172a; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            ${destinationText}
+          </div>
+          <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
+            Next: <b style="color: #7847CB;">${bus.nextStopName}</b> (${bus.etaToNextMinutes || 1}m) • ${bus.speedKmh} km/h
+          </div>
+          <div style="font-size: 9px; color: #7847CB; font-weight: 700; margin-top: 3px; border-top: 1px dashed #e2e8f0; padding-top: 2px;">
+            👆 Click bus icon for all route stops
+          </div>
         </div>
       `;
 
