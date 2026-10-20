@@ -38,6 +38,8 @@ import { Badge } from '../ui/Badge';
 import {
   startAllBuses,
   stopAllBuses,
+  resetAllBuses,
+  resetBus,
   startBus,
   stopBus,
   setAllBusSpeed,
@@ -222,6 +224,19 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     startAllBuses({ speedMultiplier: simState.speedMultiplier });
     toast.success('All demo buses are now running simultaneously across Ahilyanagar corridors!', 'Fleet Live');
     onSelectBusOnMap?.(selectedBusId);
+  };
+
+  const handleResetAll = () => {
+    resetAllBuses({ speedMultiplier: simState.speedMultiplier });
+    toast.success('Demo reset! All buses have moved back to start terminals and are advancing forward.', 'Demo Restarted');
+    onSelectBusOnMap?.(selectedBusId);
+  };
+
+  const handleResetSelectedBus = () => {
+    if (!activeBusRuntime) return;
+    resetBus(activeBusRuntime.id);
+    toast.success(`${activeBusRuntime.def.busNumber} reset to start terminal and advancing forward.`);
+    onSelectBusOnMap?.(activeBusRuntime.id);
   };
 
   const handleStopAll = () => {
@@ -523,8 +538,8 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
 
       <div className="p-4 sm:p-5 space-y-5">
         
-        {/* Master Start All / Stop All Action Buttons */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Master Start All / Reset / Stop All Action Buttons */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           <Button
             onClick={handleStartAll}
             size="lg"
@@ -532,6 +547,15 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
             leftIcon={<Play className="w-4 h-4 fill-white" />}
           >
             Start All Demos
+          </Button>
+
+          <Button
+            onClick={handleResetAll}
+            size="lg"
+            className="w-full bg-amber-500 hover:bg-amber-600 text-white font-black shadow-md shadow-amber-500/20"
+            leftIcon={<RotateCcw className="w-4 h-4 text-white" />}
+          >
+            Reset Demo
           </Button>
 
           <Button
@@ -650,6 +674,15 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                 <Route className="w-3.5 h-3.5 text-[#7847CB]" /> 2. Assign Route to {activeBusRuntime.def.busNumber}
               </span>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetSelectedBus}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 text-[11px] font-bold shadow-2xs transition-colors"
+                  title="Reset this bus back to starting terminal and run"
+                >
+                  <RotateCcw className="w-3 h-3 text-amber-700" />
+                  <span>Reset Bus</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleToggleDirection}

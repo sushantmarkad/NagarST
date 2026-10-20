@@ -34,6 +34,7 @@ import {
   getDemoSimulatorState,
   subscribeToDemoState,
   buildBusTelemetry,
+  DEMO_BUS_DEFINITIONS,
   type DemoSimulatorState
 } from '../utils/demoSimulatorEngine';
 
@@ -57,11 +58,28 @@ export const Home: React.FC = () => {
   const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>(() => {
     const map: Record<string, Bus> = {};
 
-    // 1. In-memory demo simulator state (if running in same tab)
+    // 1. In-memory demo simulator state (so passenger immediately sees demo fleet)
     const localSim = getDemoSimulatorState();
     Object.values(localSim.buses).forEach((r) => {
-      if (r.isRunning) {
-        const b = r.currentBus || buildBusTelemetry(r);
+      const b = r.currentBus || buildBusTelemetry(r);
+      if (b) map[b.id] = { ...b, isDemo: true };
+    });
+
+    // 2. Fallback to DEMO_BUS_DEFINITIONS so demo buses are always visible
+    DEMO_BUS_DEFINITIONS.forEach((def) => {
+      if (!map[def.id]) {
+        const dummyRuntime = {
+          id: def.id,
+          def,
+          isRunning: false,
+          currentIndex: 0,
+          direction: 1 as const,
+          speedMultiplier: 1,
+          delayMinutes: 0,
+          currentBus: null,
+          progressPercent: 0
+        };
+        const b = buildBusTelemetry(dummyRuntime);
         if (b) map[b.id] = { ...b, isDemo: true };
       }
     });
@@ -178,14 +196,9 @@ export const Home: React.FC = () => {
         let hasChanges = false;
         const next = { ...prev };
         Object.values(newState.buses).forEach((r) => {
-          if (r.isRunning) {
-            const b = r.currentBus || buildBusTelemetry(r);
-            if (b) {
-              next[b.id] = { ...b, isDemo: true };
-              hasChanges = true;
-            }
-          } else if (next[r.id]?.isDemo) {
-            delete next[r.id];
+          const b = r.currentBus || buildBusTelemetry(r);
+          if (b) {
+            next[b.id] = { ...b, isDemo: true };
             hasChanges = true;
           }
         });

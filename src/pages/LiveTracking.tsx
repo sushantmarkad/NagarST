@@ -102,16 +102,33 @@ export const LiveTracking: React.FC = () => {
   const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>(() => {
     const map: Record<string, Bus> = {};
 
-    // 1. In-memory demo simulator state (if running in same tab)
+    // 1. In-memory demo simulator state (so passenger immediately sees demo fleet)
     const localSim = getDemoSimulatorState();
     Object.values(localSim.buses).forEach((r) => {
-      if (r.isRunning) {
-        const b = r.currentBus || buildBusTelemetry(r);
+      const b = r.currentBus || buildBusTelemetry(r);
+      if (b) map[b.id] = { ...b, isDemo: true };
+    });
+
+    // 2. Registry definitions fallback so passenger always sees all demo buses
+    DEMO_BUS_DEFINITIONS.forEach((def) => {
+      if (!map[def.id]) {
+        const dummyRuntime = {
+          id: def.id,
+          def,
+          isRunning: false,
+          currentIndex: 0,
+          direction: 1 as const,
+          speedMultiplier: 1,
+          delayMinutes: 0,
+          currentBus: null,
+          progressPercent: 0
+        };
+        const b = buildBusTelemetry(dummyRuntime);
         if (b) map[b.id] = { ...b, isDemo: true };
       }
     });
 
-    // 2. Cross-tab aggregate demo buses from localStorage
+    // 3. Cross-tab aggregate demo buses from localStorage
     try {
       const demoRaw = localStorage.getItem('nagarst_demo_buses');
       if (demoRaw) {
@@ -122,7 +139,7 @@ export const LiveTracking: React.FC = () => {
       }
     } catch (_) {}
 
-    // 3. Individual active bus keys (live driver or demo)
+    // 4. Individual active bus keys (live driver or demo)
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
@@ -223,14 +240,9 @@ export const LiveTracking: React.FC = () => {
         let hasChanges = false;
         const next = { ...prev };
         Object.values(newState.buses).forEach((r) => {
-          if (r.isRunning) {
-            const b = r.currentBus || buildBusTelemetry(r);
-            if (b) {
-              next[b.id] = { ...b, isDemo: true };
-              hasChanges = true;
-            }
-          } else if (next[r.id]?.isDemo) {
-            delete next[r.id];
+          const b = r.currentBus || buildBusTelemetry(r);
+          if (b) {
+            next[b.id] = { ...b, isDemo: true };
             hasChanges = true;
           }
         });

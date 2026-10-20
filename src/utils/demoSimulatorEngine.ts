@@ -541,6 +541,79 @@ export function startAllBuses(options?: { speedMultiplier?: number }) {
 }
 
 /**
+ * Reset all demo buses back to their starting terminal origins and restart movement immediately
+ */
+export function resetAllBuses(options?: { speedMultiplier?: number }) {
+  if (activeInterval) {
+    clearInterval(activeInterval);
+    activeInterval = null;
+  }
+
+  Object.values(runtimeStore).forEach(runtime => {
+    // 1. Ensure waypoints are densified along the actual road corridor (minimum 120 points)
+    if (!runtime.def.waypoints || runtime.def.waypoints.length < 15) {
+      if (runtime.def.stops && runtime.def.stops.length >= 2) {
+        runtime.def.waypoints = densifyPath(runtime.def.stops.map(s => ({ lat: s.lat, lng: s.lng })), 120);
+      } else {
+        runtime.def.waypoints = densifyPath([
+          { lat: 19.0910, lng: 74.7290 },
+          { lat: 19.0975, lng: 74.7420 },
+          { lat: 19.1025, lng: 74.7380 },
+          { lat: 19.1235, lng: 74.7321 }
+        ], 120);
+      }
+    }
+
+    // 2. Reset position to initial origin terminal
+    runtime.currentIndex = 0;
+    runtime.direction = 1;
+    runtime.progressPercent = 0;
+    runtime.isRunning = true;
+    if (options?.speedMultiplier) runtime.speedMultiplier = options.speedMultiplier;
+
+    // 3. Build fresh telemetry at origin and broadcast immediately
+    const bus = buildBusTelemetry(runtime);
+    runtime.currentBus = bus;
+    broadcastBusLocation(bus);
+  });
+
+  // 4. Restart continuous simulation timer
+  ensureTimerRunning();
+  notifyListeners();
+
+  const ch = getBroadcastChannel();
+  if (ch) {
+    ch.postMessage({ type: 'resetDemo' });
+  }
+}
+
+/**
+ * Reset a single demo bus to its starting point and run
+ */
+export function resetBus(busId: string) {
+  const runtime = runtimeStore[busId];
+  if (!runtime) return;
+
+  if (!runtime.def.waypoints || runtime.def.waypoints.length < 15) {
+    if (runtime.def.stops && runtime.def.stops.length >= 2) {
+      runtime.def.waypoints = densifyPath(runtime.def.stops.map(s => ({ lat: s.lat, lng: s.lng })), 120);
+    }
+  }
+
+  runtime.currentIndex = 0;
+  runtime.direction = 1;
+  runtime.progressPercent = 0;
+  runtime.isRunning = true;
+
+  const bus = buildBusTelemetry(runtime);
+  runtime.currentBus = bus;
+  broadcastBusLocation(bus);
+
+  ensureTimerRunning();
+  notifyListeners();
+}
+
+/**
  * Stop all running demo buses
  */
 export function stopAllBuses() {
@@ -656,9 +729,15 @@ export function setBusAssignedRoute(
 
       const wpLower = Math.min(wpStart, wpEnd);
       const wpUpper = Math.max(wpStart, wpEnd);
-      waypoints = waypoints.slice(wpLower, wpUpper + 1);
-      if (wpStart > wpEnd) waypoints.reverse();
+      if (wpLower < wpUpper) {
+        waypoints = waypoints.slice(wpLower, wpUpper + 1);
+        if (wpStart > wpEnd) waypoints.reverse();
+      }
     }
+  }
+
+  if (waypoints.length < 2 && stops.length >= 2) {
+    waypoints = [{ lat: stops[0].lat, lng: stops[0].lng }, { lat: stops[stops.length - 1].lat, lng: stops[stops.length - 1].lng }];
   }
 
   const origin = stops.length > 0 ? stops[0].name : preset.origin;
@@ -684,6 +763,7 @@ export function setBusAssignedRoute(
     const bus = buildBusTelemetry(runtime);
     runtime.currentBus = bus;
     broadcastBusLocation(bus);
+    ensureTimerRunning();
   }
 
   notifyListeners();
@@ -974,7 +1054,7 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
       color: r.color || '#7847CB',
       description: `${r.origin} ➔ ${r.destination}`,
       stops,
-      waypoints
+      waypoints: densifyPath(waypoints, 120)
     });
   });
 
@@ -1006,7 +1086,7 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
         destination: assignedRoute.destination,
         color: '#7847CB',
         stops: [...assignedRoute.stops],
-        waypoints: [...assignedRoute.waypoints],
+        waypoints: densifyPath(assignedRoute.waypoints, 120),
         initialIndex: 0
       };
       DEMO_BUS_DEFINITIONS.push(existingDef);
@@ -1017,7 +1097,10 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
       existingDef.origin = assignedRoute.origin;
       existingDef.destination = assignedRoute.destination;
       existingDef.stops = [...assignedRoute.stops];
-      existingDef.waypoints = [...assignedRoute.waypoints];
+      // Only re-densify if not currently running or has sparse points
+      if (!runtimeStore[existingDef.id]?.isRunning || !existingDef.waypoints || existingDef.waypoints.length < 20) {
+        existingDef.waypoints = densifyPath(assignedRoute.waypoints, 120);
+      }
     }
 
     if (!runtimeStore[existingDef.id]) {
@@ -1034,6 +1117,10 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
       };
     } else {
       runtimeStore[existingDef.id].def = existingDef;
+      runtimeStore[existingDef.id].currentIndex = Math.max(
+        0,
+        Math.min(runtimeStore[existingDef.id].currentIndex, existingDef.waypoints.length - 1)
+      );
     }
   });
 
@@ -1050,7 +1137,7 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
           def.destination = assigned.destination;
           def.color = assigned.color || def.color;
           def.stops = [...assigned.stops];
-          def.waypoints = [...assigned.waypoints];
+          def.waypoints = densifyPath(assigned.waypoints, 120);
 
           if (runtimeStore[def.id]) {
             runtimeStore[def.id].def = def;
