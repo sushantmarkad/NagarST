@@ -22,14 +22,26 @@ import {
   Crosshair,
   ShieldCheck,
   Compass,
+  AlertCircle,
+  LocateFixed,
+  Building2,
   Route as RouteIcon
 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import type { BusStop, Bus, Route as RouteType } from '../types';
 import { getDistance } from '../utils/routing';
-import { MOCK_ROUTES } from '../data/mockRoutes';
 import { AVAILABLE_DEMO_ROUTES, getDemoSimulatorState } from '../utils/demoSimulatorEngine';
+
+// Major Ahilyanagar transit landmarks and hubs for manual location selection
+const AHILYANAGAR_HUBS = [
+  { id: 'cbs', name: 'Ahilyanagar Central Bus Stand (CBS)', lat: 19.0975, lng: 74.7420, hubCode: 'CBS' },
+  { id: 'savedi', name: 'Savedi Bus Depot / Premdan Chowk', lat: 19.1235, lng: 74.7321, hubCode: 'SVD' },
+  { id: 'delhi-gate', name: 'Delhi Gate Transit Terminal', lat: 19.1025, lng: 74.7380, hubCode: 'DLG' },
+  { id: 'market-yard', name: 'Market Yard Bus Station', lat: 19.0880, lng: 74.7510, hubCode: 'MKY' },
+  { id: 'swastik', name: 'Swastik Chowk Hub', lat: 19.0940, lng: 74.7350, hubCode: 'SWK' },
+  { id: 'kotla', name: 'Kotla Bus Stand', lat: 19.0910, lng: 74.7290, hubCode: 'KTL' },
+];
 
 export const LiveTracking: React.FC = () => {
   const { t } = useLanguage();
@@ -40,9 +52,17 @@ export const LiveTracking: React.FC = () => {
   const [showListOnDesktop, setShowListOnDesktop] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<'all' | 'nearby'>('all');
   const [isNearbyDrawerOpen, setIsNearbyDrawerOpen] = useState(false);
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  const allRoutes = routes.length > 0 ? routes : MOCK_ROUTES;
+  // Commuter Location State (Live GPS or Manual Station Selection)
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocationLabel, setUserLocationLabel] = useState<string>('Ahilyanagar CBS (Default)');
+  const [isManualLocation, setIsManualLocation] = useState<boolean>(false);
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState<boolean>(false);
+  const [isPickingLocationOnMap, setIsPickingLocationOnMap] = useState<boolean>(false);
+  const [locationErrorNotice, setLocationErrorNotice] = useState<string | null>(null);
+
+  // Only configured routes from Admin / Database — NO fake or hardcoded mock routes!
+  const allRoutes = routes;
 
   const selectedBus = selectedBusId ? buses.find((b) => b.id === selectedBusId) : null;
 
@@ -59,7 +79,7 @@ export const LiveTracking: React.FC = () => {
     });
   }, [buses, filterRoute, searchQuery]);
 
-  // Resolves complete route stops and details for the selected bus (from routes, mock routes, or demo presets)
+  // Resolves complete route stops and details for the selected bus
   const selectedBusRoute = useMemo<RouteType | null>(() => {
     if (!selectedBus) return null;
 
@@ -99,7 +119,7 @@ export const LiveTracking: React.FC = () => {
       };
     }
 
-    // 2. Direct DB or mock route match
+    // 2. Direct DB configured route match
     const directRoute = allRoutes.find((r) => r.id === selectedBus.routeId);
     if (directRoute && directRoute.stops && directRoute.stops.length > 0) {
       return directRoute;
@@ -144,7 +164,7 @@ export const LiveTracking: React.FC = () => {
     return directRoute || null;
   }, [selectedBus, allRoutes]);
 
-  // Routes to display on map: shows all active corridor paths
+  // Routes to display on map: shows ONLY admin-configured routes or active demo routes
   const routesToDisplay = useMemo(() => {
     if (selectedBusRoute) return [selectedBusRoute];
 
@@ -189,40 +209,114 @@ export const LiveTracking: React.FC = () => {
       return [...demoFiltered, ...dbFiltered];
     }
 
-    const activeRouteIds = new Set(filteredBuses.map((b) => b.routeId).filter(Boolean));
-    const matched = allRoutes.filter((r) => activeRouteIds.has(r.id));
-    return [...demoRoutes, ...(matched.length > 0 ? matched : allRoutes)];
-  }, [selectedBusRoute, filterRoute, allRoutes, filteredBuses]);
+    return [...demoRoutes, ...allRoutes];
+  }, [selectedBusRoute, filterRoute, allRoutes]);
 
-  // Calculate nearest stop to the commuter's live location
+  // Active commuter coordinate (Live GPS or selected manual location)
+  const activeCommuterPos = useMemo(() => {
+    return userLocation || { lat: 19.0975, lng: 74.7420 };
+  }, [userLocation]);
+
+  // Handle Map Click (for manual location placement on map)
+  const handleMapClick = (latlng: { lat: number; lng: number }) => {
+    if (isPickingLocationOnMap) {
+      setUserLocation(latlng);
+      setUserLocationLabel(`Custom Map Pin (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`);
+      setIsManualLocation(true);
+      setIsPickingLocationOnMap(false);
+      setLocationErrorNotice(null);
+    }
+  };
+
+  // Handle Transit Hub Selection
+  const handleSelectHub = (hub: typeof AHILYANAGAR_HUBS[0]) => {
+    setUserLocation({ lat: hub.lat, lng: hub.lng });
+    setUserLocationLabel(hub.name);
+    setIsManualLocation(true);
+    setIsLocationModalOpen(false);
+    setIsPickingLocationOnMap(false);
+    setLocationErrorNotice(null);
+  };
+
+  // Handle Configured Bus Stop Selection
+  const handleSelectConfiguredStop = (stopId: string) => {
+    const s = stops.find((item) => item.id === stopId);
+    if (!s) return;
+    setUserLocation({ lat: s.lat, lng: s.lng });
+    setUserLocationLabel(s.name);
+    setIsManualLocation(true);
+    setIsLocationModalOpen(false);
+    setIsPickingLocationOnMap(false);
+    setLocationErrorNotice(null);
+  };
+
+  // Handle Switch to Device GPS
+  const handleUseGps = () => {
+    if (!navigator.geolocation) {
+      setLocationErrorNotice('Geolocation is not supported by your browser.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setUserLocationLabel('Live GPS Location');
+        setIsManualLocation(false);
+        setIsLocationModalOpen(false);
+        setIsPickingLocationOnMap(false);
+        setLocationErrorNotice(null);
+      },
+      (err) => {
+        setLocationErrorNotice(
+          err.code === err.PERMISSION_DENIED
+            ? 'GPS permission denied. Please pick a station or click on map.'
+            : 'Unable to retrieve GPS fix. Using manual station.'
+        );
+        if (!userLocation) {
+          setUserLocation({ lat: 19.0975, lng: 74.7420 });
+          setUserLocationLabel('Ahilyanagar CBS (Manual)');
+          setIsManualLocation(true);
+        }
+      },
+      { enableHighAccuracy: true, timeout: 6000 }
+    );
+  };
+
+  // Callback when LiveMap detects GPS error/permission denial
+  const handleLocationErrorFromMap = (err: string) => {
+    setLocationErrorNotice(err);
+    if (!userLocation) {
+      setUserLocation({ lat: 19.0975, lng: 74.7420 });
+      setUserLocationLabel('Ahilyanagar CBS (Default Hub)');
+      setIsManualLocation(true);
+    }
+  };
+
+  // Calculate nearest stop to the commuter's active location
   const nearestStopInfo = useMemo<{ stop: BusStop; distanceMeters: number } | null>(() => {
-    const commuterPos = userLocation || { lat: 19.0975, lng: 74.7420 }; // GPS or CBS Central Depot
     if (stops.length === 0) return null;
 
     let closestStop: BusStop | null = null;
     let minDistance = Infinity;
 
     for (const stop of stops) {
-      const dist = getDistance(commuterPos, { lat: stop.lat, lng: stop.lng });
+      const dist = getDistance(activeCommuterPos, { lat: stop.lat, lng: stop.lng });
       if (dist < minDistance) {
         minDistance = dist;
         closestStop = stop;
       }
     }
 
-    if (!closestStop || minDistance > 10000) return null;
+    if (!closestStop || minDistance > 15000) return null;
     return {
       stop: closestStop,
       distanceMeters: Math.round(minDistance),
     };
-  }, [userLocation, stops]);
+  }, [activeCommuterPos, stops]);
 
   // Nearby Buses calculation: calculates distance to commuter & real-time ETA to commuter's stop
   const nearbyBuses = useMemo(() => {
-    const commuterPos = userLocation || { lat: 19.0975, lng: 74.7420 };
-
     return filteredBuses.map((bus) => {
-      const directDist = getDistance(commuterPos, { lat: bus.lat, lng: bus.lng });
+      const directDist = getDistance(activeCommuterPos, { lat: bus.lat, lng: bus.lng });
 
       let stopDist = directDist;
       let targetStopName = nearestStopInfo?.stop.name || bus.nextStopName || 'Your Corridor Stop';
@@ -248,7 +342,7 @@ export const LiveTracking: React.FC = () => {
         etaToCommuterStopMinutes,
       };
     }).sort((a, b) => a.stopDistanceMeters - b.stopDistanceMeters);
-  }, [filteredBuses, userLocation, nearestStopInfo]);
+  }, [filteredBuses, activeCommuterPos, nearestStopInfo]);
 
   // Determine stop progress index for selected bus
   const currentStopProgressIndex = useMemo(() => {
@@ -275,7 +369,17 @@ export const LiveTracking: React.FC = () => {
             selectedStopId={selectedStopId}
             onSelectBus={(bus) => setSelectedBusId(bus.id)}
             onSelectStop={(stop) => setSelectedStopId(stop.id)}
-            onUserLocationChange={setUserLocation}
+            userLocation={userLocation}
+            onUserLocationChange={(loc) => {
+              if (!isManualLocation && loc) {
+                setUserLocation(loc);
+                setUserLocationLabel('Live GPS Location');
+              }
+            }}
+            onLocationError={handleLocationErrorFromMap}
+            onMapClick={handleMapClick}
+            interactiveMode={isPickingLocationOnMap ? 'pick_passenger_location' : 'view'}
+            onCancelInteractive={() => setIsPickingLocationOnMap(false)}
             className="w-full h-full rounded-none md:rounded-2xl border-0 md:border md:border-slate-200/90"
           />
 
@@ -506,6 +610,28 @@ export const LiveTracking: React.FC = () => {
           </button>
         )}
 
+        {/* Commuter Active Location Pill / Selector Button */}
+        <button
+          type="button"
+          onClick={() => setIsLocationModalOpen(true)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+            isManualLocation
+              ? 'bg-amber-50/90 text-amber-900 border-amber-300 hover:bg-amber-100'
+              : 'bg-blue-50/90 text-blue-900 border-blue-200 hover:bg-blue-100'
+          }`}
+          title="Select your current passenger location (GPS or manual station)"
+        >
+          <Crosshair className="w-3.5 h-3.5 text-[#7847CB]" />
+          <span className="truncate max-w-[120px] sm:max-w-[160px]">
+            {userLocationLabel}
+          </span>
+          <span className={`text-[9px] uppercase font-black px-1.5 py-0.5 rounded ${
+            isManualLocation ? 'bg-amber-200 text-amber-900' : 'bg-blue-200 text-blue-900'
+          }`}>
+            {isManualLocation ? 'MANUAL' : 'GPS'}
+          </span>
+        </button>
+
         {/* Filters */}
         <div className="flex items-center gap-2 flex-wrap">
           {/* Search */}
@@ -547,6 +673,162 @@ export const LiveTracking: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Dismissible GPS/Location Alert Notice */}
+      {locationErrorNotice && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs px-3.5 py-2.5 rounded-2xl shadow-xs flex items-center justify-between gap-3 shrink-0 md:order-first animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="truncate">{locationErrorNotice}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsLocationModalOpen(true)}
+              className="px-2.5 py-1 rounded-xl bg-[#7847CB] text-white font-bold text-[11px] hover:bg-[#683ab7] transition-colors"
+            >
+              Choose Station
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocationErrorNotice(null)}
+              className="p-1 text-amber-700 hover:bg-amber-200/60 rounded-lg"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          PASSENGER LOCATION SELECTION MODAL (GPS / Transit Hubs / Configured Stops / Map Pin)
+          ========================================================================= */}
+      {isLocationModalOpen && (
+        <div className="fixed inset-0 z-[700] flex items-center justify-center p-3 sm:p-4 bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[85vh] text-slate-900 animate-in zoom-in-95 duration-200">
+            
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#7847CB] text-white flex items-center justify-center shadow-xs">
+                  <Crosshair className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-slate-900">
+                    Set Your Passenger Location
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Track approaching buses & ETAs from where you are
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLocationModalOpen(false)}
+                className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs">
+              
+              {/* Option 1: Live Device GPS */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 flex items-center justify-between">
+                <div>
+                  <span className="font-black text-blue-900 text-xs flex items-center gap-1.5">
+                    <LocateFixed className="w-4 h-4 text-blue-600" />
+                    Use Device GPS
+                  </span>
+                  <p className="text-[11px] text-blue-700 mt-0.5">
+                    Acquires live latitude & longitude from your phone/browser
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUseGps}
+                  className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors shrink-0"
+                >
+                  Locate Me
+                </button>
+              </div>
+
+              {/* Option 2: Major Ahilyanagar Transit Hubs */}
+              <div className="space-y-2">
+                <span className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-[#7847CB]" />
+                  Major Ahilyanagar Stations & Hubs
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {AHILYANAGAR_HUBS.map((hub) => (
+                    <button
+                      key={hub.id}
+                      type="button"
+                      onClick={() => handleSelectHub(hub)}
+                      className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                        userLocationLabel === hub.name
+                          ? 'bg-purple-50 border-purple-300 ring-1 ring-purple-400 shadow-2xs'
+                          : 'bg-white hover:bg-slate-50 border-slate-200/80'
+                      }`}
+                    >
+                      <div className="min-w-0 pr-1">
+                        <span className="font-bold text-slate-900 block truncate text-xs">{hub.name}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">Hub ID: {hub.hubCode}</span>
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Option 3: Select from Configured Bus Stops */}
+              {stops && stops.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-[#7847CB]" />
+                    Select from Configured Bus Stops ({stops.length})
+                  </span>
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) handleSelectConfiguredStop(e.target.value);
+                    }}
+                    defaultValue=""
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+                  >
+                    <option value="" disabled>-- Choose a bus stop --</option>
+                    {stops.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} {(s as any).code ? `(${(s as any).code})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Option 4: Pick Point Directly on Map */}
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-800 text-xs block">Set Pin Directly on Map</span>
+                  <span className="text-[11px] text-slate-400">Click anywhere on the map to drop your pin</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsLocationModalOpen(false);
+                    setIsPickingLocationOnMap(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs transition-colors shrink-0 flex items-center gap-1"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                  Pick on Map
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* =========================================================================
           FULL POPUP MODAL: BUS DETAILS & ALL ROUTE STOPS (Opens on bus icon click)

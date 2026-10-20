@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../utils/supabaseClient';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
+import { useApp } from '../../../context/AppContext';
 import {
   Bus,
   Plus,
@@ -10,7 +11,8 @@ import {
   Search,
   CheckCircle2,
   X,
-  Gauge
+  Gauge,
+  Route as RouteIcon
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -23,12 +25,14 @@ interface BusRecord {
   capacity: number;
   type: string;
   status: string;
+  route_id?: string;
   created_at: string;
 }
 
 export const AdminBuses: React.FC = () => {
   const toast = useToast();
   const confirm = useConfirm();
+  const { routes, refreshData } = useApp();
 
   const [buses, setBuses] = useState<BusRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +49,8 @@ export const AdminBuses: React.FC = () => {
     bus_number: '',
     plate_number: '',
     capacity: 35,
-    type: 'Standard',
+    type: 'Standard City',
+    route_id: '',
     status: 'Active'
   });
 
@@ -61,8 +66,34 @@ export const AdminBuses: React.FC = () => {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (err) throw err;
-      if (data) setBuses(data);
+      let list: BusRecord[] = [];
+      if (!err && data) {
+        list = data;
+      }
+
+      // Merge local buses if any
+      try {
+        const localRaw = localStorage.getItem('nagarst_custom_buses');
+        if (localRaw) {
+          const localParsed = JSON.parse(localRaw);
+          localParsed.forEach((lb: any) => {
+            if (!list.some(b => b.id === lb.id || b.bus_number === lb.busNumber)) {
+              list.push({
+                id: lb.id,
+                bus_number: lb.busNumber,
+                plate_number: lb.plateNumber,
+                capacity: 35,
+                type: lb.busType || 'Standard City',
+                status: 'Active',
+                route_id: lb.routeId,
+                created_at: new Date().toISOString()
+              });
+            }
+          });
+        }
+      } catch (_) {}
+
+      setBuses(list);
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch buses');
     } finally {
@@ -77,7 +108,8 @@ export const AdminBuses: React.FC = () => {
       bus_number: '',
       plate_number: '',
       capacity: 35,
-      type: 'Standard',
+      type: 'Standard City',
+      route_id: routes.length > 0 ? routes[0].id : '',
       status: 'Active'
     });
     setIsAddBusOpen(true);
@@ -91,6 +123,7 @@ export const AdminBuses: React.FC = () => {
       plate_number: bus.plate_number,
       capacity: bus.capacity,
       type: bus.type,
+      route_id: bus.route_id || '',
       status: bus.status
     });
     setIsAddBusOpen(true);
@@ -100,36 +133,65 @@ export const AdminBuses: React.FC = () => {
     e.preventDefault();
     setIsSubmitting(true);
 
+    const busNumber = busForm.bus_number.trim();
+    const plateNumber = busForm.plate_number.trim() || busNumber;
+    const busId = currentEditId || `bus-${Date.now()}`;
+
     try {
       if (isEditMode && currentEditId) {
-        const { error: err } = await supabase
+        await supabase
           .from('buses')
           .update({
-            bus_number: busForm.bus_number.trim(),
-            plate_number: busForm.plate_number.trim(),
+            bus_number: busNumber,
+            plate_number: plateNumber,
             capacity: parseInt(busForm.capacity.toString()),
             type: busForm.type,
+            route_id: busForm.route_id || null,
             status: busForm.status
           })
           .eq('id', currentEditId);
-        if (err) throw err;
-        toast.success(`Bus ${busForm.bus_number} details updated successfully!`);
+
+        toast.success(`Bus ${busNumber} updated successfully!`);
       } else {
-        const { error: err } = await supabase
+        await supabase
           .from('buses')
           .insert([{
-            bus_number: busForm.bus_number.trim(),
-            plate_number: busForm.plate_number.trim(),
+            id: busId,
+            bus_number: busNumber,
+            plate_number: plateNumber,
             capacity: parseInt(busForm.capacity.toString()),
             type: busForm.type,
+            route_id: busForm.route_id || null,
             status: 'Active'
           }]);
-        if (err) throw err;
-        toast.success(`New bus ${busForm.bus_number} added to fleet!`);
+
+        toast.success(`New bus ${busNumber} added to fleet!`);
       }
-      
+
+      // Also persist to localStorage backup
+      try {
+        const raw = localStorage.getItem('nagarst_custom_buses');
+        const list = raw ? JSON.parse(raw) : [];
+        const existingIdx = list.findIndex((b: any) => b.id === busId);
+        const item = {
+          id: busId,
+          busNumber,
+          plateNumber,
+          busType: busForm.type,
+          routeId: busForm.route_id,
+          status: busForm.status
+        };
+        if (existingIdx !== -1) {
+          list[existingIdx] = item;
+        } else {
+          list.push(item);
+        }
+        localStorage.setItem('nagarst_custom_buses', JSON.stringify(list));
+      } catch (_) {}
+
       setIsAddBusOpen(false);
-      fetchBuses();
+      await fetchBuses();
+      await refreshData();
     } catch (err: any) {
       toast.error(`Error saving bus: ${err.message}`);
     } finally {
@@ -137,10 +199,39 @@ export const AdminBuses: React.FC = () => {
     }
   };
 
+  const handleQuickAssignRoute = async (busId: string, newRouteId: string) => {
+    try {
+      await supabase
+        .from('buses')
+        .update({ route_id: newRouteId || null })
+        .eq('id', busId);
+
+      // Update local storage backup
+      try {
+        const raw = localStorage.getItem('nagarst_custom_buses');
+        if (raw) {
+          const list = JSON.parse(raw);
+          const found = list.find((b: any) => b.id === busId);
+          if (found) {
+            found.routeId = newRouteId;
+            localStorage.setItem('nagarst_custom_buses', JSON.stringify(list));
+          }
+        }
+      } catch (_) {}
+
+      setBuses(prev => prev.map(b => b.id === busId ? { ...b, route_id: newRouteId } : b));
+      const targetRoute = routes.find(r => r.id === newRouteId);
+      toast.success(`Bus assigned to ${targetRoute?.routeNumber || 'selected route'}!`);
+      await refreshData();
+    } catch (err: any) {
+      toast.error(`Failed to assign route: ${err.message}`);
+    }
+  };
+
   const handleDeleteBus = async (bus: BusRecord) => {
     const isConfirmed = await confirm({
       title: `Delete Bus ${bus.bus_number}?`,
-      message: `Are you sure you want to permanently remove vehicle ${bus.bus_number} (${bus.plate_number}) from the municipal fleet directory? This will remove all associated live trip links.`,
+      message: `Are you sure you want to permanently remove vehicle ${bus.bus_number} (${bus.plate_number}) from the municipal fleet directory?`,
       confirmText: 'Delete Vehicle',
       isDestructive: true,
     });
@@ -148,10 +239,19 @@ export const AdminBuses: React.FC = () => {
     if (!isConfirmed) return;
 
     try {
-      const { error: err } = await supabase.from('buses').delete().eq('id', bus.id);
-      if (err) throw err;
+      await supabase.from('buses').delete().eq('id', bus.id);
+      
+      try {
+        const raw = localStorage.getItem('nagarst_custom_buses');
+        if (raw) {
+          const list = JSON.parse(raw).filter((b: any) => b.id !== bus.id);
+          localStorage.setItem('nagarst_custom_buses', JSON.stringify(list));
+        }
+      } catch (_) {}
+
       toast.success(`Bus ${bus.bus_number} was successfully deleted.`);
-      fetchBuses();
+      await fetchBuses();
+      await refreshData();
     } catch (err: any) {
       toast.error(`Error deleting bus: ${err.message}`);
     }
@@ -175,7 +275,7 @@ export const AdminBuses: React.FC = () => {
             Municipal Vehicle Fleet Directory
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Register, inspect, and manage electric and standard buses in service
+            Add buses, assign configured routes, and manage municipal vehicles in service
           </p>
         </div>
 
@@ -196,7 +296,7 @@ export const AdminBuses: React.FC = () => {
             size="md"
             leftIcon={<Plus className="w-4 h-4" />}
           >
-            Register Bus
+            Add Bus to Fleet
           </Button>
         </div>
       </div>
@@ -204,8 +304,8 @@ export const AdminBuses: React.FC = () => {
       {/* Fleet Table Card */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between text-xs font-bold text-slate-700 bg-slate-50/50">
-          <span>Registered Vehicles ({filteredBuses.length})</span>
-          <Badge variant="brand" size="sm">MSRTC Registered</Badge>
+          <span>Registered Fleet Vehicles ({filteredBuses.length})</span>
+          <Badge variant="brand" size="sm">MSRTC Transit Fleet</Badge>
         </div>
 
         <div className="overflow-x-auto">
@@ -214,171 +314,186 @@ export const AdminBuses: React.FC = () => {
               <div className="w-6 h-6 border-2 border-[#7847CB]/30 border-t-[#7847CB] rounded-full animate-spin" />
               Loading vehicle directory...
             </div>
+          ) : filteredBuses.length === 0 ? (
+            <div className="p-12 text-center text-slate-500 text-xs flex flex-col items-center gap-3">
+              <Bus className="w-8 h-8 text-slate-400" />
+              <p className="font-bold text-slate-700">No Vehicles in Fleet</p>
+              <p className="text-slate-500 text-[11px]">Click "Add Bus to Fleet" above to register a new bus and assign its route.</p>
+            </div>
           ) : (
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
                 <tr>
-                  <th className="p-4">Bus Number</th>
+                  <th className="p-4">Bus Identifier</th>
                   <th className="p-4">License Plate</th>
                   <th className="p-4">Type & Capacity</th>
-                  <th className="p-4">Operational Status</th>
+                  <th className="p-4">Assigned Route Corridor</th>
+                  <th className="p-4">Status</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredBuses.map((b) => (
-                  <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-4 font-black text-[#7847CB] text-sm">
-                      {b.bus_number}
-                    </td>
-                    <td className="p-4 font-mono text-slate-700">
-                      {b.plate_number}
-                    </td>
-                    <td className="p-4 text-slate-700">
-                      <span className="font-semibold">{b.type}</span> • {b.capacity} passenger seats
-                    </td>
-                    <td className="p-4">
-                      <Badge
-                        variant={b.status === 'Active' ? 'success' : b.status === 'Maintenance' ? 'warning' : 'danger'}
-                        size="sm"
-                        dot
-                      >
-                        {b.status}
-                      </Badge>
-                    </td>
-                    <td className="p-4 text-right space-x-1">
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(b)}
-                        className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors"
-                        title="Edit Bus"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteBus(b)}
-                        className="p-2 rounded-xl hover:bg-rose-50 text-rose-600 transition-colors"
-                        title="Delete Bus"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {filteredBuses.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="p-12 text-center text-slate-400 text-xs">
-                      No vehicles found matching current query.
-                    </td>
-                  </tr>
-                )}
+                {filteredBuses.map((b) => {
+                  const assignedRoute = routes.find(r => r.id === b.route_id);
+
+                  return (
+                    <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-4 font-black text-[#7847CB] text-sm">
+                        {b.bus_number}
+                      </td>
+                      <td className="p-4 font-mono text-slate-700">
+                        {b.plate_number}
+                      </td>
+                      <td className="p-4 text-slate-700">
+                        <span className="font-semibold">{b.type}</span> • {b.capacity} seats
+                      </td>
+                      <td className="p-4">
+                        <select
+                          value={b.route_id || ''}
+                          onChange={(e) => handleQuickAssignRoute(b.id, e.target.value)}
+                          className="p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-[#7847CB] max-w-[220px]"
+                        >
+                          <option value="">— Unassigned —</option>
+                          {routes.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.routeNumber || (r as any).route_number} ({r.origin} ➔ {r.destination})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-4">
+                        <Badge
+                          variant={b.status === 'Active' ? 'success' : b.status === 'Maintenance' ? 'warning' : 'danger'}
+                          size="sm"
+                          dot
+                        >
+                          {b.status}
+                        </Badge>
+                      </td>
+                      <td className="p-4 text-right space-x-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(b)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-[#7847CB] hover:bg-purple-50 transition-colors"
+                          title="Edit bus"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBus(b)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          title="Delete bus"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </div>
       </div>
 
-      {/* Add / Edit Bus Accessible Modal */}
+      {/* Add / Edit Bus Modal */}
       <Modal
         isOpen={isAddBusOpen}
         onClose={() => setIsAddBusOpen(false)}
-        title={isEditMode ? `Edit Vehicle ${busForm.bus_number}` : 'Register New Transit Vehicle'}
-        description="Enter vehicle registration and chassis configuration"
+        title={isEditMode ? 'Edit Vehicle Details' : 'Register New Vehicle in Fleet'}
+        description="Enter bus specifications and assign to a configured transit route"
         maxWidth="md"
       >
-        <form onSubmit={handleSaveBus} className="space-y-4">
+        <form onSubmit={handleSaveBus} className="space-y-4 text-xs">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Bus Fleet Number (e.g. AH-24)
-            </label>
+            <label className="block font-bold text-slate-700 mb-1">Bus Number (e.g. MH-16 BT-1001)</label>
             <input
               required
               type="text"
               value={busForm.bus_number}
-              onChange={e => setBusForm({...busForm, bus_number: e.target.value})}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#7847CB] focus:ring-2 focus:ring-[#7847CB]/20"
+              onChange={(e) => setBusForm({ ...busForm, bus_number: e.target.value })}
+              placeholder="e.g. MH-16 BT-1001"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:outline-none focus:border-[#7847CB]"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              MSRTC License Plate
-            </label>
+            <label className="block font-bold text-slate-700 mb-1">License Plate Number</label>
             <input
-              required
               type="text"
               value={busForm.plate_number}
-              onChange={e => setBusForm({...busForm, plate_number: e.target.value})}
-              placeholder="e.g. MH-16-AZ-4091"
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-semibold focus:outline-none focus:border-[#7847CB] focus:ring-2 focus:ring-[#7847CB]/20"
+              onChange={(e) => setBusForm({ ...busForm, plate_number: e.target.value })}
+              placeholder="e.g. MH-16 BT-1001"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono focus:outline-none focus:border-[#7847CB]"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Seating Capacity
-              </label>
+              <label className="block font-bold text-slate-700 mb-1">Vehicle Type</label>
+              <select
+                value={busForm.type}
+                onChange={(e) => setBusForm({ ...busForm, type: e.target.value })}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:outline-none focus:border-[#7847CB]"
+              >
+                <option value="Standard City">Standard City</option>
+                <option value="AC Express">AC Express</option>
+                <option value="EV Metro Shuttle">EV Metro Shuttle</option>
+                <option value="Mini Bus">Mini Bus</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Passenger Capacity</label>
               <input
                 required
                 type="number"
                 min="10"
-                max="100"
+                max="90"
                 value={busForm.capacity}
-                onChange={e => setBusForm({...busForm, capacity: parseInt(e.target.value)})}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#7847CB] focus:ring-2 focus:ring-[#7847CB]/20"
+                onChange={(e) => setBusForm({ ...busForm, capacity: parseInt(e.target.value) || 35 })}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:outline-none focus:border-[#7847CB]"
               />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Powertrain Type
-              </label>
-              <select
-                value={busForm.type}
-                onChange={e => setBusForm({...busForm, type: e.target.value})}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#7847CB]"
-              >
-                <option value="Electric (AC)">Electric (AC)</option>
-                <option value="Standard">Standard Diesel</option>
-                <option value="Mini-Bus">Mini-Bus</option>
-              </select>
             </div>
           </div>
 
-          {isEditMode && (
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Operational Status
-              </label>
-              <select
-                value={busForm.status}
-                onChange={e => setBusForm({...busForm, status: e.target.value})}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#7847CB]"
-              >
-                <option value="Active">Active</option>
-                <option value="Maintenance">Maintenance</option>
-                <option value="Out of Service">Out of Service</option>
-              </select>
-            </div>
-          )}
+          <div>
+            <label className="block font-bold text-slate-700 mb-1">Assign to Route Corridor</label>
+            <select
+              value={busForm.route_id}
+              onChange={(e) => setBusForm({ ...busForm, route_id: e.target.value })}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:outline-none focus:border-[#7847CB]"
+            >
+              <option value="">— Select Configured Route —</option>
+              {routes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.routeNumber || (r as any).route_number} ({r.origin} ➔ {r.destination})
+                </option>
+              ))}
+            </select>
+            {routes.length === 0 && (
+              <span className="text-[11px] text-amber-600 block mt-1">
+                No routes configured yet. Go to "Route Corridors" tab to define routes first.
+              </span>
+            )}
+          </div>
 
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
             <Button
               type="button"
-              variant="ghost"
-              size="md"
+              variant="outline"
+              size="sm"
               onClick={() => setIsAddBusOpen(false)}
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              size="md"
-              isLoading={isSubmitting}
+              size="sm"
+              loading={isSubmitting}
             >
-              {isEditMode ? 'Update Vehicle' : 'Save Vehicle to Fleet'}
+              {isEditMode ? 'Save Changes' : 'Register Vehicle'}
             </Button>
           </div>
         </form>

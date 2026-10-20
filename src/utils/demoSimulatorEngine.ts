@@ -1,4 +1,4 @@
-import type { Bus } from '../types';
+import type { Bus, Route, RouteStop } from '../types';
 import { getDistance, getBearing } from './routing';
 
 export const DEMO_BUS_ID = 'demo-bus-sim-01';
@@ -1006,3 +1006,99 @@ export function subscribeToDemoState(listener: (s: DemoSimulatorState) => void):
     listeners.delete(listener);
   };
 }
+
+/**
+ * Synchronizes the simulator fleet and available corridors with City Admin's configured routes and fleet
+ */
+export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[]) {
+  // 1. Add any configured routes from admin to AVAILABLE_DEMO_ROUTES if not already present
+  routes.forEach((r: Route) => {
+    if (!r.stops || r.stops.length < 2) return;
+    const existing = AVAILABLE_DEMO_ROUTES.find(dr => dr.id === r.id);
+    const waypoints = (r.route_path && r.route_path.length > 1) 
+      ? r.route_path 
+      : r.stops.map((s: RouteStop) => ({ lat: s.lat, lng: s.lng }));
+
+    const stops: DemoStop[] = r.stops.map((s: RouteStop, idx: number) => ({
+      id: s.stopId || `stop-${idx}`,
+      name: s.stopName || `Stop ${idx + 1}`,
+      lat: s.lat,
+      lng: s.lng
+    }));
+
+    if (existing) {
+      existing.routeNumber = r.routeNumber;
+      existing.routeName = r.name;
+      existing.origin = r.origin;
+      existing.destination = r.destination;
+      existing.waypoints = waypoints;
+      existing.stops = stops;
+    } else {
+      AVAILABLE_DEMO_ROUTES.push({
+        id: r.id,
+        routeNumber: r.routeNumber,
+        routeName: r.name,
+        origin: r.origin,
+        destination: r.destination,
+        color: r.color || '#7847CB',
+        description: `${r.origin} ➔ ${r.destination}`,
+        stops,
+        waypoints
+      });
+    }
+  });
+
+  // 2. Add or update registered buses into DEMO_BUS_DEFINITIONS and runtimeStore
+  buses.forEach((b) => {
+    if (!b.routeId) return;
+    const assignedRoute = AVAILABLE_DEMO_ROUTES.find(r => r.id === b.routeId);
+    if (!assignedRoute || assignedRoute.waypoints.length < 2) return;
+
+    let existingDef = DEMO_BUS_DEFINITIONS.find(d => d.id === b.id || d.busNumber === b.busNumber);
+    if (!existingDef) {
+      existingDef = {
+        id: b.id,
+        busNumber: b.busNumber,
+        plateNumber: b.plateNumber || b.busNumber,
+        tripId: `trip-${b.id}`,
+        routeId: assignedRoute.id,
+        routeNumber: assignedRoute.routeNumber,
+        routeName: assignedRoute.routeName,
+        origin: assignedRoute.origin,
+        destination: assignedRoute.destination,
+        color: '#7847CB',
+        stops: [...assignedRoute.stops],
+        waypoints: [...assignedRoute.waypoints],
+        initialIndex: 0
+      };
+      DEMO_BUS_DEFINITIONS.push(existingDef);
+    } else {
+      existingDef.routeId = assignedRoute.id;
+      existingDef.routeNumber = assignedRoute.routeNumber;
+      existingDef.routeName = assignedRoute.routeName;
+      existingDef.origin = assignedRoute.origin;
+      existingDef.destination = assignedRoute.destination;
+      existingDef.stops = [...assignedRoute.stops];
+      existingDef.waypoints = [...assignedRoute.waypoints];
+    }
+
+    if (!runtimeStore[existingDef.id]) {
+      runtimeStore[existingDef.id] = {
+        id: existingDef.id,
+        def: existingDef,
+        isRunning: false,
+        currentIndex: 0,
+        direction: 1,
+        speedMultiplier: 1,
+        delayMinutes: 0,
+        currentBus: null,
+        progressPercent: 0
+      };
+    } else {
+      runtimeStore[existingDef.id].def = existingDef;
+    }
+  });
+
+  notifyListeners();
+}
+

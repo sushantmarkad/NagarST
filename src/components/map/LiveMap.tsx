@@ -18,9 +18,11 @@ interface LiveMapProps {
   onSelectStop?: (stop: BusStop) => void;
   height?: string;
   showUserLocation?: boolean;
+  userLocation?: { lat: number; lng: number } | null;
   onUserLocationChange?: (location: { lat: number; lng: number } | null) => void;
+  onLocationError?: (error: string) => void;
   onMapClick?: (latlng: { lat: number; lng: number }) => void;
-  interactiveMode?: 'view' | 'mark_start_pin' | 'mark_end_pin' | 'add_stop';
+  interactiveMode?: 'view' | 'mark_start_pin' | 'mark_end_pin' | 'add_stop' | 'pick_passenger_location';
   onCancelInteractive?: () => void;
   customStartPin?: { lat: number; lng: number; name?: string } | null;
   customEndPin?: { lat: number; lng: number; name?: string } | null;
@@ -38,7 +40,9 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   onSelectStop,
   height = '100%',
   showUserLocation = true,
+  userLocation,
   onUserLocationChange,
+  onLocationError,
   onMapClick,
   interactiveMode = 'view',
   onCancelInteractive,
@@ -146,6 +150,11 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     setIsLocating(true);
     setLocationError(null);
 
+    const notifyError = (msg: string) => {
+      setLocationError(msg);
+      onLocationError?.(msg);
+    };
+
     const onHighSuccess = (pos: GeolocationPosition) => {
       setIsLocating(false);
       updateUserMarker(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 20, centerMap);
@@ -162,13 +171,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           (fallbackErr) => {
             setIsLocating(false);
             if (fallbackErr.code === fallbackErr.PERMISSION_DENIED) {
-              setLocationError(
+              notifyError(
                 language === 'mr'
                   ? 'स्थान परवानगी नाकारली गेली. कृपया ब्राउझर सेटिंग्जमध्ये स्थान सक्षम करा.'
                   : 'Location permission denied. Please allow GPS location in your mobile/browser settings.'
               );
             } else {
-              setLocationError(
+              notifyError(
                 language === 'mr'
                   ? 'स्थान निश्चित करण्यात अयशस्वी. कृपया GPS तपासा.'
                   : 'Unable to acquire GPS fix. Please verify location services are enabled.'
@@ -182,13 +191,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
       setIsLocating(false);
       if (err.code === err.PERMISSION_DENIED) {
-        setLocationError(
+        notifyError(
           language === 'mr'
             ? 'स्थान परवानगी नाकारली गेली. कृपया ब्राउझर सेटिंग्जमध्ये स्थान सक्षम करा.'
             : 'Location permission denied. Please allow GPS location in your mobile/browser settings.'
         );
       } else {
-        setLocationError(
+        notifyError(
           language === 'mr'
             ? 'स्थान शोधता आले नाही.'
             : 'Unable to retrieve location. Please check phone GPS.'
@@ -201,7 +210,14 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       timeout: 6000,
       maximumAge: 10000,
     });
-  }, [language, updateUserMarker]);
+  }, [language, updateUserMarker, onLocationError]);
+
+  // Sync external userLocation prop if passed
+  useEffect(() => {
+    if (userLocation && userLocation.lat && userLocation.lng) {
+      updateUserMarker(userLocation.lat, userLocation.lng, 20, false);
+    }
+  }, [userLocation, updateUserMarker]);
 
   // Initialize Map
   useEffect(() => {
@@ -809,6 +825,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             {interactiveMode === 'mark_start_pin' && 'Click anywhere on road to set Start Terminal Pin'}
             {interactiveMode === 'mark_end_pin' && 'Click anywhere on road to set End Terminal Pin'}
             {interactiveMode === 'add_stop' && 'Click on the road to place a new Bus Stop'}
+            {interactiveMode === 'pick_passenger_location' && 'Click anywhere on the map to set your commuter location'}
           </span>
           {onCancelInteractive && (
             <button

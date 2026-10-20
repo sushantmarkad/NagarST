@@ -224,8 +224,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           )
         `);
 
+      let combinedRoutes: any[] = [];
       if (dbRoutes && dbRoutes.length > 0) {
-        const formattedRoutes = dbRoutes.map((r: any) => ({
+        combinedRoutes = dbRoutes.map((r: any) => ({
           id: r.id,
           routeNumber: r.route_number,
           origin: r.origin,
@@ -259,10 +260,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 }))
             : []
         }));
-        setRoutes(formattedRoutes as unknown as Route[]);
-      } else {
-        setRoutes([]);
       }
+
+      // Check localStorage for offline / admin-configured routes
+      try {
+        const localRoutesRaw = localStorage.getItem('nagarst_configured_routes');
+        if (localRoutesRaw) {
+          const localRoutes = JSON.parse(localRoutesRaw);
+          localRoutes.forEach((lr: any) => {
+            if (!combinedRoutes.some((cr) => cr.id === lr.id || (cr.routeNumber && cr.routeNumber === lr.routeNumber))) {
+              combinedRoutes.push(lr);
+            }
+          });
+        }
+      } catch (_) {}
+
+      setRoutes(combinedRoutes as unknown as Route[]);
 
       // 3. Fetch all real Buses from 'buses' table and merge with 'live_locations'
       const { data: dbBuses } = await supabase.from('buses').select('*');
@@ -284,8 +297,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         });
       }
 
-      if (dbBuses) {
-        const mappedBuses = dbBuses.map((b: any) => {
+      let allBusesList: any[] = dbBuses ? [...dbBuses] : [];
+
+      // Also merge any custom buses registered by admin in localStorage
+      try {
+        const customBusesRaw = localStorage.getItem('nagarst_custom_buses');
+        if (customBusesRaw) {
+          const customBuses = JSON.parse(customBusesRaw);
+          customBuses.forEach((cb: any) => {
+            if (!allBusesList.some((b) => b.id === cb.id || b.bus_number === cb.busNumber)) {
+              allBusesList.push({
+                id: cb.id,
+                bus_number: cb.busNumber,
+                plate_number: cb.plateNumber,
+                type: cb.busType || 'Standard City',
+                route_id: cb.routeId,
+                status: 'Active',
+                created_at: new Date().toISOString()
+              });
+            }
+          });
+        }
+      } catch (_) {}
+
+      if (allBusesList.length > 0) {
+        const mappedBuses = allBusesList.map((b: any) => {
           const live = liveLocMap.get(b.id);
           let cached: any = null;
           try {
@@ -293,19 +329,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             if (raw) cached = JSON.parse(raw);
           } catch (_) {}
 
+          // Match assigned route
+          const targetRouteId = b.route_id || cached?.routeId || live?.trips?.route_id || '';
+          const matchedRoute = combinedRoutes.find((r) => r.id === targetRouteId);
+
+          const routeNum = matchedRoute?.routeNumber || cached?.routeNumber || live?.trips?.routes?.route_number || '';
+          const routeTitle = matchedRoute?.name || cached?.routeName || (live?.trips?.routes ? `${live.trips.routes.origin} ➔ ${live.trips.routes.destination}` : 'Unassigned Route');
+          const originName = matchedRoute?.origin || live?.trips?.routes?.origin || 'Depot';
+          const destName = matchedRoute?.destination || live?.trips?.routes?.destination || 'Depot';
+
           return {
             id: b.id,
             busNumber: b.bus_number,
             plateNumber: b.plate_number,
-            routeId: cached?.routeId || live?.trips?.route_id || '',
-            routeNumber: cached?.routeNumber || live?.trips?.routes?.route_number || '',
-            routeName: cached?.routeName || (live?.trips?.routes ? `${live.trips.routes.origin} - ${live.trips.routes.destination}` : 'Standby / In Service'),
-            origin: live?.trips?.routes?.origin || 'Depot',
-            destination: live?.trips?.routes?.destination || 'Depot',
+            routeId: targetRouteId,
+            routeNumber: routeNum,
+            routeName: routeTitle,
+            origin: originName,
+            destination: destName,
             currentStopId: 'stop1',
-            currentStopName: cached?.nextStopName || 'Central Depot',
+            currentStopName: cached?.nextStopName || matchedRoute?.stops?.[0]?.stopName || 'Central Depot',
             nextStopId: 'stop2',
-            nextStopName: cached?.nextStopName || 'Approaching Corridor',
+            nextStopName: cached?.nextStopName || matchedRoute?.stops?.[1]?.stopName || 'Approaching Corridor',
             etaToNextMinutes: 4,
             speedKmh: cached?.speedKmh ?? (live?.speed_kmh || 0),
             occupancy: (cached?.occupancy || 'moderate') as Bus['occupancy'],

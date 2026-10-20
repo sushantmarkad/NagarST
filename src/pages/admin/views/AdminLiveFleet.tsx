@@ -22,8 +22,6 @@ import { DemoSimulatorPanel } from '../../../components/admin/DemoSimulatorPanel
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
 
-import { MOCK_ROUTES } from '../../../data/mockRoutes';
-
 export const AdminLiveFleet: React.FC = () => {
   const { buses, stops, routes } = useApp();
   const toast = useToast();
@@ -31,7 +29,7 @@ export const AdminLiveFleet: React.FC = () => {
   const [selectedBus, setSelectedBus] = useState<BusType | null>(buses.length > 0 ? buses[0] : null);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
 
-  const allRoutes = routes.length > 0 ? routes : MOCK_ROUTES;
+  const allRoutes = routes;
   const liveCount = buses.filter(b => !b.isDemo && !b.id?.startsWith('demo-')).length;
   const demoCount = buses.filter(b => b.isDemo || b.id?.startsWith('demo-')).length;
 

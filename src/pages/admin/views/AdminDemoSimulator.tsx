@@ -9,11 +9,11 @@ import {
   getDemoSimulatorState,
   subscribeToDemoState,
   addStopToBusRoute,
+  syncSimulatorFleetWithAdminConfig,
   type DemoBusDefinition,
   type DemoSimulatorState
 } from '../../../utils/demoSimulatorEngine';
 import { reverseGeocodeLatLng } from '../../../utils/routing';
-import { MOCK_ROUTES } from '../../../data/mockRoutes';
 import { Route, Layers, ShieldCheck, Bus as BusIcon, MapPin, Clock, Flag, Target } from 'lucide-react';
 
 export const AdminDemoSimulator: React.FC = () => {
@@ -21,6 +21,11 @@ export const AdminDemoSimulator: React.FC = () => {
   const toast = useToast();
   const [selectedBusId, setSelectedBusId] = useState<string>(DEMO_BUS_DEFINITIONS[0].id);
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
+
+  // Sync simulator whenever admin configures routes or registers fleet vehicles
+  React.useEffect(() => {
+    syncSimulatorFleetWithAdminConfig(buses, routes);
+  }, [buses, routes]);
 
   // Interactive Pin & Stop Placement Mode
   const [interactiveMode, setInteractiveMode] = useState<'view' | 'mark_start_pin' | 'mark_end_pin' | 'add_stop'>('view');
@@ -105,7 +110,7 @@ export const AdminDemoSimulator: React.FC = () => {
     }));
   }, [simState]);
 
-  const allRoutes = [...demoRoutes, ...(routes.length > 0 ? routes : MOCK_ROUTES)];
+  const allRoutes = [...demoRoutes, ...routes.filter((r) => !demoRoutes.some((dr) => dr.id === r.id))];
 
   return (
     <div className="flex-1 w-full h-full flex flex-col p-4 md:p-6 gap-6 bg-[#f8f9fc] text-slate-900 overflow-y-auto">
