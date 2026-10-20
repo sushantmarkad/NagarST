@@ -17,6 +17,11 @@ import {
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
+import {
+  setBusAssignedRoute,
+  deleteDemoBus,
+  syncSimulatorFleetWithAdminConfig
+} from '../../../utils/demoSimulatorEngine';
 
 interface BusRecord {
   id: string;
@@ -61,6 +66,19 @@ export const AdminBuses: React.FC = () => {
   const fetchBuses = async () => {
     setLoading(true);
     try {
+      const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+      const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+      const isDeleted = (id?: string, bNum?: string, pNum?: string) => {
+        const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
+        const cId = norm(id);
+        const cB = norm(bNum);
+        const cP = norm(pNum);
+        return deletedIds.some(d => {
+          const cD = norm(d);
+          return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
+        });
+      };
+
       const { data, error: err } = await supabase
         .from('buses')
         .select('*')
@@ -68,7 +86,7 @@ export const AdminBuses: React.FC = () => {
 
       let list: BusRecord[] = [];
       if (!err && data) {
-        list = data;
+        list = data.filter(b => !isDeleted(b.id, b.bus_number, b.plate_number));
       }
 
       // Merge local buses if any
@@ -77,23 +95,38 @@ export const AdminBuses: React.FC = () => {
         if (localRaw) {
           const localParsed = JSON.parse(localRaw);
           localParsed.forEach((lb: any) => {
-            if (!list.some(b => b.id === lb.id || b.bus_number === lb.busNumber)) {
+            const bNum = lb.busNumber || lb.bus_number;
+            const pNum = lb.plateNumber || lb.plate_number;
+            if (isDeleted(lb.id, bNum, pNum)) return;
+
+            if (!list.some(b => b.id === lb.id || b.bus_number.trim().toUpperCase() === (bNum || '').trim().toUpperCase())) {
               list.push({
                 id: lb.id,
-                bus_number: lb.busNumber,
-                plate_number: lb.plateNumber,
-                capacity: 35,
-                type: lb.busType || 'Standard City',
-                status: 'Active',
-                route_id: lb.routeId,
-                created_at: new Date().toISOString()
+                bus_number: bNum,
+                plate_number: pNum || bNum,
+                capacity: lb.capacity || 35,
+                type: lb.busType || lb.type || 'Standard City',
+                status: lb.status || 'Active',
+                route_id: lb.routeId || lb.route_id,
+                created_at: lb.created_at || new Date().toISOString()
               });
             }
           });
         }
       } catch (_) {}
 
-      setBuses(list);
+      // Deduplicate by bus_number
+      const seen = new Set<string>();
+      const dedupedList: BusRecord[] = [];
+      for (const b of list) {
+        const key = b.bus_number.trim().toUpperCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          dedupedList.push(b);
+        }
+      }
+
+      setBuses(dedupedList);
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch buses');
     } finally {
@@ -211,7 +244,7 @@ export const AdminBuses: React.FC = () => {
         const raw = localStorage.getItem('nagarst_custom_buses');
         if (raw) {
           const list = JSON.parse(raw);
-          const found = list.find((b: any) => b.id === busId);
+          const found = list.find((b: any) => b.id === busId || b.busNumber === busId);
           if (found) {
             found.routeId = newRouteId;
             localStorage.setItem('nagarst_custom_buses', JSON.stringify(list));
@@ -219,9 +252,19 @@ export const AdminBuses: React.FC = () => {
         }
       } catch (_) {}
 
+      // Find the bus being updated
+      const busObj = buses.find(b => b.id === busId);
+      const busNumber = busObj?.bus_number || busId;
+
+      // Also assign in demoSimulatorEngine so the simulation runtime updates immediately!
+      if (newRouteId) {
+        setBusAssignedRoute(busNumber, newRouteId);
+        setBusAssignedRoute(busId, newRouteId);
+      }
+
       setBuses(prev => prev.map(b => b.id === busId ? { ...b, route_id: newRouteId } : b));
       const targetRoute = routes.find(r => r.id === newRouteId);
-      toast.success(`Bus assigned to ${targetRoute?.routeNumber || 'selected route'}!`);
+      toast.success(`Bus ${busNumber} assigned to ${targetRoute?.routeNumber || 'selected route'}!`);
       await refreshData();
     } catch (err: any) {
       toast.error(`Failed to assign route: ${err.message}`);
@@ -238,23 +281,88 @@ export const AdminBuses: React.FC = () => {
 
     if (!isConfirmed) return;
 
-    try {
-      await supabase.from('buses').delete().eq('id', bus.id);
-      
-      try {
-        const raw = localStorage.getItem('nagarst_custom_buses');
-        if (raw) {
-          const list = JSON.parse(raw).filter((b: any) => b.id !== bus.id);
-          localStorage.setItem('nagarst_custom_buses', JSON.stringify(list));
-        }
-      } catch (_) {}
+    const busNumber = bus.bus_number.trim();
+    const plateNumber = bus.plate_number?.trim() || '';
+    const busId = bus.id;
 
-      toast.success(`Bus ${bus.bus_number} was successfully deleted.`);
-      await fetchBuses();
-      await refreshData();
+    // 1. Delete dependent foreign-key records from Supabase first
+    try {
+      await supabase.from('live_locations').delete().eq('bus_id', busId);
+      await supabase.from('trips').delete().eq('bus_id', busId);
+      await supabase.from('live_locations').delete().eq('bus_id', busNumber);
+      await supabase.from('trips').delete().eq('bus_id', busNumber);
+      const { error: dbError } = await supabase.from('buses').delete().eq('id', busId);
+      if (dbError) {
+        await supabase.from('buses').delete().eq('bus_number', busNumber);
+      }
     } catch (err: any) {
-      toast.error(`Error deleting bus: ${err.message}`);
+      console.warn('Supabase delete notice (proceeding with local purge):', err);
     }
+
+    // 2. Add to nagarst_deleted_demo_buses in localStorage
+    try {
+      const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+      const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+      [
+        busId,
+        busNumber,
+        plateNumber,
+        busNumber.toUpperCase(),
+        busNumber.replace(/\s+/g, ''),
+        plateNumber.toUpperCase(),
+        plateNumber.replace(/\s+/g, '')
+      ].forEach(key => {
+        if (key && !deletedIds.includes(key)) {
+          deletedIds.push(key);
+        }
+      });
+      localStorage.setItem('nagarst_deleted_demo_buses', JSON.stringify(deletedIds));
+    } catch (_) {}
+
+    // 3. Purge from nagarst_custom_buses in localStorage
+    try {
+      const raw = localStorage.getItem('nagarst_custom_buses');
+      if (raw) {
+        const list = JSON.parse(raw);
+        const filtered = list.filter((b: any) => {
+          const bNum = (b.busNumber || b.bus_number || '').trim().toUpperCase();
+          const targetNum = busNumber.toUpperCase();
+          const pNum = (b.plateNumber || b.plate_number || '').trim().toUpperCase();
+          const targetPlate = plateNumber.toUpperCase();
+          return b.id !== busId && bNum !== targetNum && (!targetPlate || pNum !== targetPlate);
+        });
+        localStorage.setItem('nagarst_custom_buses', JSON.stringify(filtered));
+      }
+    } catch (_) {}
+
+    // 4. Remove cached live bus state
+    try {
+      localStorage.removeItem('nagarst_live_bus_' + busId);
+      localStorage.removeItem('nagarst_live_bus_' + busNumber);
+      const assignmentsRaw = localStorage.getItem('nagarst_demo_assignments');
+      if (assignmentsRaw) {
+        const assignments = JSON.parse(assignmentsRaw);
+        delete assignments[busId];
+        delete assignments[busNumber];
+        localStorage.setItem('nagarst_demo_assignments', JSON.stringify(assignments));
+      }
+    } catch (_) {}
+
+    // 5. Delete from demo simulator engine and broadcast offline
+    deleteDemoBus(busId);
+    deleteDemoBus(busNumber);
+
+    // 6. Immediately remove from local state
+    setBuses(prev => prev.filter(b => 
+      b.id !== busId && 
+      b.bus_number.trim().toUpperCase() !== busNumber.toUpperCase() &&
+      (!plateNumber || b.plate_number.trim().toUpperCase() !== plateNumber.toUpperCase())
+    ));
+
+    toast.success(`Bus ${busNumber} was successfully deleted.`);
+
+    // 7. Refresh app context
+    await refreshData();
   };
 
   const filteredBuses = buses.filter(b => 

@@ -199,10 +199,21 @@ const runtimeStore: Record<string, BusSimRuntime> = {};
 try {
   const deletedIdsRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
   const deletedIds: string[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
+  const isDeleted = (id?: string, bNum?: string, pNum?: string) => {
+    const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
+    const cId = norm(id);
+    const cB = norm(bNum);
+    const cP = norm(pNum);
+    return deletedIds.some((d) => {
+      const cD = norm(d);
+      return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
+    });
+  };
+
   if (deletedIds.length > 0) {
     for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
       const d = DEMO_BUS_DEFINITIONS[i];
-      if (deletedIds.includes(d.id) || deletedIds.includes(d.busNumber) || deletedIds.includes(d.plateNumber)) {
+      if (isDeleted(d.id, d.busNumber, d.plateNumber)) {
         DEMO_BUS_DEFINITIONS.splice(i, 1);
       }
     }
@@ -211,22 +222,40 @@ try {
   // Restore any custom buses created by admin (filtering out any deleted ones!)
   const customBusesRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_custom_buses') : null;
   if (customBusesRaw) {
-    const customBuses: DemoBusDefinition[] = JSON.parse(customBusesRaw);
-    customBuses.forEach(cb => {
-      if (deletedIds.includes(cb.id) || deletedIds.includes(cb.busNumber)) return;
-      const existingIdx = DEMO_BUS_DEFINITIONS.findIndex(d => d.id === cb.id || d.busNumber === cb.busNumber);
-      if (existingIdx !== -1) {
-        DEMO_BUS_DEFINITIONS[existingIdx] = cb;
-      } else {
-        DEMO_BUS_DEFINITIONS.push(cb);
-      }
-    });
+    const customBuses: any[] = JSON.parse(customBusesRaw);
+    if (customBuses.length > 0) {
+      customBuses.forEach(cb => {
+        const bNum = cb.busNumber || cb.bus_number;
+        const pNum = cb.plateNumber || cb.plate_number;
+        if (isDeleted(cb.id, bNum, pNum)) return;
+        const existingIdx = DEMO_BUS_DEFINITIONS.findIndex(d => d.id === cb.id || d.busNumber.trim().toUpperCase() === (bNum || '').trim().toUpperCase());
+        if (existingIdx !== -1) {
+          DEMO_BUS_DEFINITIONS[existingIdx] = { ...DEMO_BUS_DEFINITIONS[existingIdx], ...cb };
+        } else {
+          DEMO_BUS_DEFINITIONS.push({
+            id: cb.id,
+            busNumber: bNum,
+            plateNumber: pNum || bNum,
+            tripId: `trip-${cb.id}`,
+            routeId: cb.routeId || '',
+            routeNumber: cb.routeNumber || '',
+            routeName: cb.routeName || '',
+            origin: cb.origin || 'Origin',
+            destination: cb.destination || 'Destination',
+            color: cb.color || '#7847CB',
+            stops: cb.stops || [],
+            waypoints: cb.waypoints || [],
+            initialIndex: 0
+          });
+        }
+      });
+    }
   }
 
   // Deduplicate DEMO_BUS_DEFINITIONS by busNumber to strictly ensure NO duplicate buses exist
   const seenNumbers = new Set<string>();
   for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
-    const key = DEMO_BUS_DEFINITIONS[i].busNumber.trim().toUpperCase();
+    const key = DEMO_BUS_DEFINITIONS[i].busNumber.trim().toUpperCase().replace(/\s+/g, '');
     if (seenNumbers.has(key)) {
       DEMO_BUS_DEFINITIONS.splice(i, 1);
     } else {
@@ -1104,9 +1133,27 @@ export function deleteDemoBus(busId: string): boolean {
     const deletedIdsRaw = localStorage.getItem('nagarst_deleted_demo_buses');
     const deletedIds: string[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
     [busId, busNumber, plateNumber].filter(Boolean).forEach(id => {
-      if (!deletedIds.includes(id!)) deletedIds.push(id!);
+      const clean = id!.trim();
+      if (!deletedIds.includes(clean)) deletedIds.push(clean);
+      if (!deletedIds.includes(clean.toUpperCase())) deletedIds.push(clean.toUpperCase());
     });
     localStorage.setItem('nagarst_deleted_demo_buses', JSON.stringify(deletedIds));
+
+    // Remove from demo fleet aggregate in localStorage
+    const demoRaw = localStorage.getItem('nagarst_demo_buses');
+    if (demoRaw) {
+      const demoBuses = JSON.parse(demoRaw);
+      delete demoBuses[busId];
+      if (busNumber) delete demoBuses[busNumber];
+      Object.keys(demoBuses).forEach(k => {
+        if (demoBuses[k]?.busNumber === busNumber || demoBuses[k]?.id === busId) {
+          delete demoBuses[k];
+        }
+      });
+      localStorage.setItem('nagarst_demo_buses', JSON.stringify(demoBuses));
+      const ch = getBroadcastChannel();
+      if (ch) ch.postMessage({ type: 'fleetSync', buses: demoBuses });
+    }
 
     // Remove individual live bus storage items
     localStorage.removeItem('nagarst_live_bus_' + busId);
@@ -1241,94 +1288,164 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
     });
   });
 
-  // 2. Add or update registered buses into DEMO_BUS_DEFINITIONS and runtimeStore
+  // 2. Read deleted buses
   let deletedBusIds: string[] = [];
   try {
     const raw = localStorage.getItem('nagarst_deleted_demo_buses');
     if (raw) deletedBusIds = JSON.parse(raw);
   } catch (_) {}
 
-  buses.forEach((b) => {
-    if (!b.routeId) return;
-    if (deletedBusIds.includes(b.id) || (b.busNumber && deletedBusIds.includes(b.busNumber))) return;
+  const isDeleted = (id?: string, bNum?: string, pNum?: string) => {
+    const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
+    const cId = norm(id);
+    const cB = norm(bNum);
+    const cP = norm(pNum);
+    return deletedBusIds.some((d) => {
+      const cD = norm(d);
+      return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
+    });
+  };
 
-    const assignedRoute = AVAILABLE_DEMO_ROUTES.find(r => r.id === b.routeId);
-    if (!assignedRoute || assignedRoute.waypoints.length < 2) return;
-
-    let existingDef = DEMO_BUS_DEFINITIONS.find(d => d.id === b.id || d.busNumber === b.busNumber);
-    if (!existingDef) {
-      existingDef = {
-        id: b.id,
-        busNumber: b.busNumber,
-        plateNumber: b.plateNumber || b.busNumber,
-        tripId: `trip-${b.id}`,
-        routeId: assignedRoute.id,
-        routeNumber: assignedRoute.routeNumber,
-        routeName: assignedRoute.routeName,
-        origin: assignedRoute.origin,
-        destination: assignedRoute.destination,
-        color: '#7847CB',
-        stops: [...assignedRoute.stops],
-        waypoints: densifyPath(assignedRoute.waypoints, 120),
-        initialIndex: 0
-      };
-      DEMO_BUS_DEFINITIONS.push(existingDef);
-    } else {
-      existingDef.routeId = assignedRoute.id;
-      existingDef.routeNumber = assignedRoute.routeNumber;
-      existingDef.routeName = assignedRoute.routeName;
-      existingDef.origin = assignedRoute.origin;
-      existingDef.destination = assignedRoute.destination;
-      existingDef.stops = [...assignedRoute.stops];
-      // Only re-densify if not currently running or has sparse points
-      if (!runtimeStore[existingDef.id]?.isRunning || !existingDef.waypoints || existingDef.waypoints.length < 20) {
-        existingDef.waypoints = densifyPath(assignedRoute.waypoints, 120);
-      }
+  // 3. Purge deleted buses from DEMO_BUS_DEFINITIONS and runtimeStore
+  for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
+    const d = DEMO_BUS_DEFINITIONS[i];
+    if (isDeleted(d.id, d.busNumber, d.plateNumber)) {
+      broadcastBusOffline(d.id);
+      broadcastBusOffline(d.busNumber);
+      delete runtimeStore[d.id];
+      DEMO_BUS_DEFINITIONS.splice(i, 1);
     }
+  }
 
-    if (!runtimeStore[existingDef.id]) {
-      runtimeStore[existingDef.id] = {
-        id: existingDef.id,
-        def: existingDef,
-        isRunning: false,
-        currentIndex: 0,
-        direction: 1,
-        speedMultiplier: 1,
-        delayMinutes: 0,
-        currentBus: null,
-        progressPercent: 0
-      };
-    } else {
-      runtimeStore[existingDef.id].def = existingDef;
-      runtimeStore[existingDef.id].currentIndex = Math.max(
-        0,
-        Math.min(runtimeStore[existingDef.id].currentIndex, existingDef.waypoints.length - 1)
-      );
-    }
+  // 4. Identify configured fleet buses with assigned routes
+  const assignedFleetBuses = buses.filter(b => {
+    if (!b.routeId) return false;
+    if (isDeleted(b.id, b.busNumber, b.plateNumber)) return false;
+    return true;
   });
 
-  // 3. Auto-assign any demo buses that are currently unassigned to available configured corridors
-  if (AVAILABLE_DEMO_ROUTES.length > 0) {
-    DEMO_BUS_DEFINITIONS.forEach((def, idx) => {
-      if (!def.routeId || def.routeNumber === 'Unassigned') {
-        const assigned = AVAILABLE_DEMO_ROUTES[idx % AVAILABLE_DEMO_ROUTES.length];
-        if (assigned) {
-          def.routeId = assigned.id;
-          def.routeNumber = assigned.routeNumber;
-          def.routeName = assigned.routeName;
-          def.origin = assigned.origin;
-          def.destination = assigned.destination;
-          def.color = assigned.color || def.color;
-          def.stops = [...assigned.stops];
-          def.waypoints = densifyPath(assigned.waypoints, 120);
+  // If the admin has configured assigned fleet buses (e.g. MH-16 BT-1515, MH-16 BT-1519),
+  // then the simulation fleet MUST strictly contain ONLY these configured buses!
+  if (assignedFleetBuses.length > 0) {
+    const allowedKeys = new Set(
+      assignedFleetBuses.map(b => (b.busNumber || b.id).trim().toUpperCase().replace(/\s+/g, ''))
+    );
 
-          if (runtimeStore[def.id]) {
-            runtimeStore[def.id].def = def;
-          }
-        }
+    // Purge any buses in DEMO_BUS_DEFINITIONS or runtimeStore that are not in the assigned fleet
+    for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
+      const d = DEMO_BUS_DEFINITIONS[i];
+      const key = d.busNumber.trim().toUpperCase().replace(/\s+/g, '');
+      if (!allowedKeys.has(key)) {
+        broadcastBusOffline(d.id);
+        broadcastBusOffline(d.busNumber);
+        delete runtimeStore[d.id];
+        DEMO_BUS_DEFINITIONS.splice(i, 1);
+      }
+    }
+
+    Object.keys(runtimeStore).forEach(k => {
+      const bNum = runtimeStore[k]?.def?.busNumber;
+      const key = (bNum || k).trim().toUpperCase().replace(/\s+/g, '');
+      if (!allowedKeys.has(key)) {
+        broadcastBusOffline(k);
+        delete runtimeStore[k];
       }
     });
+
+    // Add or update each assigned fleet bus
+    assignedFleetBuses.forEach(b => {
+      const assignedRoute = AVAILABLE_DEMO_ROUTES.find(r => 
+        r.id === b.routeId || 
+        r.routeNumber === b.routeId || 
+        (b.routeNumber && r.routeNumber === b.routeNumber)
+      );
+      if (!assignedRoute || assignedRoute.waypoints.length < 2) return;
+
+      const normBusNum = b.busNumber.trim();
+      let existingDef = DEMO_BUS_DEFINITIONS.find(d => 
+        d.busNumber.trim().toUpperCase() === normBusNum.toUpperCase() || d.id === b.id
+      );
+
+      if (!existingDef) {
+        existingDef = {
+          id: b.id.startsWith('demo-bus-') ? b.id : `demo-bus-${normBusNum.toLowerCase().replace(/\s+/g, '-')}`,
+          busNumber: normBusNum,
+          plateNumber: b.plateNumber || normBusNum,
+          tripId: `trip-${b.id}`,
+          routeId: assignedRoute.id,
+          routeNumber: assignedRoute.routeNumber,
+          routeName: assignedRoute.routeName,
+          origin: assignedRoute.origin,
+          destination: assignedRoute.destination,
+          color: '#7847CB',
+          stops: [...assignedRoute.stops],
+          waypoints: densifyPath(assignedRoute.waypoints, 120),
+          initialIndex: 0
+        };
+        DEMO_BUS_DEFINITIONS.push(existingDef);
+      } else {
+        existingDef.routeId = assignedRoute.id;
+        existingDef.routeNumber = assignedRoute.routeNumber;
+        existingDef.routeName = assignedRoute.routeName;
+        existingDef.origin = assignedRoute.origin;
+        existingDef.destination = assignedRoute.destination;
+        existingDef.stops = [...assignedRoute.stops];
+        if (!runtimeStore[existingDef.id]?.isRunning || !existingDef.waypoints || existingDef.waypoints.length < 20) {
+          existingDef.waypoints = densifyPath(assignedRoute.waypoints, 120);
+        }
+      }
+
+      if (!runtimeStore[existingDef.id]) {
+        runtimeStore[existingDef.id] = {
+          id: existingDef.id,
+          def: existingDef,
+          isRunning: false,
+          currentIndex: 0,
+          direction: 1,
+          speedMultiplier: 1,
+          delayMinutes: 0,
+          currentBus: null,
+          progressPercent: 0
+        };
+      } else {
+        runtimeStore[existingDef.id].def = existingDef;
+      }
+
+      // Generate up-to-date telemetry and broadcast
+      const telemetry = buildBusTelemetry(runtimeStore[existingDef.id]);
+      runtimeStore[existingDef.id].currentBus = telemetry;
+      broadcastBusLocation(telemetry);
+    });
   }
+
+  // Deduplicate DEMO_BUS_DEFINITIONS by busNumber
+  const seenBusNums = new Set<string>();
+  for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
+    const key = DEMO_BUS_DEFINITIONS[i].busNumber.trim().toUpperCase().replace(/\s+/g, '');
+    if (seenBusNums.has(key)) {
+      DEMO_BUS_DEFINITIONS.splice(i, 1);
+    } else {
+      seenBusNums.add(key);
+    }
+  }
+
+  // Update cross-tab aggregate in localStorage
+  try {
+    const aggregate: Record<string, Bus> = {};
+    DEMO_BUS_DEFINITIONS.forEach(def => {
+      const r = runtimeStore[def.id];
+      if (r) {
+        const b = r.currentBus || buildBusTelemetry(r);
+        if (b) aggregate[def.id] = b;
+      }
+    });
+    localStorage.setItem('nagarst_demo_buses', JSON.stringify(aggregate));
+
+    const ch = getBroadcastChannel();
+    if (ch) {
+      ch.postMessage({ type: 'fleetSync', buses: aggregate });
+    }
+  } catch (_) {}
 
   notifyListeners();
 }

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { Bus, Route, BusStop, Ticket, BusPass, NotificationItem, FavoriteItem } from '../types';
 import { supabase } from '../utils/supabaseClient';
+import { syncSimulatorFleetWithAdminConfig } from '../utils/demoSimulatorEngine';
 
 interface AppContextType {
   buses: Bus[];
@@ -303,11 +304,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
         const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
         const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+        const isDeleted = (id?: string, bNum?: string, pNum?: string) => {
+          const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
+          const cId = norm(id);
+          const cB = norm(bNum);
+          const cP = norm(pNum);
+          return deletedIds.some((d) => {
+            const cD = norm(d);
+            return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
+          });
+        };
 
         // Purge any deleted buses from allBusesList
         if (deletedIds.length > 0) {
           allBusesList = allBusesList.filter(
-            (b) => !deletedIds.includes(b.id) && !deletedIds.includes(b.bus_number)
+            (b) => !isDeleted(b.id, b.bus_number, b.plate_number)
           );
         }
 
@@ -315,16 +326,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (customBusesRaw) {
           const customBuses = JSON.parse(customBusesRaw);
           customBuses.forEach((cb: any) => {
-            if (deletedIds.includes(cb.id) || deletedIds.includes(cb.busNumber)) return;
-            if (!allBusesList.some((b) => b.id === cb.id || b.bus_number === cb.busNumber)) {
+            const bNum = cb.busNumber || cb.bus_number;
+            const pNum = cb.plateNumber || cb.plate_number;
+            if (isDeleted(cb.id, bNum, pNum)) return;
+            if (!allBusesList.some((b) => b.id === cb.id || b.bus_number?.trim().toUpperCase() === (bNum || '').trim().toUpperCase())) {
               allBusesList.push({
                 id: cb.id,
-                bus_number: cb.busNumber,
-                plate_number: cb.plateNumber,
-                type: cb.busType || 'Standard City',
-                route_id: cb.routeId,
-                status: 'Active',
-                created_at: new Date().toISOString()
+                bus_number: bNum,
+                plate_number: pNum || bNum,
+                type: cb.busType || cb.type || 'Standard City',
+                route_id: cb.routeId || cb.route_id,
+                status: cb.status || 'Active',
+                created_at: cb.created_at || new Date().toISOString()
               });
             }
           });
@@ -376,6 +389,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           };
         });
         setBuses(mappedBuses as Bus[]);
+        // Synchronize simulator engine fleet immediately with mapped fleet & routes
+        try {
+          syncSimulatorFleetWithAdminConfig(mappedBuses as Bus[], combinedRoutes as unknown as Route[]);
+        } catch (_) {}
       } else {
         setBuses([]);
       }
