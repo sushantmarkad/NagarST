@@ -389,13 +389,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Central updater for incoming telemetry across any channel
     const handleBusUpdate = (updatedBus: Partial<Bus>) => {
-      if (!updatedBus || !updatedBus.id) return;
-      if (updatedBus.isDemo || updatedBus.id.startsWith('demo-') || (updatedBus as any).routeName?.includes('[DEMO]')) return;
+      if (!updatedBus) return;
+      const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
+      const uId = norm(updatedBus.id);
+      const uNum = norm(updatedBus.busNumber);
+      const uPlate = norm(updatedBus.plateNumber);
+
       setBuses(prevBuses => {
-        const index = prevBuses.findIndex(b => b.id === updatedBus.id);
+        const index = prevBuses.findIndex(b => {
+          const bId = norm(b.id);
+          const bNum = norm(b.busNumber);
+          const bPlate = norm(b.plateNumber);
+          return (uId && (uId === bId || uId === bNum || uId === bPlate)) ||
+                 (uNum && (uNum === bId || uNum === bNum || uNum === bPlate)) ||
+                 (uPlate && (uPlate === bId || uPlate === bNum || uPlate === bPlate));
+        });
+
         if (index !== -1) {
           const newBuses = [...prevBuses];
-          newBuses[index] = { ...newBuses[index], ...updatedBus, lastUpdated: new Date().toISOString() };
+          newBuses[index] = {
+            ...newBuses[index],
+            ...updatedBus,
+            id: prevBuses[index].id,
+            busNumber: prevBuses[index].busNumber,
+            plateNumber: prevBuses[index].plateNumber,
+            lat: Number(updatedBus.lat) || newBuses[index].lat,
+            lng: Number(updatedBus.lng) || newBuses[index].lng,
+            speedKmh: updatedBus.speedKmh ?? newBuses[index].speedKmh,
+            heading: updatedBus.heading ?? newBuses[index].heading,
+            status: updatedBus.status || newBuses[index].status,
+            lastUpdated: new Date().toISOString()
+          };
           return newBuses;
         }
         return prevBuses;
@@ -434,8 +458,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } else if (e.key?.startsWith('nagarst_live_bus_') && !e.newValue) {
         const busId = e.key.replace('nagarst_live_bus_', '');
         handleBusOffline(busId);
-      } else if (e.key === 'nagarst_demo_buses') {
-        setBuses(prev => prev.filter(b => !b.isDemo && !b.id.startsWith('demo-') && !b.routeName?.includes('[DEMO]')));
       }
     };
     window.addEventListener('storage', onStorage);

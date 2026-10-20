@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { useToast, usePrompt } from '../../../context/FeedbackContext';
 import { type Bus as BusType } from '../../../types';
@@ -19,6 +19,12 @@ import { io } from 'socket.io-client';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { DemoSimulatorPanel } from '../../../components/admin/DemoSimulatorPanel';
+import {
+  getDemoSimulatorState,
+  subscribeToDemoState,
+  buildBusTelemetry,
+  type DemoSimulatorState
+} from '../../../utils/demoSimulatorEngine';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
 
@@ -29,9 +35,95 @@ export const AdminLiveFleet: React.FC = () => {
   const [selectedBus, setSelectedBus] = useState<BusType | null>(buses.length > 0 ? buses[0] : null);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
 
+  // Subscribe to live simulation telemetry
+  const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
+
+  useEffect(() => {
+    const unsub = subscribeToDemoState((newState) => {
+      setSimState(newState);
+    });
+    return () => unsub();
+  }, []);
+
+  const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
+
+  const matchesBus = (a: { id?: string; busNumber?: string; plateNumber?: string }, b: { id?: string; busNumber?: string; plateNumber?: string }) => {
+    const aId = norm(a.id);
+    const aNum = norm(a.busNumber);
+    const aPlate = norm(a.plateNumber);
+
+    const bId = norm(b.id);
+    const bNum = norm(b.busNumber);
+    const bPlate = norm(b.plateNumber);
+
+    const stripDemo = (str: string) => str.replace(/^DEMOBUS/, '').replace(/^DEMO/, '');
+    const aIdClean = stripDemo(aId);
+    const bIdClean = stripDemo(bId);
+
+    return Boolean(
+      (aId && (aId === bId || aId === bNum || aId === bPlate || (aIdClean && (aIdClean === bIdClean || aIdClean === bNum || aIdClean === bPlate)))) ||
+      (aNum && (aNum === bId || aNum === bNum || aNum === bPlate || (bIdClean && aNum === bIdClean))) ||
+      (aPlate && (aPlate === bId || aPlate === bNum || aPlate === bPlate || (bIdClean && aPlate === bIdClean)))
+    );
+  };
+
+  // Combined fleet strictly containing registered vehicles + active moving simulator coordinates
+  const displayBuses = React.useMemo(() => {
+    const byNumber = new Map<string, BusType>();
+
+    // 1. Configured fleet buses from DB / AppContext
+    buses.forEach((b) => {
+      const simRuntime = Object.values(simState?.buses || {}).find((r) =>
+        matchesBus(b, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
+      );
+
+      const isSimRunning = Boolean(simRuntime?.isRunning);
+      const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
+
+      const merged: BusType = {
+        ...b,
+        ...(simTelemetry || {}),
+        id: b.id,
+        busNumber: b.busNumber,
+        plateNumber: b.plateNumber,
+        isDemo: isSimRunning ? true : Boolean(b.isDemo),
+        lat: Number(simTelemetry?.lat ?? b.lat),
+        lng: Number(simTelemetry?.lng ?? b.lng),
+        speedKmh: simTelemetry ? (simTelemetry.speedKmh ?? 0) : b.speedKmh,
+        heading: simTelemetry ? (simTelemetry.heading ?? 0) : b.heading,
+        status: simTelemetry?.status || b.status || 'on_time'
+      };
+
+      const key = norm(b.busNumber) || norm(b.id);
+      byNumber.set(key, merged);
+    });
+
+    // 2. Actively running simulator buses (if not already merged)
+    if (simState && simState.buses) {
+      Object.values(simState.buses).forEach((runtime) => {
+        if (!runtime.isRunning) return;
+        const alreadyMerged = Array.from(byNumber.values()).some((b) =>
+          matchesBus(b, { id: runtime.id, busNumber: runtime.def.busNumber, plateNumber: runtime.def.plateNumber })
+        );
+        if (alreadyMerged) return;
+
+        const liveBus = runtime.currentBus || buildBusTelemetry(runtime);
+        if (liveBus && liveBus.lat && liveBus.lng) {
+          const rKey = norm(liveBus.busNumber) || norm(liveBus.id);
+          byNumber.set(rKey, {
+            ...liveBus,
+            isDemo: true
+          });
+        }
+      });
+    }
+
+    return Array.from(byNumber.values());
+  }, [buses, simState]);
+
   const allRoutes = routes;
-  const liveCount = buses.filter(b => !b.isDemo && !b.id?.startsWith('demo-')).length;
-  const demoCount = buses.filter(b => b.isDemo || b.id?.startsWith('demo-')).length;
+  const liveCount = displayBuses.filter(b => !b.isDemo && !b.id?.startsWith('demo-')).length;
+  const demoCount = displayBuses.filter(b => b.isDemo || b.id?.startsWith('demo-')).length;
 
   const handleSendDispatch = async () => {
     if (!selectedBus) return;
@@ -64,7 +156,7 @@ export const AdminLiveFleet: React.FC = () => {
       {/* 1. EDGE-TO-EDGE FULL SCREEN MAP (Mobile: 100% full screen background, Desktop: sleek dashboard card) */}
       <div className="absolute inset-0 md:relative md:inset-auto md:flex-1 w-full h-full md:rounded-3xl md:border md:border-slate-200/90 md:shadow-xs overflow-hidden z-0">
         <LiveMap
-          buses={buses}
+          buses={displayBuses}
           stops={stops}
           routes={allRoutes}
           selectedBusId={selectedBus?.id || null}

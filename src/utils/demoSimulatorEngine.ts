@@ -1543,60 +1543,12 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
     }
   }
 
-  // 4. Identify configured fleet buses with assigned routes
-  const assignedFleetBuses = buses.filter(b => {
-    if (!b.routeId) return false;
-    if (isDeleted(b.id, b.busNumber, b.plateNumber)) return false;
-    return true;
-  });
-
-  // If no assigned fleet buses exist, purge ALL demo buses and clear runtimeStore completely
-  if (assignedFleetBuses.length === 0) {
-    for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
-      const d = DEMO_BUS_DEFINITIONS[i];
-      broadcastBusOffline(d.id);
-      broadcastBusOffline(d.busNumber);
-      delete runtimeStore[d.id];
-      DEMO_BUS_DEFINITIONS.splice(i, 1);
-    }
-    Object.keys(runtimeStore).forEach(k => {
-      broadcastBusOffline(k);
-      delete runtimeStore[k];
-    });
-    try {
-      localStorage.removeItem('nagarst_demo_buses');
-      localStorage.removeItem('nagarst_demo_assignments');
-    } catch (_) {}
-    notifyListeners();
-    return;
-  }
-
-  // If the admin has configured assigned fleet buses (e.g. MH-16 BT-1515, MH-16 BT-1519),
-  // then the simulation fleet MUST strictly contain ONLY these configured buses!
-  if (assignedFleetBuses.length > 0) {
-    const allowedKeys = new Set(
-      assignedFleetBuses.map(b => (b.busNumber || b.id).trim().toUpperCase().replace(/\s+/g, ''))
-    );
-
-    // Purge any buses in DEMO_BUS_DEFINITIONS or runtimeStore that are not in the assigned fleet
-    for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
-      const d = DEMO_BUS_DEFINITIONS[i];
-      const key = d.busNumber.trim().toUpperCase().replace(/\s+/g, '');
-      if (!allowedKeys.has(key)) {
-        broadcastBusOffline(d.id);
-        broadcastBusOffline(d.busNumber);
-        delete runtimeStore[d.id];
-        DEMO_BUS_DEFINITIONS.splice(i, 1);
-      }
-    }
-
-    Object.keys(runtimeStore).forEach(k => {
-      const bNum = runtimeStore[k]?.def?.busNumber;
-      const key = (bNum || k).trim().toUpperCase().replace(/\s+/g, '');
-      if (!allowedKeys.has(key)) {
-        broadcastBusOffline(k);
-        delete runtimeStore[k];
-      }
+  // 4. Synchronize configured fleet buses with assigned routes
+  if (buses && buses.length > 0) {
+    const assignedFleetBuses = buses.filter(b => {
+      if (!b.routeId) return false;
+      if (isDeleted(b.id, b.busNumber, b.plateNumber)) return false;
+      return true;
     });
 
     // Add or update each assigned fleet bus
@@ -1645,7 +1597,7 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
         existingDef.stops = [...assignedRoute.stops];
         if (needsWpRefresh) {
           existingDef.waypoints = densifyPath(assignedRoute.waypoints, 120);
-          if (runtimeStore[existingDef.id]) {
+          if (runtimeStore[existingDef.id] && !runtimeStore[existingDef.id].isRunning) {
             runtimeStore[existingDef.id].currentIndex = 0;
           }
         }
@@ -1681,7 +1633,7 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
         };
       } else {
         runtimeStore[existingDef.id].def = existingDef;
-        if (savedRunning) {
+        if (savedRunning && !runtimeStore[existingDef.id].isRunning) {
           runtimeStore[existingDef.id].isRunning = wasRunning;
           runtimeStore[existingDef.id].currentIndex = curIndex;
           runtimeStore[existingDef.id].direction = curDirection;
@@ -1689,10 +1641,12 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
         }
       }
 
-      // Generate up-to-date telemetry and broadcast
-      const telemetry = buildBusTelemetry(runtimeStore[existingDef.id]);
-      runtimeStore[existingDef.id].currentBus = telemetry;
-      broadcastBusLocation(telemetry);
+      // Generate up-to-date telemetry and broadcast only if the bus is NOT currently running
+      if (!runtimeStore[existingDef.id].isRunning) {
+        const telemetry = buildBusTelemetry(runtimeStore[existingDef.id]);
+        runtimeStore[existingDef.id].currentBus = telemetry;
+        broadcastBusLocation(telemetry);
+      }
 
       // Persist assignment to localStorage
       try {

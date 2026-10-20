@@ -35,6 +35,7 @@ import {
   subscribeToDemoState,
   buildBusTelemetry,
   restoreSimRunningState,
+  ensureTimerRunning,
   DEMO_BUS_DEFINITIONS,
   type DemoSimulatorState
 } from '../utils/demoSimulatorEngine';
@@ -176,13 +177,20 @@ export const Home: React.FC = () => {
     };
   }, [buses]);
 
+  // Ensure simulator timer and running states are active on mount
+  useEffect(() => {
+    restoreSimRunningState();
+    ensureTimerRunning();
+  }, []);
+
   // Display buses strictly reflecting configured municipal fleet + actively running demo simulator buses
   const displayBuses = useMemo<Bus[]>(() => {
     const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
     const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
 
+    const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
+
     const isDeleted = (b: { id?: string; busNumber?: string; plateNumber?: string }) => {
-      const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
       const cId = norm(b.id);
       const cB = norm(b.busNumber);
       const cP = norm(b.plateNumber);
@@ -190,6 +198,26 @@ export const Home: React.FC = () => {
         const cD = norm(d);
         return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
       });
+    };
+
+    const matchesBus = (a: { id?: string; busNumber?: string; plateNumber?: string }, b: { id?: string; busNumber?: string; plateNumber?: string }) => {
+      const aId = norm(a.id);
+      const aNum = norm(a.busNumber);
+      const aPlate = norm(a.plateNumber);
+
+      const bId = norm(b.id);
+      const bNum = norm(b.busNumber);
+      const bPlate = norm(b.plateNumber);
+
+      const stripDemo = (str: string) => str.replace(/^DEMOBUS/, '').replace(/^DEMO/, '');
+      const aIdClean = stripDemo(aId);
+      const bIdClean = stripDemo(bId);
+
+      return Boolean(
+        (aId && (aId === bId || aId === bNum || aId === bPlate || (aIdClean && (aIdClean === bIdClean || aIdClean === bNum || aIdClean === bPlate)))) ||
+        (aNum && (aNum === bId || aNum === bNum || aNum === bPlate || (bIdClean && aNum === bIdClean))) ||
+        (aPlate && (aPlate === bId || aPlate === bNum || aPlate === bPlate || (bIdClean && aPlate === bIdClean)))
+      );
     };
 
     const byNumber = new Map<string, Bus>();
@@ -202,18 +230,25 @@ export const Home: React.FC = () => {
       });
 
       validConfigured.forEach(cb => {
-        const key = cb.busNumber.trim().toUpperCase().replace(/\s+/g, '');
-        const live = Object.values(activeLiveBuses).find(
-          lb => (lb.busNumber || lb.id).trim().toUpperCase().replace(/\s+/g, '') === key
+        const simRuntime = Object.values(simState?.buses || {}).find(r => 
+          matchesBus(cb, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
         );
+
+        const live = Object.values(activeLiveBuses).find(lb => matchesBus(cb, lb));
+
+        const isSimRunning = Boolean(simRuntime?.isRunning);
+        const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
+        const activeTelemetry = simTelemetry || live;
 
         const targetRoute = routes.find(
-          r => r.id === cb.routeId || r.routeNumber === cb.routeNumber || r.routeNumber === cb.routeId
+          r => r.id === (activeTelemetry?.routeId || cb.routeId) ||
+               r.routeNumber === (activeTelemetry?.routeNumber || cb.routeNumber) ||
+               r.routeNumber === cb.routeId
         );
 
-        byNumber.set(key, {
+        const merged: Bus = {
           ...cb,
-          ...(live || {}),
+          ...(activeTelemetry || {}),
           id: cb.id,
           busNumber: cb.busNumber,
           plateNumber: cb.plateNumber,
@@ -222,12 +257,20 @@ export const Home: React.FC = () => {
           routeName: targetRoute?.name || `${cb.origin || ''} ➔ ${cb.destination || ''}`,
           origin: targetRoute?.origin || cb.origin || '',
           destination: targetRoute?.destination || cb.destination || '',
-          isDemo: false
-        });
+          isDemo: isSimRunning ? true : Boolean(activeTelemetry?.isDemo),
+          lat: Number(activeTelemetry?.lat ?? cb.lat),
+          lng: Number(activeTelemetry?.lng ?? cb.lng),
+          speedKmh: activeTelemetry ? (activeTelemetry.speedKmh ?? 0) : cb.speedKmh,
+          heading: activeTelemetry ? (activeTelemetry.heading ?? 0) : cb.heading,
+          status: activeTelemetry?.status || cb.status || 'on_time'
+        };
+
+        const key = norm(cb.busNumber) || norm(cb.id);
+        byNumber.set(key, merged);
       });
     }
 
-    // 2. Actively running simulator demo buses from simState
+    // 2. Actively running simulator demo buses from simState (if not already merged)
     if (simState && simState.buses) {
       Object.values(simState.buses).forEach(runtime => {
         if (!runtime.isRunning) return;
@@ -235,54 +278,49 @@ export const Home: React.FC = () => {
         const pNum = runtime.def.plateNumber;
         if (isDeleted({ id: runtime.id, busNumber: bNum, plateNumber: pNum })) return;
 
+        const alreadyMerged = Array.from(byNumber.values()).some(b => 
+          matchesBus(b, { id: runtime.id, busNumber: bNum, plateNumber: pNum })
+        );
+        if (alreadyMerged) return;
+
         const liveBus = runtime.currentBus || buildBusTelemetry(runtime);
         if (liveBus && liveBus.lat && liveBus.lng) {
-          const key = (liveBus.busNumber || liveBus.id).trim().toUpperCase().replace(/\s+/g, '');
+          const key = norm(liveBus.busNumber) || norm(liveBus.id);
           const targetRoute = routes.find(
             r => r.id === liveBus.routeId || r.routeNumber === liveBus.routeNumber || r.routeNumber === runtime.def.routeNumber
           );
 
-          const registered = buses?.find(b => 
-            (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
-            (b.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
-            (b.id || '').trim().toUpperCase().replace(/\s+/g, '') === key
-          );
-
           byNumber.set(key, {
             ...liveBus,
-            id: registered?.id || liveBus.id,
-            busNumber: registered?.busNumber || liveBus.busNumber,
-            plateNumber: registered?.plateNumber || liveBus.plateNumber,
             routeId: targetRoute?.id || liveBus.routeId || runtime.def.routeId,
             routeNumber: targetRoute?.routeNumber || runtime.def.routeNumber || liveBus.routeNumber,
             routeName: targetRoute?.name || runtime.def.routeName || liveBus.routeName,
             origin: targetRoute?.origin || runtime.def.origin || liveBus.origin,
             destination: targetRoute?.destination || runtime.def.destination || liveBus.destination,
-            isDemo: registered ? false : true
+            isDemo: true
           });
         }
       });
     }
 
-    // 3. Actively running demo buses from live broadcast / localStorage
+    // 3. Actively running demo / driver buses from live broadcast (if not already merged)
     Object.values(activeLiveBuses).forEach(lb => {
-      if (!lb || !lb.isDemo || !lb.lat || !lb.lng) return;
+      if (!lb || !lb.lat || !lb.lng) return;
       if (isDeleted(lb)) return;
-      const key = (lb.busNumber || lb.id).trim().toUpperCase().replace(/\s+/g, '');
-      if (!byNumber.has(key)) {
-        const targetRoute = routes.find(
-          r => r.id === lb.routeId || r.routeNumber === lb.routeNumber
-        );
-        byNumber.set(key, {
-          ...lb,
-          routeId: targetRoute?.id || lb.routeId,
-          routeNumber: targetRoute?.routeNumber || lb.routeNumber || 'Demo Route',
-          routeName: targetRoute?.name || lb.routeName || 'Demo Route',
-          origin: targetRoute?.origin || lb.origin || '',
-          destination: targetRoute?.destination || lb.destination || '',
-          isDemo: true
-        });
-      }
+      const alreadyMerged = Array.from(byNumber.values()).some(b => matchesBus(b, lb));
+      if (alreadyMerged) return;
+
+      const key = norm(lb.busNumber) || norm(lb.id);
+      const targetRoute = routes.find(
+        r => r.id === lb.routeId || r.routeNumber === lb.routeNumber
+      );
+      byNumber.set(key, {
+        ...lb,
+        routeId: targetRoute?.id || lb.routeId,
+        routeNumber: targetRoute?.routeNumber || lb.routeNumber,
+        routeName: targetRoute?.name || lb.routeName,
+        isDemo: Boolean(lb.isDemo)
+      });
     });
 
     return Array.from(byNumber.values());
