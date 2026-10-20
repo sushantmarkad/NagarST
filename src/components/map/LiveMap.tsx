@@ -311,8 +311,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     polylinesRef.current = [];
 
     routes.forEach((route) => {
-      // Asynchronously snap stops to actual streets and roads using OSRM
-      if (route.stops && route.stops.length >= 2 && !(route as any)._osrmSnapped) {
+      // Asynchronously snap stops to actual streets and roads using OSRM ONLY if road waypoints are not already defined
+      if (route.stops && route.stops.length >= 2 && (!route.route_path || route.route_path.length < 5) && !(route as any)._osrmSnapped) {
         (route as any)._osrmSnapped = true;
         fetchOSRMRoute(route.stops.map((s) => ({ lat: s.lat, lng: s.lng }))).then((snapped) => {
           if (snapped && snapped.length > 2) {

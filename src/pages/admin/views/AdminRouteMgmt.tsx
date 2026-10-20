@@ -168,8 +168,11 @@ export const AdminRouteMgmt: React.FC = () => {
 
     let originStopId = `stop-origin-${Date.now()}`;
     let destStopId = `stop-dest-${Date.now()}`;
-    const originCoords = creationPins.origin || { lat: 19.0975, lng: 74.7420 };
-    const destCoords = creationPins.dest || { lat: 19.1220, lng: 74.7350 };
+    const isDairy = destName.toLowerCase().includes('dairy') || destName.includes('डेअरी');
+    const isOriginMaliwada = originName.toLowerCase().includes('maliwada') || originName.includes('माळीवाडा');
+
+    const originCoords = creationPins.origin || (isOriginMaliwada ? { lat: 19.0910, lng: 74.7290 } : { lat: 19.0975, lng: 74.7420 });
+    const destCoords = creationPins.dest || (isDairy ? { lat: 19.0830, lng: 74.7460 } : { lat: 19.1220, lng: 74.7350 });
 
     // Calculate real road path via OSRM turn-by-turn
     let roadPath: { lat: number; lng: number }[] = [];

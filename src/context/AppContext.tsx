@@ -269,12 +269,93 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (localRoutesRaw) {
           const localRoutes = JSON.parse(localRoutesRaw);
           localRoutes.forEach((lr: any) => {
+            const isDairy = (lr.destination || '').toLowerCase().includes('dairy') || (lr.name || '').toLowerCase().includes('dairy');
+            if (isDairy && lr.stops && lr.stops.length > 0) {
+              const lastStop = lr.stops[lr.stops.length - 1];
+              if (lastStop.lat > 19.10) {
+                lastStop.lat = 19.0830;
+                lastStop.lng = 74.7460;
+              }
+            }
             if (!combinedRoutes.some((cr) => cr.id === lr.id || (cr.routeNumber && cr.routeNumber === lr.routeNumber))) {
               combinedRoutes.push(lr);
             }
           });
         }
       } catch (_) {}
+
+      // Guarantee R-01 and R-02 exist as authoritative corridors if not present
+      if (!combinedRoutes.some((cr) => cr.id === 'R-01' || cr.routeNumber === 'R-01')) {
+        combinedRoutes.push({
+          id: 'R-01',
+          route_number: 'R-01',
+          routeNumber: 'R-01',
+          name: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
+          nameMarathi: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
+          origin: 'माळीवाडा गल्ली',
+          destination: 'Dairy Chowk',
+          firstBus: '06:00 AM',
+          lastBus: '10:00 PM',
+          frequencyMinutes: 15,
+          baseFare: 10,
+          maxFare: 25,
+          totalStops: 4,
+          durationMinutes: 25,
+          color: '#7847CB',
+          activeBusesCount: 1,
+          status: 'normal',
+          route_path: [
+            { lat: 19.0910, lng: 74.7290 },
+            { lat: 19.0925, lng: 74.7315 },
+            { lat: 19.0940, lng: 74.7350 },
+            { lat: 19.0975, lng: 74.7420 },
+            { lat: 19.0900, lng: 74.7440 },
+            { lat: 19.0830, lng: 74.7460 }
+          ],
+          stops: [
+            { stopId: 'stop-mw', stopName: 'माळीवाडा गल्ली', stopNameMarathi: 'माळीवाडा गल्ली', lat: 19.0910, lng: 74.7290, sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, isMajorHub: true },
+            { stopId: 'stop-swk', stopName: 'Swastik Chowk', stopNameMarathi: 'Swastik Chowk', lat: 19.0940, lng: 74.7350, sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 7, isMajorHub: false },
+            { stopId: 'stop-cbs', stopName: 'Ahilyanagar CBS', stopNameMarathi: 'Ahilyanagar CBS', lat: 19.0975, lng: 74.7420, sequence: 3, fareFromOrigin: 15, estimatedMinutesFromOrigin: 14, isMajorHub: true },
+            { stopId: 'stop-dairy', stopName: 'Dairy Chowk', stopNameMarathi: 'Dairy Chowk', lat: 19.0830, lng: 74.7460, sequence: 4, fareFromOrigin: 20, estimatedMinutesFromOrigin: 22, isMajorHub: true }
+          ]
+        });
+      }
+
+      if (!combinedRoutes.some((cr) => cr.id === 'R-02' || cr.routeNumber === 'R-02')) {
+        combinedRoutes.push({
+          id: 'R-02',
+          route_number: 'R-02',
+          routeNumber: 'R-02',
+          name: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
+          nameMarathi: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
+          origin: 'Mahatma Gandhi Road',
+          destination: 'Chhatrapati Sambhaji Nagar',
+          firstBus: '06:00 AM',
+          lastBus: '10:00 PM',
+          frequencyMinutes: 15,
+          baseFare: 10,
+          maxFare: 30,
+          totalStops: 4,
+          durationMinutes: 30,
+          color: '#d97706',
+          activeBusesCount: 1,
+          status: 'normal',
+          route_path: [
+            { lat: 19.1025, lng: 74.7380 },
+            { lat: 19.1060, lng: 74.7385 },
+            { lat: 19.1090, lng: 74.7395 },
+            { lat: 19.1150, lng: 74.7430 },
+            { lat: 19.1235, lng: 74.7490 },
+            { lat: 19.1320, lng: 74.7550 }
+          ],
+          stops: [
+            { stopId: 'stop-mg', stopName: 'Mahatma Gandhi Road', stopNameMarathi: 'Mahatma Gandhi Road', lat: 19.1025, lng: 74.7380, sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, isMajorHub: true },
+            { stopId: 'stop-gandhi-chk', stopName: 'Gandhi Chowk', stopNameMarathi: 'Gandhi Chowk', lat: 19.1090, lng: 74.7395, sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 6, isMajorHub: false },
+            { stopId: 'stop-delhi-gate', stopName: 'Delhi Gate Transit', stopNameMarathi: 'Delhi Gate Transit', lat: 19.1150, lng: 74.7430, sequence: 3, fareFromOrigin: 15, estimatedMinutesFromOrigin: 12, isMajorHub: true },
+            { stopId: 'stop-sambhaji', stopName: 'Chhatrapati Sambhaji Nagar', stopNameMarathi: 'Chhatrapati Sambhaji Nagar', lat: 19.1320, lng: 74.7550, sequence: 4, fareFromOrigin: 25, estimatedMinutesFromOrigin: 25, isMajorHub: true }
+          ]
+        });
+      }
 
       setRoutes(combinedRoutes as unknown as Route[]);
 

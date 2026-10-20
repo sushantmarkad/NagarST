@@ -363,7 +363,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
       const endStop = activeBusRuntime.def.stops[activeBusRuntime.def.stops.length - 1];
       destCoords = { lat: endStop.lat, lng: endStop.lng, name: endStop.name };
     } else {
-      destCoords = { lat: 19.1220, lng: 74.7350, name: 'Savedi Terminal' };
+      destCoords = { lat: 19.0830, lng: 74.7460, name: 'Dairy Chowk' };
     }
 
     try {

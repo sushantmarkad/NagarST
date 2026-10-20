@@ -101,8 +101,65 @@ export function densifyPath(path: { lat: number; lng: number }[], targetPoints =
   return result;
 }
 
-// Routes are dynamically loaded from Route Corridors tab - no hardcoded routes
-export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [];
+// =========================================================================
+// AUTHORITATIVE ROUTE CORRIDORS FOR AHILYANAGAR
+// =========================================================================
+export const AUTHORITATIVE_R01_WAYPOINTS = [
+  { lat: 19.0910, lng: 74.7290 },
+  { lat: 19.0925, lng: 74.7315 },
+  { lat: 19.0940, lng: 74.7350 },
+  { lat: 19.0975, lng: 74.7420 },
+  { lat: 19.0900, lng: 74.7440 },
+  { lat: 19.0830, lng: 74.7460 },
+];
+export const AUTHORITATIVE_R01_STOPS: DemoStop[] = [
+  { id: 'stop-mw', name: 'माळीवाडा गल्ली', lat: 19.0910, lng: 74.7290 },
+  { id: 'stop-swk', name: 'Swastik Chowk', lat: 19.0940, lng: 74.7350 },
+  { id: 'stop-cbs', name: 'Ahilyanagar CBS', lat: 19.0975, lng: 74.7420 },
+  { id: 'stop-dairy', name: 'Dairy Chowk', lat: 19.0830, lng: 74.7460 },
+];
+
+export const AUTHORITATIVE_R02_WAYPOINTS = [
+  { lat: 19.1025, lng: 74.7380 },
+  { lat: 19.1060, lng: 74.7385 },
+  { lat: 19.1090, lng: 74.7395 },
+  { lat: 19.1150, lng: 74.7430 },
+  { lat: 19.1235, lng: 74.7490 },
+  { lat: 19.1320, lng: 74.7550 },
+];
+export const AUTHORITATIVE_R02_STOPS: DemoStop[] = [
+  { id: 'stop-mg', name: 'Mahatma Gandhi Road', lat: 19.1025, lng: 74.7380 },
+  { id: 'stop-gandhi-chk', name: 'Gandhi Chowk', lat: 19.1090, lng: 74.7395 },
+  { id: 'stop-delhi-gate', name: 'Delhi Gate Transit', lat: 19.1150, lng: 74.7430 },
+  { id: 'stop-sambhaji', name: 'Chhatrapati Sambhaji Nagar', lat: 19.1320, lng: 74.7550 },
+];
+
+export const DEFAULT_DEMO_ROUTES: DemoRoutePreset[] = [
+  {
+    id: 'R-01',
+    routeNumber: 'R-01',
+    routeName: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
+    origin: 'माळीवाडा गल्ली',
+    destination: 'Dairy Chowk',
+    color: '#7847CB',
+    description: 'माळीवाडा गल्ली ➔ Swastik Chowk ➔ CBS ➔ Dairy Chowk',
+    stops: AUTHORITATIVE_R01_STOPS,
+    waypoints: densifyPath(AUTHORITATIVE_R01_WAYPOINTS, 120),
+  },
+  {
+    id: 'R-02',
+    routeNumber: 'R-02',
+    routeName: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
+    origin: 'Mahatma Gandhi Road',
+    destination: 'Chhatrapati Sambhaji Nagar',
+    color: '#d97706',
+    description: 'MG Road ➔ Gandhi Chowk ➔ Delhi Gate ➔ Chhatrapati Sambhaji Nagar',
+    stops: AUTHORITATIVE_R02_STOPS,
+    waypoints: densifyPath(AUTHORITATIVE_R02_WAYPOINTS, 120),
+  }
+];
+
+export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [...DEFAULT_DEMO_ROUTES];
 
 // =========================================================================
 // MULTI-BUS DEFINITION REGISTRY
@@ -119,20 +176,8 @@ export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
     origin: 'माळीवाडा गल्ली',
     destination: 'Dairy Chowk',
     color: '#7847CB',
-    stops: [
-      { id: 'stop-mw', name: 'माळीवाडा गल्ली', lat: 19.0910, lng: 74.7290 },
-      { id: 'stop-swk', name: 'Swastik Chowk', lat: 19.0940, lng: 74.7350 },
-      { id: 'stop-cbs', name: 'Ahilyanagar CBS', lat: 19.0975, lng: 74.7420 },
-      { id: 'stop-dairy', name: 'Dairy Chowk', lat: 19.0830, lng: 74.7460 },
-    ],
-    waypoints: densifyPath([
-      { lat: 19.0910, lng: 74.7290 },
-      { lat: 19.0925, lng: 74.7315 },
-      { lat: 19.0940, lng: 74.7350 },
-      { lat: 19.0975, lng: 74.7420 },
-      { lat: 19.0900, lng: 74.7440 },
-      { lat: 19.0830, lng: 74.7460 },
-    ], 120),
+    stops: AUTHORITATIVE_R01_STOPS,
+    waypoints: densifyPath(AUTHORITATIVE_R01_WAYPOINTS, 120),
     initialIndex: 0
   },
   {
@@ -146,20 +191,8 @@ export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
     origin: 'Mahatma Gandhi Road',
     destination: 'Chhatrapati Sambhaji Nagar',
     color: '#d97706',
-    stops: [
-      { id: 'stop-mg', name: 'Mahatma Gandhi Road', lat: 19.1025, lng: 74.7380 },
-      { id: 'stop-gandhi-chk', name: 'Gandhi Chowk', lat: 19.1090, lng: 74.7395 },
-      { id: 'stop-delhi-gate', name: 'Delhi Gate Transit', lat: 19.1150, lng: 74.7430 },
-      { id: 'stop-sambhaji', name: 'Chhatrapati Sambhaji Nagar', lat: 19.1320, lng: 74.7550 },
-    ],
-    waypoints: densifyPath([
-      { lat: 19.1025, lng: 74.7380 },
-      { lat: 19.1060, lng: 74.7385 },
-      { lat: 19.1090, lng: 74.7395 },
-      { lat: 19.1150, lng: 74.7430 },
-      { lat: 19.1235, lng: 74.7490 },
-      { lat: 19.1320, lng: 74.7550 },
-    ], 120),
+    stops: AUTHORITATIVE_R02_STOPS,
+    waypoints: densifyPath(AUTHORITATIVE_R02_WAYPOINTS, 120),
     initialIndex: 0
   }
 ];
@@ -276,17 +309,58 @@ try {
   }
 } catch (_) {}
 
-// Restore any saved route assignments
+// Restore any saved route assignments (sanitizing corrupted or mismatched coordinates)
 try {
   const assignmentsRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_demo_assignments') : null;
   if (assignmentsRaw) {
     const assignments: Record<string, Partial<DemoBusDefinition>> = JSON.parse(assignmentsRaw);
+    let changed = false;
     Object.keys(assignments).forEach(busId => {
+      const a = assignments[busId];
+      if (a) {
+        const isDairy = (a.destination || '').toLowerCase().includes('dairy') || (a.routeName || '').toLowerCase().includes('dairy');
+        const endLat = a.stops && a.stops.length > 0 ? a.stops[a.stops.length - 1].lat : 0;
+        const endWpLat = a.waypoints && a.waypoints.length > 0 ? a.waypoints[a.waypoints.length - 1].lat : 0;
+        // If Dairy Chowk is corrupted with Savedi/MIDC coordinates (> 19.10), purge this stale assignment
+        if (isDairy && (endLat > 19.10 || endWpLat > 19.10)) {
+          delete assignments[busId];
+          changed = true;
+          return;
+        }
+      }
       const def = DEMO_BUS_DEFINITIONS.find(d => d.id === busId || d.busNumber === busId);
       if (def) {
         Object.assign(def, assignments[busId]);
       }
     });
+    if (changed && typeof window !== 'undefined') {
+      localStorage.setItem('nagarst_demo_assignments', JSON.stringify(assignments));
+    }
+  }
+} catch (_) {}
+
+// Sanitize any configured routes in localStorage that had Dairy Chowk with Savedi/MIDC coordinates
+try {
+  const confRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_configured_routes') : null;
+  if (confRaw) {
+    const confRoutes = JSON.parse(confRaw);
+    let modified = false;
+    confRoutes.forEach((cr: any) => {
+      const isDairy = (cr.destination || '').toLowerCase().includes('dairy') || (cr.name || '').toLowerCase().includes('dairy');
+      if (isDairy) {
+        const lastStop = cr.stops && cr.stops.length > 0 ? cr.stops[cr.stops.length - 1] : null;
+        if (lastStop && lastStop.lat > 19.10) {
+          lastStop.lat = 19.0830;
+          lastStop.lng = 74.7460;
+          cr.stops = [...AUTHORITATIVE_R01_STOPS];
+          cr.route_path = densifyPath(AUTHORITATIVE_R01_WAYPOINTS, 120);
+          modified = true;
+        }
+      }
+    });
+    if (modified && typeof window !== 'undefined') {
+      localStorage.setItem('nagarst_configured_routes', JSON.stringify(confRoutes));
+    }
   }
 } catch (_) {}
 
@@ -319,14 +393,14 @@ try {
   }
 } catch (_) {}
 
-// Automatically snap all demo bus routes to real roads with OSRM on load
+// Only snap to OSRM if waypoints are completely missing (less than 10 points), preserving dense street waypoints
 if (typeof window !== 'undefined') {
   setTimeout(() => {
     DEMO_BUS_DEFINITIONS.forEach(def => {
-      if (def.stops && def.stops.length >= 2) {
+      if ((!def.waypoints || def.waypoints.length < 10) && def.stops && def.stops.length >= 2) {
         fetchOSRMRoute(def.stops.map(s => ({ lat: s.lat, lng: s.lng }))).then(snapped => {
           if (snapped && snapped.length > 5) {
-            def.waypoints = densifyPath(snapped, 150);
+            def.waypoints = densifyPath(snapped, 120);
             if (runtimeStore[def.id]) {
               runtimeStore[def.id].def.waypoints = def.waypoints;
               const updated = buildBusTelemetry(runtimeStore[def.id]);
@@ -1271,8 +1345,9 @@ export function subscribeToDemoState(listener: (s: DemoSimulatorState) => void):
  * Synchronizes the simulator fleet and available corridors with City Admin's configured routes and fleet
  */
 export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[]) {
-  // 1. Rebuild AVAILABLE_DEMO_ROUTES strictly from Admin Configured routes
+  // 1. Rebuild AVAILABLE_DEMO_ROUTES preserving default authoritative routes
   AVAILABLE_DEMO_ROUTES.length = 0;
+  AVAILABLE_DEMO_ROUTES.push(...DEFAULT_DEMO_ROUTES);
 
   routes.forEach((r: Route) => {
     if (!r.stops || r.stops.length < 2) return;
@@ -1287,7 +1362,10 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
       lng: s.lng
     }));
 
-    AVAILABLE_DEMO_ROUTES.push({
+    const existingIdx = AVAILABLE_DEMO_ROUTES.findIndex(
+      dr => dr.id === r.id || dr.routeNumber === r.routeNumber
+    );
+    const newPreset: DemoRoutePreset = {
       id: r.id,
       routeNumber: r.routeNumber,
       routeName: r.name || `${r.routeNumber}: ${r.origin} ↔ ${r.destination}`,
@@ -1297,7 +1375,12 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
       description: `${r.origin} ➔ ${r.destination}`,
       stops,
       waypoints: densifyPath(waypoints, 120)
-    });
+    };
+    if (existingIdx !== -1) {
+      AVAILABLE_DEMO_ROUTES[existingIdx] = newPreset;
+    } else {
+      AVAILABLE_DEMO_ROUTES.push(newPreset);
+    }
   });
 
   // 2. Read deleted buses
@@ -1389,21 +1472,30 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
           routeName: assignedRoute.routeName,
           origin: assignedRoute.origin,
           destination: assignedRoute.destination,
-          color: '#7847CB',
+          color: assignedRoute.color || '#7847CB',
           stops: [...assignedRoute.stops],
           waypoints: densifyPath(assignedRoute.waypoints, 120),
           initialIndex: 0
         };
         DEMO_BUS_DEFINITIONS.push(existingDef);
       } else {
+        const routeChanged = existingDef.routeId !== assignedRoute.id;
+        const isDairy = (assignedRoute.destination || '').toLowerCase().includes('dairy') || (assignedRoute.routeName || '').toLowerCase().includes('dairy');
+        const endWpLat = existingDef.waypoints && existingDef.waypoints.length > 0 ? existingDef.waypoints[existingDef.waypoints.length - 1].lat : 0;
+        const needsWpRefresh = routeChanged || !existingDef.waypoints || existingDef.waypoints.length < 20 || (isDairy && endWpLat > 19.10);
+
         existingDef.routeId = assignedRoute.id;
         existingDef.routeNumber = assignedRoute.routeNumber;
         existingDef.routeName = assignedRoute.routeName;
         existingDef.origin = assignedRoute.origin;
         existingDef.destination = assignedRoute.destination;
+        existingDef.color = assignedRoute.color || existingDef.color;
         existingDef.stops = [...assignedRoute.stops];
-        if (!runtimeStore[existingDef.id]?.isRunning || !existingDef.waypoints || existingDef.waypoints.length < 20) {
+        if (needsWpRefresh) {
           existingDef.waypoints = densifyPath(assignedRoute.waypoints, 120);
+          if (runtimeStore[existingDef.id]) {
+            runtimeStore[existingDef.id].currentIndex = 0;
+          }
         }
       }
 
@@ -1427,6 +1519,23 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
       const telemetry = buildBusTelemetry(runtimeStore[existingDef.id]);
       runtimeStore[existingDef.id].currentBus = telemetry;
       broadcastBusLocation(telemetry);
+
+      // Persist assignment to localStorage
+      try {
+        const raw = localStorage.getItem('nagarst_demo_assignments');
+        const assignments = raw ? JSON.parse(raw) : {};
+        assignments[existingDef.id] = {
+          routeId: existingDef.routeId,
+          routeNumber: existingDef.routeNumber,
+          routeName: existingDef.routeName,
+          origin: existingDef.origin,
+          destination: existingDef.destination,
+          color: existingDef.color,
+          stops: existingDef.stops,
+          waypoints: existingDef.waypoints
+        };
+        localStorage.setItem('nagarst_demo_assignments', JSON.stringify(assignments));
+      } catch (_) {}
     });
   }
 

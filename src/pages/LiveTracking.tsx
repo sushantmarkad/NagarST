@@ -480,32 +480,35 @@ export const LiveTracking: React.FC = () => {
     const activeRouteMap = new Map<string, RouteType>();
 
     allFleetBuses.forEach((bus) => {
-      // 1. First check if configured route exists in allRoutes (Route Corridors tab)
-      const dbRoute = allRoutes.find((r) => r.id === bus.routeId);
-      if (dbRoute) {
-        activeRouteMap.set(dbRoute.id, dbRoute);
-        return;
-      }
-
-      // 2. Check in-memory simulator runtime or DEMO_BUS_DEFINITIONS
-      const runtime = simState.buses[bus.id];
+      // Find matching simulation runtime or definition (authoritative road corridor)
+      const runtime = simState.buses[bus.id] || Object.values(simState.buses).find(
+        (r) => r.def.busNumber.trim().toUpperCase() === bus.busNumber.trim().toUpperCase()
+      );
       const demoDef = runtime?.def || DEMO_BUS_DEFINITIONS.find((d: any) => d.id === bus.id || d.busNumber === bus.busNumber);
+
+      // Check if configured route exists in allRoutes (Route Corridors tab)
+      const dbRoute = allRoutes.find(
+        (r) => r.id === bus.routeId || r.routeNumber === bus.routeNumber || r.routeNumber === bus.routeId
+      );
+
+      const targetRouteId = dbRoute?.id || demoDef?.routeId || bus.routeId || 'corridor';
+
       if (demoDef && demoDef.stops && demoDef.stops.length > 0) {
-        activeRouteMap.set(demoDef.routeId, {
-          id: demoDef.routeId,
-          routeNumber: demoDef.routeNumber,
-          name: demoDef.routeName,
-          nameMarathi: demoDef.routeName,
-          origin: demoDef.origin,
-          destination: demoDef.destination,
-          firstBus: '06:00 AM',
-          lastBus: '10:00 PM',
-          frequencyMinutes: 15,
-          baseFare: 10,
-          maxFare: 25,
+        activeRouteMap.set(targetRouteId, {
+          id: targetRouteId,
+          routeNumber: demoDef.routeNumber || dbRoute?.routeNumber || 'Route',
+          name: demoDef.routeName || dbRoute?.name || `${demoDef.origin} ➔ ${demoDef.destination}`,
+          nameMarathi: demoDef.routeName || dbRoute?.nameMarathi || dbRoute?.name || `${demoDef.origin} ➔ ${demoDef.destination}`,
+          origin: demoDef.origin || dbRoute?.origin || '',
+          destination: demoDef.destination || dbRoute?.destination || '',
+          firstBus: dbRoute?.firstBus || '06:00 AM',
+          lastBus: dbRoute?.lastBus || '10:00 PM',
+          frequencyMinutes: dbRoute?.frequencyMinutes || 15,
+          baseFare: dbRoute?.baseFare || 10,
+          maxFare: dbRoute?.maxFare || 25,
           totalStops: demoDef.stops.length,
-          durationMinutes: 30,
-          color: demoDef.color,
+          durationMinutes: dbRoute?.durationMinutes || 30,
+          color: demoDef.color || dbRoute?.color || '#7847CB',
           activeBusesCount: 1,
           status: 'normal' as const,
           stops: demoDef.stops.map((s: any, idx: number) => ({
@@ -519,8 +522,10 @@ export const LiveTracking: React.FC = () => {
             lat: s.lat,
             lng: s.lng,
           })),
-          route_path: demoDef.waypoints,
+          route_path: demoDef.waypoints && demoDef.waypoints.length > 2 ? demoDef.waypoints : dbRoute?.route_path,
         });
+      } else if (dbRoute) {
+        activeRouteMap.set(dbRoute.id, dbRoute);
       }
     });
 
@@ -529,7 +534,7 @@ export const LiveTracking: React.FC = () => {
       return activeList.filter((r) => r.id === filterRoute);
     }
     return activeList.length > 0 ? activeList : allRoutes;
-  }, [selectedBusRoute, allFleetBuses, allRoutes, filterRoute]);
+  }, [selectedBusRoute, allFleetBuses, allRoutes, filterRoute, simState.buses]);
 
   // Active commuter coordinate (Live GPS or selected manual location)
   const activeCommuterPos = useMemo(() => {
