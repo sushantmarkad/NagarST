@@ -6,9 +6,6 @@ const cors = require('cors');
 // =========================================================================
 // FIREBASE FIRESTORE INTEGRATION (Backend Control)
 // =========================================================================
-const { initializeApp } = require('firebase/app');
-const { getFirestore, doc, setDoc, deleteDoc, collection, getDocs } = require('firebase/firestore');
-
 const firebaseConfig = {
   apiKey: "AIzaSyCbxsoLoqqKQIORWGwMg4pJtkjYFJY3G5E",
   authDomain: "nagarst-2111f.firebaseapp.com",
@@ -20,12 +17,22 @@ const firebaseConfig = {
 };
 
 let fbDb = null;
+let setDoc, doc, deleteDoc, collection, getDocs;
+
 try {
+  const { initializeApp } = require('firebase/app');
+  const firestore = require('firebase/firestore');
+  setDoc = firestore.setDoc;
+  doc = firestore.doc;
+  deleteDoc = firestore.deleteDoc;
+  collection = firestore.collection;
+  getDocs = firestore.getDocs;
+
   const fbApp = initializeApp(firebaseConfig);
-  fbDb = getFirestore(fbApp);
+  fbDb = firestore.getFirestore(fbApp);
   console.log('✅ Firebase Firestore connected in backend server (project: nagarst-2111f)');
 } catch (fbInitErr) {
-  console.warn('⚠️ Firebase initialization in backend:', fbInitErr.message);
+  console.warn('⚠️ Firebase optional initialization in backend:', fbInitErr.message);
 }
 
 async function syncToFirebaseLive(busPayload) {
