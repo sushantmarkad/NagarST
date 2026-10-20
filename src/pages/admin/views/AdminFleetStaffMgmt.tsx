@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../../utils/supabaseClient';
 import {
   getFirebaseBuses,
   getFirebaseRoutes,
   getFirebaseDrivers,
   saveFirebaseDriver,
   deleteFirebaseDriver,
+  getFirebaseConductors,
+  saveFirebaseConductor,
+  deleteFirebaseConductor,
   getFirebaseTrips,
   saveFirebaseTrip,
   deleteFirebaseTrip
@@ -52,9 +54,6 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
   const [newTrip, setNewTrip] = useState({ routeId: '', busId: '', driverId: '' });
   const [isSubmittingTrip, setIsSubmittingTrip] = useState(false);
 
-  // RLS Helper Modal State
-  const [rlsModalInfo, setRlsModalInfo] = useState<{ id: string; name: string } | null>(null);
-  const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
     if (viewType === 'drivers') {
@@ -75,12 +74,10 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
 
   const fetchConductors = async () => {
     try {
-      const { data, error } = await supabase.from('user_profiles').select('*').eq('role', 'CONDUCTOR');
-      if (!error && data) {
-        setRealConductors(data);
-      }
+      const fbConductors = await getFirebaseConductors();
+      setRealConductors(fbConductors);
     } catch {
-      // Fallback
+      setRealConductors([]);
     }
   };
 
@@ -89,11 +86,12 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
       const fbBuses = await getFirebaseBuses();
       if (fbBuses && fbBuses.length > 0) {
         setAvailableBuses(fbBuses.map(b => ({ id: b.id, bus_number: b.busNumber || b.bus_number })));
-        return;
+      } else {
+        setAvailableBuses([]);
       }
-    } catch (_) {}
-    const { data } = await supabase.from('buses').select('id, bus_number');
-    if (data) setAvailableBuses(data);
+    } catch (_) {
+      setAvailableBuses([]);
+    }
   };
 
   const fetchRoutesForDropdown = async () => {
@@ -101,11 +99,12 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
       const fbRoutes = await getFirebaseRoutes();
       if (fbRoutes && fbRoutes.length > 0) {
         setAvailableRoutes(fbRoutes.map(r => ({ id: r.id, route_number: r.routeNumber || r.route_number })));
-        return;
+      } else {
+        setAvailableRoutes([]);
       }
-    } catch (_) {}
-    const { data } = await supabase.from('routes').select('id, route_number');
-    if (data) setAvailableRoutes(data);
+    } catch (_) {
+      setAvailableRoutes([]);
+    }
   };
 
   const fetchTrips = async () => {
@@ -158,24 +157,6 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
         assigned_bus_id: driverForm.busId,
         status: 'Active'
       });
-      try {
-        if (isEditDriverMode && currentEditDriverId) {
-          await supabase.from('driver_credentials').update({
-            full_name: driverForm.fullName,
-            email: driverForm.email,
-            password: driverForm.password,
-            assigned_bus_id: driverForm.busId
-          }).eq('id', currentEditDriverId);
-        } else {
-          await supabase.from('driver_credentials').insert([{
-            id: driverId,
-            full_name: driverForm.fullName,
-            email: driverForm.email,
-            password: driverForm.password,
-            assigned_bus_id: driverForm.busId
-          }]);
-        }
-      } catch (_) {}
 
       toast.success(isEditDriverMode ? 'Driver Updated' : 'Driver Created', 'Driver account saved to Firestore.');
       setIsAddDriverOpen(false);
@@ -199,11 +180,6 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
 
     try {
       await deleteFirebaseDriver(id);
-      try {
-        await supabase.from('trips').delete().eq('driver_id', id);
-        await supabase.from('driver_credentials').delete().eq('id', id);
-      } catch (_) {}
-
       setRealDrivers(prev => prev.filter(d => d.id !== id));
       toast.success('Driver Deleted', `Driver "${name}" was removed from the roster.`);
       fetchDrivers();
@@ -224,9 +200,6 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
 
     try {
       await deleteFirebaseTrip(id);
-      try {
-        await supabase.from('trips').delete().eq('id', id);
-      } catch (_) {}
       toast.success('Trip Removed', 'The scheduled trip was cancelled and removed.');
       fetchTrips();
     } catch (err: any) {
@@ -246,15 +219,6 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
         driver_id: newTrip.driverId,
         status: 'Scheduled'
       });
-      try {
-        await supabase.from('trips').insert([{
-          id: tripId,
-          route_id: newTrip.routeId,
-          bus_id: newTrip.busId,
-          driver_id: newTrip.driverId,
-          status: 'Scheduled'
-        }]);
-      } catch (_) {}
       toast.success('Trip Scheduled', 'Route and bus have been successfully assigned.');
       setIsAddTripOpen(false);
       fetchTrips();
@@ -620,93 +584,6 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
           </div>
         </div>
       )}
-      {/* Supabase Postgres RLS Helper Modal */}
-      <Modal
-        isOpen={!!rlsModalInfo}
-        onClose={() => setRlsModalInfo(null)}
-        title="Supabase RLS Policy Required"
-        maxWidth="max-w-lg"
-      >
-        <div className="space-y-4">
-          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1.5">
-            <div className="flex items-center gap-2 font-bold text-amber-800">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>Row-Level Security (RLS) is Enabled in Supabase</span>
-            </div>
-            <p className="leading-relaxed">
-              Postgres blocked deleting driver <strong>{rlsModalInfo?.name}</strong> because table <code className="font-mono bg-amber-100/80 px-1 py-0.5 rounded">driver_credentials</code> has Row-Level Security enabled without a DELETE policy for anonymous clients.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <span className="text-xs font-bold text-slate-800 block">
-              Permanent Fix (Run once in Supabase SQL Editor):
-            </span>
-            <div className="bg-slate-900 text-slate-100 p-3 rounded-xl font-mono text-xs overflow-x-auto flex items-center justify-between gap-2">
-              <code className="text-emerald-300">ALTER TABLE public.driver_credentials DISABLE ROW LEVEL SECURITY;</code>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  navigator.clipboard.writeText('ALTER TABLE public.driver_credentials DISABLE ROW LEVEL SECURITY;');
-                  setCopiedSql(true);
-                  setTimeout(() => setCopiedSql(false), 2000);
-                  toast.success('SQL Copied to Clipboard!');
-                }}
-                className="text-slate-300 hover:text-white shrink-0 h-7 px-2.5 bg-slate-800 hover:bg-slate-700"
-                leftIcon={copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              >
-                {copiedSql ? 'Copied' : 'Copy SQL'}
-              </Button>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              Paste this in your Supabase Dashboard &rarr; <strong>SQL Editor</strong> &rarr; Click <strong>Run</strong>. Deletions from the dashboard will work immediately.
-            </p>
-          </div>
-
-          <div className="space-y-2 pt-2 border-t border-slate-100">
-            <span className="text-xs font-bold text-slate-800 block">
-              Or delete this driver row directly via SQL:
-            </span>
-            <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-mono text-[11px] text-slate-700 break-all select-all flex items-center justify-between gap-2">
-              <span>DELETE FROM public.driver_credentials WHERE id = '{rlsModalInfo?.id}';</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  if (rlsModalInfo) {
-                    navigator.clipboard.writeText(`DELETE FROM public.driver_credentials WHERE id = '${rlsModalInfo.id}';`);
-                    toast.success('Delete statement copied!');
-                  }
-                }}
-                className="shrink-0 h-6 px-2 text-xs"
-              >
-                Copy
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-            <Button variant="outline" size="sm" onClick={() => setRlsModalInfo(null)}>
-              Close
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                if (rlsModalInfo) {
-                  const targetId = rlsModalInfo.id;
-                  const targetName = rlsModalInfo.name;
-                  setRlsModalInfo(null);
-                  handleDeleteDriver(targetId, targetName);
-                }
-              }}
-            >
-              Retry Deletion
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 };

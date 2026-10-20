@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../../utils/supabaseClient';
 import { getFirebaseBuses, getFirebaseRoutes, getFirebaseDrivers, getFirebaseTrips } from '../../../utils/firebaseService';
 import { useApp } from '../../../context/AppContext';
 import {

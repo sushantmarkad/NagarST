@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../../utils/supabaseClient';
 import { getFirebaseBuses, saveFirebaseBus, deleteFirebaseBus } from '../../../utils/firebaseService';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { useApp } from '../../../context/AppContext';
@@ -144,77 +143,39 @@ export const AdminBuses: React.FC = () => {
     const busId = currentEditId || `bus-${Date.now()}`;
 
     try {
-      if (isEditMode && currentEditId) {
-        await supabase
-          .from('buses')
-          .update({
-            bus_number: busNumber,
-            plate_number: plateNumber,
-            capacity: parseInt(busForm.capacity.toString()),
-            type: busForm.type,
-            route_id: busForm.route_id || null,
-            status: busForm.status
-          })
-          .eq('id', currentEditId);
+      // 1. Persist directly to Firebase Firestore (Primary Database)
+      await saveFirebaseBus({
+        id: busId,
+        bus_number: busNumber,
+        plate_number: plateNumber,
+        capacity: Number(busForm.capacity),
+        type: busForm.type,
+        status: busForm.status,
+        route_id: busForm.route_id || undefined,
+        created_at: new Date().toISOString()
+      });
 
-        toast.success(`Bus ${busNumber} updated successfully!`);
-      } else {
-        await supabase
-          .from('buses')
-          .insert([{
-            id: busId,
-            bus_number: busNumber,
-            plate_number: plateNumber,
-            capacity: parseInt(busForm.capacity.toString()),
-            type: busForm.type,
-            route_id: busForm.route_id || null,
-            status: 'Active'
-          }]);
-
-        toast.success(`New bus ${busNumber} added to fleet!`);
-      }
-
-      // Also persist to Firebase Firestore
+      // Clear from deleted demo list if previously marked deleted
       try {
-        await saveFirebaseBus({
-          id: busId,
-          bus_number: busNumber,
-          plate_number: plateNumber,
-          capacity: Number(busForm.capacity),
-          type: busForm.type,
-          status: busForm.status,
-          route_id: busForm.route_id || undefined,
-          created_at: new Date().toISOString()
-        });
-      } catch (fbErr) {
-        console.warn('Firebase save bus notice:', fbErr);
-      }
-
-      // Also persist to localStorage backup
-      try {
-        const raw = localStorage.getItem('nagarst_custom_buses');
-        const list = raw ? JSON.parse(raw) : [];
-        const existingIdx = list.findIndex((b: any) => b.id === busId);
-        const item = {
-          id: busId,
-          busNumber,
-          plateNumber,
-          busType: busForm.type,
-          routeId: busForm.route_id,
-          status: busForm.status
-        };
-        if (existingIdx !== -1) {
-          list[existingIdx] = item;
-        } else {
-          list.push(item);
+        const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+        if (deletedRaw) {
+          const deletedIds: string[] = JSON.parse(deletedRaw);
+          const filtered = deletedIds.filter(id => 
+            id !== busId && id !== busNumber && id !== plateNumber &&
+            id !== busNumber.toUpperCase() && id !== plateNumber.toUpperCase() &&
+            id !== busNumber.replace(/\s+/g, '') && id !== plateNumber.replace(/\s+/g, '')
+          );
+          localStorage.setItem('nagarst_deleted_demo_buses', JSON.stringify(filtered));
         }
-        localStorage.setItem('nagarst_custom_buses', JSON.stringify(list));
       } catch (_) {}
+
+      toast.success(isEditMode ? `Bus ${busNumber} updated in Firestore!` : `New bus ${busNumber} saved to Firestore!`);
 
       setIsAddBusOpen(false);
       await fetchBuses();
       await refreshData();
     } catch (err: any) {
+      console.error('Error saving bus to Firestore:', err);
       toast.error(`Error saving bus: ${err.message}`);
     } finally {
       setIsSubmitting(false);
@@ -223,46 +184,19 @@ export const AdminBuses: React.FC = () => {
 
   const handleQuickAssignRoute = async (busId: string, newRouteId: string) => {
     try {
-      await supabase
-        .from('buses')
-        .update({ route_id: newRouteId || null })
-        .eq('id', busId);
-
-      // Update local storage backup
-      try {
-        const raw = localStorage.getItem('nagarst_custom_buses');
-        if (raw) {
-          const list = JSON.parse(raw);
-          const found = list.find((b: any) => b.id === busId || b.busNumber === busId);
-          if (found) {
-            found.routeId = newRouteId;
-            localStorage.setItem('nagarst_custom_buses', JSON.stringify(list));
-          }
-        }
-      } catch (_) {}
-
-      // Find the bus being updated
       const busObj = buses.find(b => b.id === busId);
       const busNumber = busObj?.bus_number || busId;
 
-      // Also assign in demoSimulatorEngine so the simulation runtime updates immediately!
-      if (newRouteId) {
-        setBusAssignedRoute(busNumber, newRouteId);
-        setBusAssignedRoute(busId, newRouteId);
-      }
-
-      // Update in Firebase Firestore
-      try {
-        await saveFirebaseBus({
-          id: busId,
-          bus_number: busNumber,
-          plate_number: busObj?.plate_number || busNumber,
-          capacity: busObj?.capacity || 35,
-          type: busObj?.type || 'Standard City',
-          status: busObj?.status || 'Active',
-          route_id: newRouteId || undefined
-        });
-      } catch (_) {}
+      // Update directly in Firebase Firestore
+      await saveFirebaseBus({
+        id: busId,
+        bus_number: busNumber,
+        plate_number: busObj?.plate_number || busNumber,
+        capacity: busObj?.capacity || 35,
+        type: busObj?.type || 'Standard City',
+        status: busObj?.status || 'Active',
+        route_id: newRouteId || undefined
+      });
 
       setBuses(prev => prev.map(b => b.id === busId ? { ...b, route_id: newRouteId } : b));
       const targetRoute = routes.find(r => r.id === newRouteId);
@@ -293,20 +227,6 @@ export const AdminBuses: React.FC = () => {
       if (busNumber !== busId) await deleteFirebaseBus(busNumber);
     } catch (fbErr) {
       console.warn('Firebase delete bus notice:', fbErr);
-    }
-
-    // 2. Delete dependent foreign-key records from Supabase
-    try {
-      await supabase.from('live_locations').delete().eq('bus_id', busId);
-      await supabase.from('trips').delete().eq('bus_id', busId);
-      await supabase.from('live_locations').delete().eq('bus_id', busNumber);
-      await supabase.from('trips').delete().eq('bus_id', busNumber);
-      const { error: dbError } = await supabase.from('buses').delete().eq('id', busId);
-      if (dbError) {
-        await supabase.from('buses').delete().eq('bus_number', busNumber);
-      }
-    } catch (err: any) {
-      console.warn('Supabase delete notice (proceeding with local purge):', err);
     }
 
     // 2. Add to nagarst_deleted_demo_buses in localStorage

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { saveFirebaseAnnouncement } from '../../../utils/firebaseService';
 import { type IncidentReport } from '../../../data/mockAdminData';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { Button, Badge, Modal } from '../../../components/ui';
@@ -115,34 +116,46 @@ export const AdminIncidentsAnnouncements: React.FC<Props> = ({ modeType = 'incid
     if (!announcementTitle || !announcementText) return;
 
     setIsPublishing(true);
+    const title = announcementTitle;
+    const text = announcementText;
+    const priority = announcementPriority;
+    const notifId = `notif-${Date.now()}`;
+
+    // 1. Save directly to Firebase Firestore
+    try {
+      saveFirebaseAnnouncement({
+        id: notifId,
+        title,
+        message: text,
+        priority,
+        created_at: new Date().toISOString()
+      }).catch(e => console.warn('Firebase announcement save warning:', e));
+    } catch (_) {}
+
+    // 2. Broadcast to user notifications in localStorage
+    try {
+      const savedNotifs = localStorage.getItem('nagarst_notifications');
+      const notifList = savedNotifs ? JSON.parse(savedNotifs) : [];
+      const newNotif = {
+        id: notifId,
+        title: title,
+        message: text,
+        time: 'Just now',
+        type: priority === 'critical' ? 'alert' : priority === 'warning' ? 'delay' : 'info',
+        unread: true
+      };
+      localStorage.setItem('nagarst_notifications', JSON.stringify([newNotif, ...notifList]));
+    } catch {}
+
     setTimeout(() => {
       setIsPublishing(false);
-      const title = announcementTitle;
-      const text = announcementText;
-      const priority = announcementPriority;
-
-      // Broadcast to user notifications
-      try {
-        const savedNotifs = localStorage.getItem('nagarst_notifications');
-        const notifList = savedNotifs ? JSON.parse(savedNotifs) : [];
-        const newNotif = {
-          id: `notif-${Date.now()}`,
-          title: title,
-          message: text,
-          time: 'Just now',
-          type: priority === 'critical' ? 'alert' : priority === 'warning' ? 'delay' : 'info',
-          unread: true
-        };
-        localStorage.setItem('nagarst_notifications', JSON.stringify([newNotif, ...notifList]));
-      } catch {}
-
       setAnnouncementTitle('');
       setAnnouncementText('');
       toast.success(
         'Public Alert Broadcast',
-        `"${title}" was transmitted to commuter apps and bus electronic displays.`
+        `"${title}" was transmitted to commuter apps, electronic displays, and saved to Firestore.`
       );
-    }, 900);
+    }, 400);
   };
 
   return (

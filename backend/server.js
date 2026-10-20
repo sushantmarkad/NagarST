@@ -35,15 +35,29 @@ try {
   console.warn('⚠️ Firebase optional initialization in backend:', fbInitErr.message);
 }
 
+function cleanFirestoreData(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(cleanFirestoreData);
+  if (typeof obj === 'object') {
+    const res = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== undefined) res[k] = cleanFirestoreData(v);
+    }
+    return res;
+  }
+  return obj;
+}
+
 async function syncToFirebaseLive(busPayload) {
   if (!fbDb || !busPayload) return;
   try {
     const id = busPayload.busId || busPayload.id;
     if (!id) return;
-    await setDoc(doc(fbDb, 'live_locations', id), {
+    const cleanData = cleanFirestoreData({
       ...busPayload,
       updated_at: new Date().toISOString()
-    }, { merge: true });
+    });
+    await setDoc(doc(fbDb, 'live_locations', id), cleanData, { merge: true });
   } catch (err) {
     // silently catch network latency
   }

@@ -12,6 +12,27 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebaseClient';
 
+/**
+ * Strips all undefined fields recursively to prevent Firestore 
+ * "Unsupported field value: undefined" errors when saving documents.
+ */
+export function cleanFirestoreData<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanFirestoreData(item)) as unknown as T;
+  }
+  if (typeof obj === 'object') {
+    const result: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        result[key] = cleanFirestoreData(value);
+      }
+    }
+    return result;
+  }
+  return obj;
+}
+
 export interface FirebaseRouteStop {
   stopId: string;
   stopName: string;
@@ -86,11 +107,12 @@ export async function getFirebaseRoutes(): Promise<FirebaseRoute[]> {
 
 export async function saveFirebaseRoute(route: FirebaseRoute): Promise<void> {
   const routeRef = doc(db, 'routes', route.id);
-  await setDoc(routeRef, {
+  const data = cleanFirestoreData({
     ...route,
     route_number: route.route_number || route.routeNumber,
     created_at: route.created_at || new Date().toISOString()
-  }, { merge: true });
+  });
+  await setDoc(routeRef, data, { merge: true });
 }
 
 export async function deleteFirebaseRoute(routeId: string): Promise<void> {
@@ -122,12 +144,13 @@ export async function getFirebaseBuses(): Promise<FirebaseBus[]> {
 
 export async function saveFirebaseBus(bus: FirebaseBus): Promise<void> {
   const busRef = doc(db, 'buses', bus.id);
-  await setDoc(busRef, {
+  const data = cleanFirestoreData({
     ...bus,
     bus_number: bus.bus_number || bus.busNumber,
     plate_number: bus.plate_number || bus.plateNumber,
     created_at: bus.created_at || new Date().toISOString()
-  }, { merge: true });
+  });
+  await setDoc(busRef, data, { merge: true });
 }
 
 export async function deleteFirebaseBus(busId: string): Promise<void> {
@@ -142,10 +165,11 @@ export async function deleteFirebaseBus(busId: string): Promise<void> {
 
 export async function updateFirebaseLiveLocation(loc: FirebaseLiveLocation): Promise<void> {
   const locRef = doc(db, 'live_locations', loc.bus_id);
-  await setDoc(locRef, {
+  const data = cleanFirestoreData({
     ...loc,
     updated_at: new Date().toISOString()
-  }, { merge: true });
+  });
+  await setDoc(locRef, data, { merge: true });
 }
 
 export function subscribeFirebaseLiveLocations(
@@ -198,14 +222,59 @@ export async function getFirebaseDrivers(): Promise<FirebaseDriver[]> {
 
 export async function saveFirebaseDriver(driver: FirebaseDriver): Promise<void> {
   const driverRef = doc(db, 'driver_credentials', driver.id);
-  await setDoc(driverRef, {
+  const data = cleanFirestoreData({
     ...driver,
     created_at: driver.created_at || new Date().toISOString()
-  }, { merge: true });
+  });
+  await setDoc(driverRef, data, { merge: true });
 }
 
 export async function deleteFirebaseDriver(driverId: string): Promise<void> {
   await deleteDoc(doc(db, 'driver_credentials', driverId));
+}
+
+// ==================== CONDUCTORS ====================
+
+export interface FirebaseConductor {
+  id: string;
+  full_name: string;
+  email: string;
+  phone?: string;
+  role?: string;
+  status?: string;
+  created_at?: string;
+}
+
+export async function getFirebaseConductors(): Promise<FirebaseConductor[]> {
+  try {
+    const q = collection(db, 'conductors');
+    const snapshot = await getDocs(q);
+    const conductors: FirebaseConductor[] = [];
+    snapshot.forEach(docSnap => {
+      conductors.push({
+        ...docSnap.data() as FirebaseConductor,
+        id: docSnap.id
+      });
+    });
+    return conductors;
+  } catch (err) {
+    console.warn('Firebase getFirebaseConductors fallback notice:', err);
+    return [];
+  }
+}
+
+export async function saveFirebaseConductor(conductor: FirebaseConductor): Promise<void> {
+  const condRef = doc(db, 'conductors', conductor.id);
+  const data = cleanFirestoreData({
+    ...conductor,
+    role: conductor.role || 'CONDUCTOR',
+    created_at: conductor.created_at || new Date().toISOString()
+  });
+  await setDoc(condRef, data, { merge: true });
+}
+
+export async function deleteFirebaseConductor(conductorId: string): Promise<void> {
+  await deleteDoc(doc(db, 'conductors', conductorId));
 }
 
 // ==================== TRIPS ====================
@@ -241,17 +310,92 @@ export async function getFirebaseTrips(): Promise<FirebaseTrip[]> {
 
 export async function saveFirebaseTrip(trip: FirebaseTrip): Promise<void> {
   const tripRef = doc(db, 'trips', trip.id);
-  await setDoc(tripRef, {
+  const data = cleanFirestoreData({
     ...trip,
     created_at: trip.created_at || new Date().toISOString()
-  }, { merge: true });
+  });
+  await setDoc(tripRef, data, { merge: true });
 }
 
 export async function deleteFirebaseTrip(tripId: string): Promise<void> {
   await deleteDoc(doc(db, 'trips', tripId));
 }
 
-// ==================== CLEANUP ====================
+// ==================== ANNOUNCEMENTS ====================
+
+export interface FirebaseAnnouncement {
+  id: string;
+  title: string;
+  message: string;
+  priority?: 'info' | 'warning' | 'critical';
+  created_at?: string;
+}
+
+export async function getFirebaseAnnouncements(): Promise<FirebaseAnnouncement[]> {
+  try {
+    const q = collection(db, 'announcements');
+    const snapshot = await getDocs(q);
+    const list: FirebaseAnnouncement[] = [];
+    snapshot.forEach(docSnap => {
+      list.push({
+        ...docSnap.data() as FirebaseAnnouncement,
+        id: docSnap.id
+      });
+    });
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+export async function saveFirebaseAnnouncement(item: FirebaseAnnouncement): Promise<void> {
+  const ref = doc(db, 'announcements', item.id);
+  const data = cleanFirestoreData({
+    ...item,
+    created_at: item.created_at || new Date().toISOString()
+  });
+  await setDoc(ref, data, { merge: true });
+}
+
+export async function deleteFirebaseAnnouncement(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'announcements', id));
+}
+
+// ==================== COUNTS & CLEANUP ====================
+
+export async function getFirebaseCounts(): Promise<{
+  buses: number;
+  routes: number;
+  drivers: number;
+  conductors: number;
+  trips: number;
+  liveLocations: number;
+  announcements: number;
+}> {
+  try {
+    const [busesSnap, routesSnap, driversSnap, condsSnap, tripsSnap, liveSnap, annSnap] = await Promise.all([
+      getDocs(collection(db, 'buses')).catch(() => ({ size: 0 })),
+      getDocs(collection(db, 'routes')).catch(() => ({ size: 0 })),
+      getDocs(collection(db, 'driver_credentials')).catch(() => ({ size: 0 })),
+      getDocs(collection(db, 'conductors')).catch(() => ({ size: 0 })),
+      getDocs(collection(db, 'trips')).catch(() => ({ size: 0 })),
+      getDocs(collection(db, 'live_locations')).catch(() => ({ size: 0 })),
+      getDocs(collection(db, 'announcements')).catch(() => ({ size: 0 }))
+    ]);
+
+    return {
+      buses: busesSnap.size || 0,
+      routes: routesSnap.size || 0,
+      drivers: driversSnap.size || 0,
+      conductors: condsSnap.size || 0,
+      trips: tripsSnap.size || 0,
+      liveLocations: liveSnap.size || 0,
+      announcements: annSnap.size || 0
+    };
+  } catch {
+    return { buses: 0, routes: 0, drivers: 0, conductors: 0, trips: 0, liveLocations: 0, announcements: 0 };
+  }
+}
 
 export async function clearFirebaseCollection(colName: string): Promise<void> {
   try {
@@ -263,4 +407,3 @@ export async function clearFirebaseCollection(colName: string): Promise<void> {
     console.warn(`Error clearing Firebase collection ${colName}:`, err);
   }
 }
-

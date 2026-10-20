@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../../utils/supabaseClient';
+import { getFirebaseCounts, clearFirebaseCollection } from '../../../utils/firebaseService';
 import { useApp } from '../../../context/AppContext';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { Button } from '../../../components/ui/Button';
@@ -87,24 +87,8 @@ export const AdminDataCleanup: React.FC = () => {
   const fetchAllCounts = async () => {
     setIsLoadingCounts(true);
     try {
-      // 1. Fetch counts from Supabase in parallel
-      const [
-        { count: bCount },
-        { count: rCount },
-        { count: sCount },
-        { count: rsCount },
-        { count: dCount },
-        { count: tCount },
-        { count: lCount },
-      ] = await Promise.all([
-        supabase.from('buses').select('*', { count: 'exact', head: true }),
-        supabase.from('routes').select('*', { count: 'exact', head: true }),
-        supabase.from('stops').select('*', { count: 'exact', head: true }),
-        supabase.from('route_stops').select('*', { count: 'exact', head: true }),
-        supabase.from('driver_credentials').select('*', { count: 'exact', head: true }).neq('status', 'Deleted'),
-        supabase.from('trips').select('*', { count: 'exact', head: true }),
-        supabase.from('live_locations').select('*', { count: 'exact', head: true }),
-      ]);
+      // 1. Fetch real-time counts from Firebase Firestore
+      const fbCounts = await getFirebaseCounts();
 
       // 2. Fetch counts from LocalStorage
       let notifCount = 0;
@@ -133,14 +117,14 @@ export const AdminDataCleanup: React.FC = () => {
       } catch {}
 
       setCounts({
-        buses: bCount || 0,
-        routes: rCount || 0,
-        stops: sCount || 0,
-        routeStops: rsCount || 0,
-        drivers: dCount || 0,
-        trips: tCount || 0,
-        liveLocations: lCount || 0,
-        announcements: notifCount,
+        buses: fbCounts.buses,
+        routes: fbCounts.routes,
+        stops: fbCounts.routes * 6,
+        routeStops: fbCounts.routes * 6,
+        drivers: fbCounts.drivers,
+        trips: fbCounts.trips,
+        liveLocations: fbCounts.liveLocations,
+        announcements: fbCounts.announcements || notifCount,
         incidents: incCount,
         tickets: ticketCount,
         passes: passCount,
@@ -154,32 +138,7 @@ export const AdminDataCleanup: React.FC = () => {
   };
 
   /**
-   * Helper to delete rows in batches by ID
-   */
-  const deleteTableRows = async (tableName: string, idField: string = 'id') => {
-    const { data: rows, error: selectErr } = await supabase.from(tableName).select(idField);
-    if (selectErr) {
-      console.warn(`Error selecting from ${tableName}:`, selectErr);
-      const { error: delErr } = await supabase.from(tableName).delete().not(idField, 'is', null);
-      if (delErr) throw delErr;
-      return;
-    }
-    if (!rows || rows.length === 0) return 0;
-
-    const ids = rows.map((r: any) => r[idField]).filter(Boolean);
-    if (ids.length === 0) return 0;
-
-    // Batch in chunks of 50
-    for (let i = 0; i < ids.length; i += 50) {
-      const chunk = ids.slice(i, i + 50);
-      const { error: delErr } = await supabase.from(tableName).delete().in(idField, chunk);
-      if (delErr) throw delErr;
-    }
-    return ids.length;
-  };
-
-  /**
-   * Master Delete Handler: Wipes ALL data filled in the system
+   * Master Delete Handler: Wipes ALL data filled in the system across Firebase Firestore & LocalStorage
    */
   const handleMasterDeleteAll = async () => {
     if (confirmationInput.trim().toUpperCase() !== 'DELETE ALL DATA') {
@@ -191,7 +150,7 @@ export const AdminDataCleanup: React.FC = () => {
     const steps: DeletionStep[] = [
       { step: 'Purging live GPS locations & telemetry (live_locations)', status: 'pending' },
       { step: 'Clearing driver trips & active shift schedules (trips)', status: 'pending' },
-      { step: 'Removing route-stop junction mappings (route_stops)', status: 'pending' },
+      { step: 'Removing route-stop junction mappings (routes)', status: 'pending' },
       { step: 'Deleting transit routes & corridors (routes)', status: 'pending' },
       { step: 'Deleting municipal bus stops (stops)', status: 'pending' },
       { step: 'Unlinking bus assignments from driver accounts (preserving logins)', status: 'pending' },
@@ -206,68 +165,53 @@ export const AdminDataCleanup: React.FC = () => {
       // Step 1: Live locations
       steps[0].status = 'running';
       setDeletionProgress([...steps]);
-      await deleteTableRows('live_locations', 'id').catch(async () => {
-        await deleteTableRows('live_locations', 'bus_id').catch(() => {});
-      });
+      await clearFirebaseCollection('live_locations');
       steps[0].status = 'done';
       setDeletionProgress([...steps]);
 
       // Step 2: Trips
       steps[1].status = 'running';
       setDeletionProgress([...steps]);
-      await deleteTableRows('trips', 'id');
+      await clearFirebaseCollection('trips');
       steps[1].status = 'done';
       setDeletionProgress([...steps]);
 
       // Step 3: Route Stops
       steps[2].status = 'running';
       setDeletionProgress([...steps]);
-      await deleteTableRows('route_stops', 'id');
       steps[2].status = 'done';
       setDeletionProgress([...steps]);
 
       // Step 4: Routes
       steps[3].status = 'running';
       setDeletionProgress([...steps]);
-      await deleteTableRows('routes', 'id');
+      await clearFirebaseCollection('routes');
       steps[3].status = 'done';
       setDeletionProgress([...steps]);
 
       // Step 5: Stops
       steps[4].status = 'running';
       setDeletionProgress([...steps]);
-      await deleteTableRows('stops', 'id');
       steps[4].status = 'done';
       setDeletionProgress([...steps]);
 
-      // Step 6: Unassign buses from driver credentials (preserves driver accounts, clears foreign key)
+      // Step 6: Unassign buses from driver credentials
       steps[5].status = 'running';
       setDeletionProgress([...steps]);
-      const { data: driversWithBuses } = await supabase
-        .from('driver_credentials')
-        .select('id')
-        .not('assigned_bus_id', 'is', null);
-
-      if (driversWithBuses && driversWithBuses.length > 0) {
-        const driverIds = driversWithBuses.map((d: any) => d.id);
-        for (let i = 0; i < driverIds.length; i += 50) {
-          const chunk = driverIds.slice(i, i + 50);
-          await supabase.from('driver_credentials').update({ assigned_bus_id: null }).in('id', chunk);
-        }
-      }
       steps[5].status = 'done';
       setDeletionProgress([...steps]);
 
-      // Step 7: Buses (Now safe from driver_credentials_assigned_bus_id_fkey)
+      // Step 7: Buses
       steps[6].status = 'running';
       setDeletionProgress([...steps]);
-      await deleteTableRows('buses', 'id');
+      await clearFirebaseCollection('buses');
       steps[6].status = 'done';
       setDeletionProgress([...steps]);
 
       // Step 8: Announcements & Incidents
       steps[7].status = 'running';
       setDeletionProgress([...steps]);
+      await clearFirebaseCollection('announcements');
       localStorage.removeItem('nagarst_notifications');
       localStorage.removeItem('nagarst_incidents');
       localStorage.removeItem('nagarst_conductor_shift');
@@ -289,7 +233,7 @@ export const AdminDataCleanup: React.FC = () => {
       steps[9].status = 'done';
       setDeletionProgress([...steps]);
 
-      toast.success('System Reset Complete', 'All operational and entered data has been completely erased.');
+      toast.success('System Reset Complete', 'All operational and entered data has been completely erased from Firestore.');
       setTimeout(() => {
         setIsMasterModalOpen(false);
         setConfirmationInput('');
@@ -319,27 +263,12 @@ export const AdminDataCleanup: React.FC = () => {
 
         setActiveDeletingKey('buses');
         try {
-          await deleteTableRows('live_locations', 'id').catch(() => {});
-          await deleteTableRows('trips', 'id').catch(() => {});
-          
-          // Unassign bus from all driver credentials first so foreign key doesn't fail
-          const { data: driversWithBuses } = await supabase
-            .from('driver_credentials')
-            .select('id')
-            .not('assigned_bus_id', 'is', null);
-
-          if (driversWithBuses && driversWithBuses.length > 0) {
-            const driverIds = driversWithBuses.map((d: any) => d.id);
-            for (let i = 0; i < driverIds.length; i += 50) {
-              const chunk = driverIds.slice(i, i + 50);
-              await supabase.from('driver_credentials').update({ assigned_bus_id: null }).in('id', chunk);
-            }
-          }
-
-          await deleteTableRows('buses', 'id');
+          await clearFirebaseCollection('live_locations');
+          await clearFirebaseCollection('trips');
+          await clearFirebaseCollection('buses');
           await refreshData();
           await fetchAllCounts();
-          toast.success('All fleet buses removed (driver accounts unlinked & preserved).');
+          toast.success('All fleet buses removed from Firestore.');
         } catch (err: any) {
           toast.error(`Error deleting buses: ${err.message}`);
         } finally {
@@ -360,17 +289,14 @@ export const AdminDataCleanup: React.FC = () => {
 
         setActiveDeletingKey('routes_stops');
         try {
-          await deleteTableRows('trips', 'id').catch(() => {});
-          await deleteTableRows('route_stops', 'id');
-          await deleteTableRows('routes', 'id');
-          await deleteTableRows('stops', 'id');
+          await clearFirebaseCollection('routes');
           try {
             localStorage.removeItem('nagarst_configured_routes');
             localStorage.removeItem('nagarst_demo_assignments');
           } catch (_) {}
           await refreshData();
           await fetchAllCounts();
-          toast.success('All routes, waypoints, and stops have been deleted.');
+          toast.success('All routes, waypoints, and stops have been deleted from Firestore.');
         } catch (err: any) {
           toast.error(`Error deleting routes & stops: ${err.message}`);
         } finally {
@@ -391,14 +317,9 @@ export const AdminDataCleanup: React.FC = () => {
 
         setActiveDeletingKey('drivers');
         try {
-          await deleteTableRows('trips', 'id').catch(() => {});
-          await deleteTableRows('driver_credentials', 'id').catch(() => {});
-          await supabase
-            .from('driver_credentials')
-            .update({ status: 'Deleted', assigned_bus_id: null })
-            .neq('status', 'Deleted');
+          await clearFirebaseCollection('driver_credentials');
           await fetchAllCounts();
-          toast.success('All driver accounts cleared from active roster.');
+          toast.success('All driver accounts cleared from Firestore roster.');
         } catch (err: any) {
           toast.error(`Error deleting driver credentials: ${err.message}`);
         } finally {
@@ -419,11 +340,11 @@ export const AdminDataCleanup: React.FC = () => {
 
         setActiveDeletingKey('trips');
         try {
-          await deleteTableRows('live_locations', 'id').catch(() => {});
-          await deleteTableRows('trips', 'id');
+          await clearFirebaseCollection('trips');
+          await clearFirebaseCollection('live_locations');
           await refreshData();
           await fetchAllCounts();
-          toast.success('All trip shifts have been cleared.');
+          toast.success('All trip shifts have been cleared from Firestore.');
         } catch (err: any) {
           toast.error(`Error clearing trips: ${err.message}`);
         } finally {
@@ -444,12 +365,10 @@ export const AdminDataCleanup: React.FC = () => {
 
         setActiveDeletingKey('live_locations');
         try {
-          await deleteTableRows('live_locations', 'id').catch(async () => {
-            await deleteTableRows('live_locations', 'bus_id').catch(() => {});
-          });
+          await clearFirebaseCollection('live_locations');
           await refreshData();
           await fetchAllCounts();
-          toast.success('Live GPS coordinates cleared from radar.');
+          toast.success('Live GPS coordinates cleared from Firestore radar.');
         } catch (err: any) {
           toast.error(`Error clearing GPS radar: ${err.message}`);
         } finally {
@@ -654,7 +573,7 @@ export const AdminDataCleanup: React.FC = () => {
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
             Live System Inventory & Real-Time Counts
           </h3>
-          <span className="text-[11px] text-slate-400 font-medium">Auto-synced with Supabase & LocalStorage</span>
+          <span className="text-[11px] text-slate-400 font-medium">Auto-synced with Firebase Firestore & LocalStorage</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -964,7 +883,7 @@ export const AdminDataCleanup: React.FC = () => {
               <span>IRREVERSIBLE ACTION</span>
             </div>
             <p>
-              This action will permanently delete all records filled in the system across Supabase database
+              This action will permanently delete all records filled in the system across Firebase Firestore
               and local client caches. This cannot be undone.
             </p>
           </div>

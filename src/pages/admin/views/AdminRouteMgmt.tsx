@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../../utils/supabaseClient';
-import { getFirebaseRoutes, saveFirebaseRoute, deleteFirebaseRoute } from '../../../utils/firebaseService';
+import { getFirebaseRoutes, saveFirebaseRoute, deleteFirebaseRoute, clearFirebaseCollection } from '../../../utils/firebaseService';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Polyline, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -101,131 +100,23 @@ export const AdminRouteMgmt: React.FC = () => {
     setCreationStep('idle');
     setCreationPins({});
     
-    // Fetch stops for route
-    try {
-      const { data } = await supabase
-        .from('route_stops')
-        .select(`
-          id,
-          stop_order,
-          estimated_minutes_from_origin,
-          stops (
-            id,
-            stop_name,
-            lat,
-            lng
-          )
-        `)
-        .eq('route_id', route.id)
-        .order('stop_order', { ascending: true });
-      
-      let resolvedStops: any[] = [];
-      if (data && data.length > 0) {
-        resolvedStops = [...data];
-      } else if (route.stops && route.stops.length > 0) {
-        // Format from route object
-        resolvedStops = route.stops.map((s: any, idx: number) => ({
-          id: s.id || `stop-${idx}`,
-          stop_order: s.sequence || idx + 1,
-          estimated_minutes_from_origin: s.estimatedMinutesFromOrigin || idx * 5,
-          stops: {
-            id: s.stopId || s.id || `stop-${idx}`,
-            stop_name: s.stopName || s.name,
-            lat: s.lat,
-            lng: s.lng
-          }
-        }));
-      }
-
-      // If destination terminal was accidentally displaced before the last stop by an earlier stop addition,
-      // re-anchor the destination stop strictly to the end!
-      if (route.destination && resolvedStops.length > 2) {
-        const destNorm = route.destination.trim().toLowerCase();
-        const lastStopName = (resolvedStops[resolvedStops.length - 1]?.stops?.stop_name || '').trim().toLowerCase();
-        const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
-        if (!isMatch(lastStopName, destNorm)) {
-          const destIdx = resolvedStops.findIndex(s => isMatch((s.stops?.stop_name || '').trim().toLowerCase(), destNorm));
-          if (destIdx !== -1 && destIdx < resolvedStops.length - 1) {
-            const destStop = resolvedStops.splice(destIdx, 1)[0];
-            resolvedStops.push(destStop);
-            resolvedStops.forEach((s, idx) => {
-              s.stop_order = idx + 1;
-              s.estimated_minutes_from_origin = idx * 4;
-            });
-
-            // Persist the corrected stop order into route_stops and re-calculate route_path
-            try {
-              for (const st of resolvedStops) {
-                if (st.id) {
-                  await supabase.from('route_stops').update({
-                    stop_order: st.stop_order,
-                    estimated_minutes_from_origin: st.estimated_minutes_from_origin
-                  }).eq('id', st.id);
-                }
-              }
-              const correctedPath = await fetchOSRMRoute(resolvedStops.map(s => ({ lat: s.stops.lat, lng: s.stops.lng })));
-              if (correctedPath.length >= 2) {
-                await supabase.from('routes').update({ route_path: correctedPath }).eq('id', route.id);
-                route.route_path = correctedPath;
-              }
-            } catch (_) {}
-          }
+    // Resolve stops directly from Firestore route object
+    let resolvedStops: any[] = [];
+    if (route.stops && route.stops.length > 0) {
+      resolvedStops = route.stops.map((s: any, idx: number) => ({
+        id: s.id || s.stopId || `stop-${idx}`,
+        stop_order: s.sequence || idx + 1,
+        estimated_minutes_from_origin: s.estimatedMinutesFromOrigin || idx * 5,
+        stops: {
+          id: s.stopId || s.id || `stop-${idx}`,
+          stop_name: s.stopName || s.name,
+          lat: s.lat,
+          lng: s.lng
         }
-      }
-
-      route.stops = resolvedStops.map((s, idx) => ({
-        stopId: s.stops?.id || s.id,
-        stopName: s.stops?.stop_name,
-        lat: s.stops?.lat,
-        lng: s.stops?.lng,
-        sequence: idx + 1,
-        estimatedMinutesFromOrigin: idx * 4
       }));
-
-      setSelectedRoute({ ...route });
-      setStops(resolvedStops);
-    } catch {
-      if (route.stops) {
-        const fallbackStops = route.stops.map((s: any, idx: number) => ({
-          id: s.id || `stop-${idx}`,
-          stop_order: s.sequence || idx + 1,
-          estimated_minutes_from_origin: s.estimatedMinutesFromOrigin || idx * 5,
-          stops: {
-            id: s.stopId || s.id || `stop-${idx}`,
-            stop_name: s.stopName || s.name,
-            lat: s.lat,
-            lng: s.lng
-          }
-        }));
-
-        if (route.destination && fallbackStops.length > 2) {
-          const destNorm = route.destination.trim().toLowerCase();
-          const lastStopName = (fallbackStops[fallbackStops.length - 1]?.stops?.stop_name || '').trim().toLowerCase();
-          const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
-          if (!isMatch(lastStopName, destNorm)) {
-            const destIdx = fallbackStops.findIndex((s: any) => isMatch((s.stops?.stop_name || '').trim().toLowerCase(), destNorm));
-            if (destIdx !== -1 && destIdx < fallbackStops.length - 1) {
-              const destStop = fallbackStops.splice(destIdx, 1)[0];
-              fallbackStops.push(destStop);
-              fallbackStops.forEach((s: any, idx: number) => {
-                s.stop_order = idx + 1;
-                s.estimated_minutes_from_origin = idx * 4;
-              });
-            }
-          }
-        }
-        route.stops = fallbackStops.map((s: any, idx: number) => ({
-          stopId: s.stops?.id || s.id,
-          stopName: s.stops?.stop_name,
-          lat: s.stops?.lat,
-          lng: s.stops?.lng,
-          sequence: idx + 1,
-          estimatedMinutesFromOrigin: idx * 4
-        }));
-        setSelectedRoute({ ...route });
-        setStops(fallbackStops);
-      }
     }
+
+    setStops(resolvedStops);
   };
 
   const handleCreateRoute = async (e: React.FormEvent) => {
@@ -263,44 +154,9 @@ export const AdminRouteMgmt: React.FC = () => {
       ];
     }
 
-    let finalRouteId = routeId;
+    const finalRouteId = routeId;
 
-    // Insert into Supabase (omit id to let Supabase generate a valid UUID)
-    try {
-      const { data: routeData, error } = await supabase.from('routes').insert([{
-        route_number: routeNum,
-        origin: originName,
-        destination: destName,
-        route_path: roadPath
-      }]).select().single();
-
-      if (!error && routeData) {
-        finalRouteId = routeData.id;
-        // Insert origin and dest stops
-        const { data: oStop } = await supabase.from('stops').insert([{
-          stop_name: originName,
-          lat: originCoords.lat,
-          lng: originCoords.lng,
-          location: `POINT(${originCoords.lng} ${originCoords.lat})`
-        }]).select().single();
-        if (oStop) originStopId = oStop.id;
-
-        const { data: dStop } = await supabase.from('stops').insert([{
-          stop_name: destName,
-          lat: destCoords.lat,
-          lng: destCoords.lng,
-          location: `POINT(${destCoords.lng} ${destCoords.lat})`
-        }]).select().single();
-        if (dStop) destStopId = dStop.id;
-
-        await supabase.from('route_stops').insert([
-          { route_id: finalRouteId, stop_id: originStopId, stop_order: 1, estimated_minutes_from_origin: 0 },
-          { route_id: finalRouteId, stop_id: destStopId, stop_order: 2, estimated_minutes_from_origin: 25 }
-        ]);
-      }
-    } catch (_) {}
-
-    // Save also into local configured routes
+    // Save directly into configured routes
     const newRouteObj = {
       id: finalRouteId,
       routeNumber: routeNum,
@@ -316,11 +172,12 @@ export const AdminRouteMgmt: React.FC = () => {
       ]
     };
 
-    // Save also to Firebase Firestore
+    // Save directly to Firebase Firestore
     try {
       await saveFirebaseRoute(newRouteObj);
-    } catch (fbErr) {
-      console.warn('Firebase save route notice:', fbErr);
+    } catch (fbErr: any) {
+      console.error('Firebase save route error:', fbErr);
+      toast.error('Failed saving route to Firestore: ' + fbErr.message);
     }
 
     const updatedRoutes = [newRouteObj, ...routes.filter(r => r.id !== finalRouteId && r.id !== routeId)];
@@ -333,7 +190,7 @@ export const AdminRouteMgmt: React.FC = () => {
     ]);
 
     setIsCalculatingPath(false);
-    toast.success(`Route ${routeNum} created with real road path and terminal anchors!`, 'Route Created');
+    toast.success(`Route ${routeNum} created in Firestore!`, 'Route Created');
     setCreationStep('idle');
     setCreationPins({});
     setNewRoute({ routeNumber: '', origin: '', destination: '', name: '', color: '#7847CB' });
@@ -368,19 +225,17 @@ export const AdminRouteMgmt: React.FC = () => {
     };
 
     try {
-      await supabase.from('routes').update({
-        route_number: updated.route_number,
-        origin: updated.origin,
-        destination: updated.destination
-      }).eq('id', selectedRoute.id);
-    } catch (_) {}
+      await saveFirebaseRoute(updated);
+    } catch (fbErr: any) {
+      console.error('Firebase save route edit error:', fbErr);
+    }
 
     const updatedList = routes.map(r => r.id === selectedRoute.id ? updated : r);
     setRoutes(updatedList);
     setSelectedRoute(updated);
     syncLocalBackup(updatedList);
     setIsEditRouteOpen(false);
-    toast.success(`Route ${updated.routeNumber} details updated!`);
+    toast.success(`Route ${updated.routeNumber} details updated in Firestore!`);
     await refreshData();
   };
 
@@ -493,46 +348,8 @@ export const AdminRouteMgmt: React.FC = () => {
       path = updatedStops.map(s => ({ lat: s.stops.lat, lng: s.stops.lng }));
     }
 
-    try {
-      // 1. Create stop in DB
-      const { data: stopData } = await supabase.from('stops').insert([{
-        stop_name: newStopName.trim(),
-        lat: addingStopLoc.lat,
-        lng: addingStopLoc.lng,
-        location: `POINT(${addingStopLoc.lng} ${addingStopLoc.lat})`
-      }]).select().single();
-
-      const createdStopId = stopData?.id || stopId;
-      newStopItem.stops.id = createdStopId;
-
-      // 2. Link to route_stops at computed intermediate stop_order
-      const { data: rsRow } = await supabase.from('route_stops').insert([{
-        route_id: selectedRoute.id,
-        stop_id: createdStopId,
-        stop_order: insertIndex + 1,
-        estimated_minutes_from_origin: insertIndex * 4
-      }]).select().single();
-
-      if (rsRow?.id) {
-        newStopItem.id = rsRow.id;
-      }
-
-      // 3. Update stop_order for all subsequent stops in route_stops
-      for (let i = 0; i < updatedStops.length; i++) {
-        const st = updatedStops[i];
-        if (st.id && st.id !== newStopItem.id) {
-          await supabase.from('route_stops').update({
-            stop_order: st.stop_order,
-            estimated_minutes_from_origin: st.estimated_minutes_from_origin
-          }).eq('id', st.id);
-        }
-      }
-
-      // 4. Update route_path in routes table
-      await supabase.from('routes').update({ route_path: path }).eq('id', selectedRoute.id);
-    } catch (err) {
-      console.warn('DB update error in saveNewStop:', err);
-    }
+    const createdStopId = stopId;
+    newStopItem.stops.id = createdStopId;
 
     const updatedRouteObj = {
       ...selectedRoute,
@@ -550,8 +367,8 @@ export const AdminRouteMgmt: React.FC = () => {
     // Save to Firebase Firestore
     try {
       await saveFirebaseRoute(updatedRouteObj);
-    } catch (fbErr) {
-      console.warn('Firebase save updated route stops notice:', fbErr);
+    } catch (fbErr: any) {
+      console.error('Firebase save updated route stops notice:', fbErr);
     }
 
     const updatedList = routes.map(r => r.id === selectedRoute.id ? updatedRouteObj : r);
@@ -563,7 +380,7 @@ export const AdminRouteMgmt: React.FC = () => {
     setAddingStopLoc(null);
     setNewStopName('');
     setIsCalculatingPath(false);
-    toast.success(`Stop "${newStopName}" added between terminals and snapped along road!`);
+    toast.success(`Stop "${newStopName}" added to route in Firestore!`);
     await refreshData();
   };
 
@@ -596,17 +413,6 @@ export const AdminRouteMgmt: React.FC = () => {
       path = reordered.map(s => ({ lat: s.stops.lat, lng: s.stops.lng }));
     }
 
-    try {
-      // Update route_stops orders in DB
-      for (const st of reordered) {
-        await supabase.from('route_stops').update({
-          stop_order: st.stop_order,
-          estimated_minutes_from_origin: st.estimated_minutes_from_origin
-        }).eq('id', st.id);
-      }
-      await supabase.from('routes').update({ route_path: path }).eq('id', selectedRoute.id);
-    } catch (_) {}
-
     const updatedRouteObj = {
       ...selectedRoute,
       route_path: path,
@@ -623,7 +429,9 @@ export const AdminRouteMgmt: React.FC = () => {
     // Save to Firebase Firestore
     try {
       await saveFirebaseRoute(updatedRouteObj);
-    } catch (_) {}
+    } catch (fbErr: any) {
+      console.error('Firebase save reordered route error:', fbErr);
+    }
 
     const updatedList = routes.map(r => r.id === selectedRoute.id ? updatedRouteObj : r);
     setRoutes(updatedList);
@@ -632,19 +440,13 @@ export const AdminRouteMgmt: React.FC = () => {
     syncLocalBackup(updatedList);
 
     setIsCalculatingPath(false);
-    toast.success('Stops reordered! Road route snapped to new stop order.');
+    toast.success('Stops reordered and saved to Firestore!');
     await refreshData();
   };
 
   // Edit Stop Name
   const handleSaveStopName = async () => {
     if (!editingStop || !editingStop.name.trim() || !selectedRoute) return;
-
-    try {
-      await supabase.from('stops').update({
-        stop_name: editingStop.name.trim()
-      }).eq('id', editingStop.stopId);
-    } catch (_) {}
 
     const updatedStops = stops.map(s => {
       if (s.id === editingStop.routeStopId) {
@@ -656,9 +458,29 @@ export const AdminRouteMgmt: React.FC = () => {
       return s;
     });
 
+    const updatedRouteObj = {
+      ...selectedRoute,
+      stops: updatedStops.map((s, i) => ({
+        stopId: s.stops.id,
+        stopName: s.stops.stop_name,
+        lat: s.stops.lat,
+        lng: s.stops.lng,
+        sequence: i + 1,
+        estimatedMinutesFromOrigin: i * 4
+      }))
+    };
+
+    try {
+      await saveFirebaseRoute(updatedRouteObj);
+    } catch (fbErr: any) {
+      console.error('Firebase save stop name error:', fbErr);
+    }
+
     setStops(updatedStops);
+    setSelectedRoute(updatedRouteObj);
+    setRoutes(prev => prev.map(r => r.id === selectedRoute.id ? updatedRouteObj : r));
     setEditingStop(null);
-    toast.success('Stop name updated.');
+    toast.success('Stop name updated in Firestore.');
     await refreshData();
   };
 
@@ -681,10 +503,6 @@ export const AdminRouteMgmt: React.FC = () => {
     if (!isConfirmed) return;
 
     setIsCalculatingPath(true);
-    try {
-      await supabase.from('route_stops').delete().eq('id', routeStopId);
-    } catch (_) {}
-    
     const remainingStops = stops.filter(s => s.id !== routeStopId);
     let path: { lat: number; lng: number }[] = [];
     if (remainingStops.length >= 2) {
@@ -695,10 +513,6 @@ export const AdminRouteMgmt: React.FC = () => {
         path = remainingStops.map(s => ({ lat: s.stops.lat, lng: s.stops.lng }));
       }
     }
-
-    try {
-      await supabase.from('routes').update({ route_path: path }).eq('id', selectedRoute.id);
-    } catch (_) {}
 
     const updatedRouteObj = {
       ...selectedRoute,
@@ -716,7 +530,9 @@ export const AdminRouteMgmt: React.FC = () => {
     // Save to Firebase Firestore
     try {
       await saveFirebaseRoute(updatedRouteObj);
-    } catch (_) {}
+    } catch (fbErr: any) {
+      console.error('Firebase save remove stop error:', fbErr);
+    }
 
     const updatedList = routes.map(r => r.id === selectedRoute.id ? updatedRouteObj : r);
     setRoutes(updatedList);
@@ -725,7 +541,7 @@ export const AdminRouteMgmt: React.FC = () => {
     syncLocalBackup(updatedList);
 
     setIsCalculatingPath(false);
-    toast.info(`Stop removed from route.`);
+    toast.info(`Stop removed from route in Firestore.`);
     await refreshData();
   };
 
@@ -742,27 +558,9 @@ export const AdminRouteMgmt: React.FC = () => {
     // Delete from Firebase Firestore
     try {
       await deleteFirebaseRoute(routeId);
-    } catch (fbErr) {
+    } catch (fbErr: any) {
       console.warn('Firebase delete route notice:', fbErr);
     }
-
-    try {
-      // Find stops belonging to this route before deleting route_stops
-      const { data: routeStopRows } = await supabase.from('route_stops').select('stop_id').eq('route_id', routeId);
-      const stopIds = (routeStopRows || []).map((r: any) => r.stop_id).filter(Boolean);
-
-      await supabase.from('trips').delete().eq('route_id', routeId);
-      await supabase.from('route_stops').delete().eq('route_id', routeId);
-      await supabase.from('routes').delete().eq('id', routeId);
-
-      // Permanently remove any orphaned stops not used by any remaining route
-      for (const sId of stopIds) {
-        const { count } = await supabase.from('route_stops').select('*', { count: 'exact', head: true }).eq('stop_id', sId);
-        if (!count || count === 0) {
-          await supabase.from('stops').delete().eq('id', sId);
-        }
-      }
-    } catch (_) {}
 
     const updatedList = routes.filter(r => r.id !== routeId && r.routeNumber !== routeNumber && r.route_number !== routeNumber);
     setRoutes(updatedList);
@@ -787,7 +585,7 @@ export const AdminRouteMgmt: React.FC = () => {
       }
     } catch (_) {}
 
-    toast.success(`Route ${routeNumber} deleted.`);
+    toast.success(`Route ${routeNumber} deleted from Firestore.`);
     await refreshData();
   };
 
@@ -801,11 +599,10 @@ export const AdminRouteMgmt: React.FC = () => {
     if (!isConfirmed) return;
 
     try {
-      await supabase.from('trips').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('route_stops').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('routes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('stops').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    } catch (_) {}
+      await clearFirebaseCollection('routes');
+    } catch (err: any) {
+      console.error('Firebase clear routes error:', err);
+    }
 
     try {
       localStorage.removeItem('nagarst_configured_routes');
@@ -816,7 +613,7 @@ export const AdminRouteMgmt: React.FC = () => {
     syncLocalBackup([]);
     setSelectedRoute(null);
     setStops([]);
-    toast.success('All routes deleted.');
+    toast.success('All routes deleted from Firestore.');
     await refreshData();
   };
 

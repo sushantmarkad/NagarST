@@ -1,8 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast, useConfirm } from '../../context/FeedbackContext';
-import { supabase } from '../../utils/supabaseClient';
-import { updateFirebaseLiveLocation, getFirebaseBuses, getFirebaseRoutes } from '../../utils/firebaseService';
+import {
+  updateFirebaseLiveLocation,
+  getFirebaseBuses,
+  getFirebaseRoutes,
+  getFirebaseTrips,
+  saveFirebaseTrip
+} from '../../utils/firebaseService';
+import { db } from '../../utils/firebaseClient';
+import { doc, deleteDoc } from 'firebase/firestore';
 import {
   Navigation,
   AlertTriangle,
@@ -129,19 +136,29 @@ export const DriverDashboard: React.FC = () => {
 
   const fetchSchedules = useCallback(async () => {
     if (!user?.id) return;
-    const { data } = await supabase
-      .from('trips')
-      .select(`
-        id,
-        status,
-        start_time,
-        routes (id, route_number, origin, destination),
-        buses (id, bus_number, plate_number)
-      `)
-      .eq('driver_id', user.id)
-      .order('created_at', { ascending: false });
-    
-    if (data) setDriverSchedules(data);
+    try {
+      const [allTrips, allRoutes, allBuses] = await Promise.all([
+        getFirebaseTrips(),
+        getFirebaseRoutes(),
+        getFirebaseBuses()
+      ]);
+      const myTrips = allTrips
+        .filter(t => t.driver_id === user.id)
+        .map(t => {
+          const r = allRoutes.find(x => x.id === t.route_id);
+          const b = allBuses.find(x => x.id === t.bus_id);
+          return {
+            id: t.id,
+            status: t.status || 'Scheduled',
+            start_time: t.start_time || new Date().toISOString(),
+            routes: r ? { id: r.id, route_number: r.route_number || r.routeNumber, origin: r.origin, destination: r.destination } : null,
+            buses: b ? { id: b.id, bus_number: b.bus_number || b.busNumber, plate_number: b.plate_number || b.plateNumber } : null
+          };
+        });
+      setDriverSchedules(myTrips);
+    } catch (_) {
+      setDriverSchedules([]);
+    }
   }, [user?.id]);
 
   useEffect(() => {
@@ -180,24 +197,41 @@ export const DriverDashboard: React.FC = () => {
   }, [user?.assignedBusId, fetchInitialData, fetchSchedules, toast]);
 
   const fetchRouteStops = useCallback(async (routeId: string) => {
-    const { data } = await supabase
-      .from('route_stops')
-      .select(`
-        id,
-        stop_order,
-        estimated_minutes_from_origin,
-        stops (
-          id,
-          stop_name,
-          lat,
-          lng
-        )
-      `)
-      .eq('route_id', routeId)
-      .order('stop_order', { ascending: true });
-    
-    if (data) setTripStops(data);
-  }, []);
+    const route = availableRoutes.find(r => r.id === routeId);
+    if (route && route.stops && route.stops.length > 0) {
+      const formatted = route.stops.map((s: any, idx: number) => ({
+        id: s.stopId || s.id || `stop-${idx}`,
+        stop_order: s.sequence || idx + 1,
+        estimated_minutes_from_origin: s.estimatedMinutesFromOrigin || idx * 4,
+        stops: {
+          id: s.stopId || s.id || `stop-${idx}`,
+          stop_name: s.stopName || s.name,
+          lat: s.lat,
+          lng: s.lng
+        }
+      }));
+      setTripStops(formatted);
+      return;
+    }
+    try {
+      const allRoutes = await getFirebaseRoutes();
+      const match = allRoutes.find(r => r.id === routeId);
+      if (match && match.stops) {
+        const formatted = match.stops.map((s: any, idx: number) => ({
+          id: s.stopId || s.id || `stop-${idx}`,
+          stop_order: s.sequence || idx + 1,
+          estimated_minutes_from_origin: s.estimatedMinutesFromOrigin || idx * 4,
+          stops: {
+            id: s.stopId || s.id || `stop-${idx}`,
+            stop_name: s.stopName || s.name,
+            lat: s.lat,
+            lng: s.lng
+          }
+        }));
+        setTripStops(formatted);
+      }
+    } catch (_) {}
+  }, [availableRoutes]);
 
   // Fetch stops when route changes
   useEffect(() => {
@@ -293,20 +327,6 @@ export const DriverDashboard: React.FC = () => {
         }).catch(() => {});
       } catch (_) {}
 
-      // Supabase fallback write
-      try {
-        const row = {
-          bus_id: busDetails.id,
-          trip_id: currentTripId || null,
-          lat,
-          lng,
-          speed_kmh: speedKmh,
-          heading: 0,
-          occupancy_level: 'Moderate',
-          updated_at: new Date().toISOString()
-        };
-        supabase.from('live_locations').upsert(row).then(() => {}, () => {});
-      } catch (_) {}
     }
   }, [busDetails, selectedRouteId, selectedRouteDetails, tripStops, currentStopIndex, user?.name, currentTripId]);
 
@@ -337,21 +357,22 @@ export const DriverDashboard: React.FC = () => {
   }, [busDetails, isTripActive, isNavigatingToOrigin, sendLiveTelemetry]);
 
   const beginActualTrip = async (latitude: number, longitude: number, speedKmh: number) => {
-    // 1. Create Trip in DB
-    const { data: trip, error: tripErr } = await supabase.from('trips').insert([{
-      bus_id: busDetails.id,
-      route_id: selectedRouteId,
-      status: 'Active',
-      start_time: new Date().toISOString()
-    }]).select().single();
-
-    if (tripErr || !trip) {
-      toast.error('Failed to start trip: ' + tripErr?.message);
-      setIsStartingTrip(false);
-      return;
+    // 1. Create Trip directly in Firebase Firestore
+    const tripId = `trip-${Date.now()}`;
+    try {
+      await saveFirebaseTrip({
+        id: tripId,
+        bus_id: busDetails.id,
+        route_id: selectedRouteId,
+        driver_id: user?.id || 'driver-current',
+        status: 'Active',
+        start_time: new Date().toISOString()
+      });
+    } catch (err: any) {
+      console.warn('Trip save notice:', err);
     }
 
-    setCurrentTripId(trip.id);
+    setCurrentTripId(tripId);
     setIsTripActive(true);
     setIsNavigatingToOrigin(false);
     setActiveTab('trip');
@@ -467,13 +488,21 @@ export const DriverDashboard: React.FC = () => {
 
     if (isConfirmed) {
       if (currentTripId) {
-        await supabase.from('trips').update({
-          status: 'Completed',
-          end_time: new Date().toISOString()
-        }).eq('id', currentTripId);
+        try {
+          await saveFirebaseTrip({
+            id: currentTripId,
+            bus_id: busDetails?.id || '',
+            route_id: selectedRouteId || '',
+            driver_id: user?.id || '',
+            status: 'Completed',
+            end_time: new Date().toISOString()
+          });
+        } catch (_) {}
         
         if (busDetails) {
-          await supabase.from('live_locations').delete().eq('bus_id', busDetails.id);
+          try {
+            await deleteDoc(doc(db, 'live_locations', busDetails.id));
+          } catch (_) {}
           try {
             localStorage.removeItem('nagarst_live_bus_' + busDetails.id);
           } catch (_) {}
