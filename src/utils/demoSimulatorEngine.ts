@@ -164,38 +164,7 @@ export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [];
 // =========================================================================
 // MULTI-BUS DEFINITION REGISTRY
 // =========================================================================
-export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
-  {
-    id: 'demo-bus-1515',
-    busNumber: 'MH-16 BT-1515',
-    plateNumber: 'MH-16 BT-1515',
-    tripId: 'demo-trip-1515',
-    routeId: 'R-01',
-    routeNumber: 'R-01',
-    routeName: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
-    origin: 'माळीवाडा गल्ली',
-    destination: 'Dairy Chowk',
-    color: '#7847CB',
-    stops: AUTHORITATIVE_R01_STOPS,
-    waypoints: densifyPath(AUTHORITATIVE_R01_WAYPOINTS, 120),
-    initialIndex: 0
-  },
-  {
-    id: 'demo-bus-1519',
-    busNumber: 'MH-16 BT-1519',
-    plateNumber: 'MH-16 BT-1519',
-    tripId: 'demo-trip-1519',
-    routeId: 'R-02',
-    routeNumber: 'R-02',
-    routeName: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
-    origin: 'Mahatma Gandhi Road',
-    destination: 'Chhatrapati Sambhaji Nagar',
-    color: '#d97706',
-    stops: AUTHORITATIVE_R02_STOPS,
-    waypoints: densifyPath(AUTHORITATIVE_R02_WAYPOINTS, 120),
-    initialIndex: 0
-  }
-];
+export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [];
 
 export interface BusSimRuntime {
   id: string;
@@ -1227,19 +1196,21 @@ export function deleteDemoBus(busId: string): boolean {
 
     // Remove from demo fleet aggregate in localStorage
     const demoRaw = localStorage.getItem('nagarst_demo_buses');
-    if (demoRaw) {
-      const demoBuses = JSON.parse(demoRaw);
-      delete demoBuses[busId];
-      if (busNumber) delete demoBuses[busNumber];
-      Object.keys(demoBuses).forEach(k => {
-        if (demoBuses[k]?.busNumber === busNumber || demoBuses[k]?.id === busId) {
-          delete demoBuses[k];
-        }
-      });
+    const demoBuses = demoRaw ? JSON.parse(demoRaw) : {};
+    delete demoBuses[busId];
+    if (busNumber) delete demoBuses[busNumber];
+    Object.keys(demoBuses).forEach(k => {
+      if (demoBuses[k]?.busNumber === busNumber || demoBuses[k]?.id === busId) {
+        delete demoBuses[k];
+      }
+    });
+    if (Object.keys(demoBuses).length === 0) {
+      localStorage.removeItem('nagarst_demo_buses');
+    } else {
       localStorage.setItem('nagarst_demo_buses', JSON.stringify(demoBuses));
-      const ch = getBroadcastChannel();
-      if (ch) ch.postMessage({ type: 'fleetSync', buses: demoBuses });
     }
+    const ch = getBroadcastChannel();
+    if (ch) ch.postMessage({ type: 'fleetSync', buses: demoBuses });
 
     // Remove individual live bus storage items
     localStorage.removeItem('nagarst_live_bus_' + busId);

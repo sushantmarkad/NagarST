@@ -115,33 +115,16 @@ export const LiveTracking: React.FC = () => {
       }
     } catch (_) {}
 
-    // 2. In-memory demo simulator state fallback
+    // 2. In-memory demo simulator state fallback - only if running or has currentBus
     const localSim = getDemoSimulatorState();
     Object.values(localSim.buses).forEach((r) => {
-      const b = r.currentBus || buildBusTelemetry(r);
-      if (b && !map[b.id]) map[b.id] = { ...b, isDemo: true };
+      if (r.isRunning || r.currentBus) {
+        const b = r.currentBus || buildBusTelemetry(r);
+        if (b && !map[b.id]) map[b.id] = { ...b, isDemo: true };
+      }
     });
 
-    // 3. Fallback to DEMO_BUS_DEFINITIONS ONLY if no demo buses have been initialized yet
-    if (Object.keys(map).length === 0) {
-      DEMO_BUS_DEFINITIONS.forEach((def) => {
-        const dummyRuntime = {
-          id: def.id,
-          def,
-          isRunning: false,
-          currentIndex: 0,
-          direction: 1 as const,
-          speedMultiplier: 1,
-          delayMinutes: 0,
-          currentBus: null,
-          progressPercent: 0
-        };
-        const b = buildBusTelemetry(dummyRuntime);
-        if (b) map[b.id] = { ...b, isDemo: true };
-      });
-    }
-
-    // 4. Purge any deleted demo buses (matching id, busNumber, or plateNumber)
+    // 3. Purge any deleted demo buses (matching id, busNumber, or plateNumber)
     try {
       const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
       if (deletedRaw) {
@@ -155,7 +138,7 @@ export const LiveTracking: React.FC = () => {
       }
     } catch (_) {}
 
-    // 5. Individual active bus keys (live driver or demo)
+    // 4. Individual active bus keys (live driver or demo)
     try {
       const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
       const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
@@ -193,16 +176,21 @@ export const LiveTracking: React.FC = () => {
               [incoming.id]: { ...incoming, isDemo, isLiveDriver: !isDemo }
             }));
           }
-        } else if (payload?.type === 'fleetSync' && payload?.buses) {
+        } else if (payload?.type === 'fleetSync') {
+          const syncBuses = payload.buses || {};
+          const allowedKeys = new Set(Object.keys(syncBuses));
           setActiveLiveBuses((prev) => {
             const next = { ...prev };
             // Purge deleted or unassigned demo buses
             Object.keys(next).forEach((k) => {
-              if (k.startsWith('demo-') && !payload.buses[k]) {
-                delete next[k];
+              const b = next[k];
+              if (b?.isDemo || k.startsWith('demo-')) {
+                if (!allowedKeys.has(k) && !allowedKeys.has(b?.id || '')) {
+                  delete next[k];
+                }
               }
             });
-            Object.values(payload.buses).forEach((b: any) => {
+            Object.values(syncBuses).forEach((b: any) => {
               if (b && b.id) next[b.id] = { ...b, isDemo: true };
             });
             return next;
@@ -219,13 +207,30 @@ export const LiveTracking: React.FC = () => {
                 });
                 return next;
               });
+            } else {
+              setActiveLiveBuses((prev) => {
+                const next = { ...prev };
+                Object.keys(next).forEach((k) => {
+                  if (next[k]?.isDemo || k.startsWith('demo-')) delete next[k];
+                });
+                return next;
+              });
             }
           } catch (_) {}
         } else if (event.data?.type === 'busOffline' && event.data?.busId) {
-          const offlineId = event.data.busId;
+          const offNorm = event.data.busId.trim().toUpperCase().replace(/\s+/g, '');
           setActiveLiveBuses((prev) => {
             const next = { ...prev };
-            delete next[offlineId];
+            delete next[event.data.busId];
+            Object.keys(next).forEach((k) => {
+              const b = next[k];
+              const kNorm = k.trim().toUpperCase().replace(/\s+/g, '');
+              const bNorm = (b?.busNumber || '').trim().toUpperCase().replace(/\s+/g, '');
+              const idNorm = (b?.id || '').trim().toUpperCase().replace(/\s+/g, '');
+              if (kNorm === offNorm || bNorm === offNorm || idNorm === offNorm) {
+                delete next[k];
+              }
+            });
             return next;
           });
         }
@@ -372,16 +377,20 @@ export const LiveTracking: React.FC = () => {
         });
       });
     } else {
-      // Fallback to active live buses if buses haven't loaded yet
+      // Fallback: ONLY include real live drivers or actively running demo buses
       Object.values(activeLiveBuses).forEach((b) => {
         if (!b || !b.id || isDeleted(b)) return;
+        if (b.isDemo) {
+          const runtime = simState?.buses?.[b.id];
+          if (!runtime || !runtime.isRunning) return;
+        }
         const key = (b.busNumber || b.id).trim().toUpperCase().replace(/\s+/g, '');
         byNumber.set(key, b);
       });
     }
 
     return Array.from(byNumber.values());
-  }, [activeLiveBuses, buses, allRoutes]);
+  }, [activeLiveBuses, buses, allRoutes, simState]);
 
   const selectedBus = selectedBusId ? allFleetBuses.find((b) => b.id === selectedBusId || b.busNumber === selectedBusId) : null;
 

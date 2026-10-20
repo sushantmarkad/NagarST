@@ -552,9 +552,21 @@ export const AdminRouteMgmt: React.FC = () => {
     if (!isConfirmed) return;
 
     try {
+      // Find stops belonging to this route before deleting route_stops
+      const { data: routeStopRows } = await supabase.from('route_stops').select('stop_id').eq('route_id', routeId);
+      const stopIds = (routeStopRows || []).map((r: any) => r.stop_id).filter(Boolean);
+
       await supabase.from('trips').delete().eq('route_id', routeId);
       await supabase.from('route_stops').delete().eq('route_id', routeId);
       await supabase.from('routes').delete().eq('id', routeId);
+
+      // Permanently remove any orphaned stops not used by any remaining route
+      for (const sId of stopIds) {
+        const { count } = await supabase.from('route_stops').select('*', { count: 'exact', head: true }).eq('stop_id', sId);
+        if (!count || count === 0) {
+          await supabase.from('stops').delete().eq('id', sId);
+        }
+      }
     } catch (_) {}
 
     const updatedList = routes.filter(r => r.id !== routeId && r.routeNumber !== routeNumber && r.route_number !== routeNumber);
@@ -597,6 +609,7 @@ export const AdminRouteMgmt: React.FC = () => {
       await supabase.from('trips').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('route_stops').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('routes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('stops').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     } catch (_) {}
 
     try {

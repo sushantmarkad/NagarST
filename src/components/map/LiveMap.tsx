@@ -389,6 +389,17 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     const map = mapRef.current;
     if (!map) return;
 
+    // Cleanup stale stop markers so deleted stops disappear immediately from map
+    const activeStopKeys = new Set(stops.map((s) => `stop-${s.id}`));
+    Object.keys(markersRef.current).forEach((key) => {
+      if (key.startsWith('stop-') && !activeStopKeys.has(key)) {
+        try {
+          markersRef.current[key].remove();
+        } catch (_) {}
+        delete markersRef.current[key];
+      }
+    });
+
     stops.forEach((stop) => {
       const isSelected = selectedStopId === stop.id;
 
