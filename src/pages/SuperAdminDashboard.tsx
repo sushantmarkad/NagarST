@@ -81,7 +81,7 @@ export const SuperAdminDashboard: React.FC = () => {
               <span>Role & Access Control</span>
             </button>
             <Link
-              to="/admin"
+              to="/admin/dashboard"
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-xs text-slate-600 hover:bg-slate-50 transition"
             >
               <ArrowLeft className="w-4 h-4 shrink-0" />
@@ -97,7 +97,7 @@ export const SuperAdminDashboard: React.FC = () => {
               <ShieldAlert className="w-3.5 h-3.5 text-[#7847CB]" />
               <span>Elevated Session</span>
             </div>
-            <p className="text-[11px] text-slate-500 font-mono break-all">{user?.email}</p>
+            <p className="text-[11px] text-slate-500 font-mono break-all">{user?.email || 'sushantmarkad1@gmail.com'}</p>
           </div>
 
           <Button
@@ -128,10 +128,14 @@ export const SuperAdminDashboard: React.FC = () => {
               System Access & Role Management
             </h2>
             <Badge variant="brand">MUNICIPAL ROOT</Badge>
+            <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Firebase Active
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-              {user?.email}
+              {user?.email || 'sushantmarkad1@gmail.com'}
             </span>
             <Button
               variant="outline"

@@ -16,7 +16,8 @@ import {
   BarChart3,
   Sparkles,
   Play,
-  Trash2
+  Trash2,
+  ShieldCheck
 } from 'lucide-react';
 
 export type AdminView =
@@ -83,6 +84,16 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
     onClick: () => onSelectView(item.view),
     isActive: currentView === item.view
   }));
+
+  if (user?.role === 'SUPER_ADMIN') {
+    navItems.unshift({
+      id: 'super_admin_root',
+      label: 'Super Admin Console',
+      icon: ShieldCheck,
+      onClick: () => { window.location.href = '/super-admin'; },
+      isActive: false
+    });
+  }
 
   return (
     <SharedLayout

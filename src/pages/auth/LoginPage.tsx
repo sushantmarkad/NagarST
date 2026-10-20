@@ -880,23 +880,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                       {selectedDemoRole === 'DRIVER' && 'Driver portal — sign in with credentials assigned by the administrator.'}
                       {selectedDemoRole === 'ADMIN' && 'Administrator portal — fleet management & municipal dispatch.'}
                     </p>
-
-                    {selectedDemoRole === 'ADMIN' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEmailOrPhone('sushantmarkad1@gmail.com');
-                          setPassword('pass@123');
-                        }}
-                        className="w-full py-2 px-3 bg-purple-50 hover:bg-purple-100/80 border border-purple-200 rounded-xl text-xs font-bold text-purple-900 transition flex items-center justify-between shadow-2xs"
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <span>👑</span>
-                          <span>Autofill Super Admin (Sushant Markad)</span>
-                        </span>
-                        <span className="text-[11px] text-purple-600 font-mono font-medium">pass@123</span>
-                      </button>
-                    )}
                   </div>
                 )}
 
@@ -1017,13 +1000,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                     </div>
                   )}
 
-                  {mode === 'login' && emailOrPhone.trim().toLowerCase() === 'sushantmarkad1@gmail.com' && (
-                    <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xl flex items-center gap-2 text-xs font-bold text-purple-900">
-                      <Shield className="w-4 h-4 text-[#7847CB] shrink-0" />
-                      <span>👑 Super Admin account recognized: Sushant Markad (Root Access)</span>
-                    </div>
-                  )}
-
                   <button
                     type="submit"
                     disabled={loading}
@@ -1032,9 +1008,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                     {loading ? (
                       <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     ) : mode === 'login' ? (
-                      emailOrPhone.trim().toLowerCase() === 'sushantmarkad1@gmail.com'
-                        ? 'Sign In as Super Admin 👑'
-                        : `Sign In as ${selectedDemoRole.charAt(0) + selectedDemoRole.slice(1).toLowerCase()}`
+                      `Sign In as ${selectedDemoRole.charAt(0) + selectedDemoRole.slice(1).toLowerCase()}`
                     ) : registerType === 'ADMIN_REQUEST' ? (
                       'Send Request'
                     ) : (

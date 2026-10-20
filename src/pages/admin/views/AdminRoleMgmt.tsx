@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { db } from '../../../utils/firebaseClient';
-import { supabase } from '../../../utils/supabaseClient';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { Badge, Button } from '../../../components/ui';
 import { ShieldCheck, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
@@ -10,6 +9,7 @@ import { type UserRole } from '../../../data/mockAuth';
 interface Profile {
   id: string;
   full_name: string;
+  email?: string;
   role: string;
   created_at: string;
   admin_request_status?: string;
@@ -24,49 +24,49 @@ export const AdminRoleMgmt: React.FC = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
     setLoading(true);
-    setError('');
-    try {
-      // 1. Try Firebase Firestore users collection
-      const snap = await getDocs(collection(db, 'users'));
-      const fbUsers: Profile[] = [];
-      snap.forEach(d => {
-        const item = d.data();
-        fbUsers.push({
-          id: d.id,
-          full_name: item.full_name || item.name || 'User',
-          role: item.role || 'PASSENGER',
-          created_at: item.created_at || new Date().toISOString(),
-          admin_request_status: item.admin_request_status || 'APPROVED'
+    // Real-time Firestore synchronization
+    const unsubscribe = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        const fbUsers: Profile[] = [];
+        snapshot.forEach((d) => {
+          const item = d.data();
+          fbUsers.push({
+            id: d.id,
+            full_name: item.full_name || item.name || 'User',
+            email: item.email || '',
+            role: item.role || 'PASSENGER',
+            created_at: item.created_at || new Date().toISOString(),
+            admin_request_status: item.admin_request_status || 'APPROVED'
+          });
         });
-      });
 
-      if (fbUsers.length > 0) {
+        // Ensure default super admin account is present in the list
+        const hasSuperAdmin = fbUsers.some((u) => u.email === 'sushantmarkad1@gmail.com' || u.role === 'SUPER_ADMIN');
+        if (!hasSuperAdmin) {
+          fbUsers.unshift({
+            id: 'super-admin-sushant',
+            full_name: 'Sushant Markad',
+            email: 'sushantmarkad1@gmail.com',
+            role: 'SUPER_ADMIN',
+            created_at: new Date().toISOString(),
+            admin_request_status: 'APPROVED'
+          });
+        }
+
         setUsers(fbUsers);
         setLoading(false);
-        return;
+      },
+      (err) => {
+        console.error('Firestore users error:', err);
+        setError(err.message || 'Failed to sync users from Firebase');
+        setLoading(false);
       }
+    );
 
-      // 2. Fallback to Supabase if Firestore is empty
-      const { data, error: err } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (err) throw err;
-      if (data) {
-        setUsers(data);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to fetch users');
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => unsubscribe();
+  }, []);
 
   const updateRole = async (userId: string, newRole: UserRole, userName: string) => {
     const isElevation = newRole === 'CITY_ADMIN' || newRole === 'SUPER_ADMIN';
@@ -83,12 +83,7 @@ export const AdminRoleMgmt: React.FC = () => {
 
     try {
       await setDoc(doc(db, 'users', userId), { role: newRole, admin_request_status: 'APPROVED' }, { merge: true });
-      try {
-        await supabase.from('user_profiles').update({ role: newRole }).eq('id', userId);
-      } catch (_) {}
-      
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole, admin_request_status: 'APPROVED' } : u));
-      toast.success('Role Updated', `${userName}'s role set to ${newRole.replace('_', ' ')}.`);
+      toast.success('Role Updated', `${userName}'s role set to ${newRole.replace('_', ' ')} in Firebase.`);
     } catch (err: any) {
       toast.error('Role Update Failed', err.message || 'Could not update role');
     }
@@ -106,11 +101,6 @@ export const AdminRoleMgmt: React.FC = () => {
 
     try {
       await setDoc(doc(db, 'users', userId), { admin_request_status: 'REJECTED' }, { merge: true });
-      try {
-        await supabase.from('user_profiles').update({ admin_request_status: 'REJECTED' }).eq('id', userId);
-      } catch (_) {}
-      
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, admin_request_status: 'REJECTED' } : u));
       toast.info('Request Declined', `Administrative access declined for ${userName}.`);
     } catch (err: any) {
       toast.error('Action Failed', err.message || 'Could not decline request');
@@ -185,7 +175,10 @@ export const AdminRoleMgmt: React.FC = () => {
                   return (
                     <tr key={u.id} className="hover:bg-slate-50">
                       <td className="p-3.5 font-mono text-slate-500 text-[11px]">{u.id.substring(0, 10)}...</td>
-                      <td className="p-3.5 font-bold text-slate-900">{u.full_name || 'Anonymous User'}</td>
+                      <td className="p-3.5">
+                        <div className="font-bold text-slate-900">{u.full_name || 'Anonymous User'}</div>
+                        {u.email && <div className="text-[11px] text-slate-400 font-mono mt-0.5">{u.email}</div>}
+                      </td>
                       <td className="p-3.5 text-slate-600">
                         {new Date(u.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                       </td>

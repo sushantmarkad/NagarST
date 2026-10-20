@@ -108,7 +108,7 @@ export const ROLE_START_ROUTES: Record<UserRole, string> = {
   PASSENGER: '/app/home',
   DRIVER: '/driver/dashboard',
   CONDUCTOR: '/conductor/dashboard',
-  SUPER_ADMIN: '/admin/dashboard',
+  SUPER_ADMIN: '/super-admin',
   CITY_ADMIN: '/admin/dashboard',
   ADMIN: '/admin/dashboard',
   OPERATIONS_MANAGER: '/admin/operations',
