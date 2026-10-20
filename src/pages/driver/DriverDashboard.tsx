@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast, useConfirm } from '../../context/FeedbackContext';
 import { supabase } from '../../utils/supabaseClient';
+import { updateFirebaseLiveLocation } from '../../utils/firebaseService';
 import {
   Navigation,
   AlertTriangle,
@@ -277,17 +278,24 @@ export const DriverDashboard: React.FC = () => {
       socketRef.current.emit('updateLocation', payload);
     }
 
-    // 4. Supabase DB live_locations table (debounced/throttled to 2.5s)
+    // 4. Firebase Firestore live_locations collection (debounced to 1.5s)
     const now = Date.now();
-    if (now - lastDbWriteRef.current >= 2500 || lastDbWriteRef.current === 0) {
+    if (now - lastDbWriteRef.current >= 1500 || lastDbWriteRef.current === 0) {
       lastDbWriteRef.current = now;
       try {
-        const { data: existing } = await supabase
-          .from('live_locations')
-          .select('id')
-          .eq('bus_id', busDetails.id)
-          .limit(1);
+        updateFirebaseLiveLocation({
+          bus_id: busDetails.id,
+          lat,
+          lng,
+          speed_kmh: speedKmh,
+          heading: 0,
+          route_id: selectedRouteId || undefined,
+          updated_at: new Date().toISOString()
+        }).catch(() => {});
+      } catch (_) {}
 
+      // Supabase fallback write
+      try {
         const row = {
           bus_id: busDetails.id,
           trip_id: currentTripId || null,
@@ -298,15 +306,8 @@ export const DriverDashboard: React.FC = () => {
           occupancy_level: 'Moderate',
           updated_at: new Date().toISOString()
         };
-
-        if (existing && existing.length > 0) {
-          await supabase.from('live_locations').update(row).eq('id', existing[0].id);
-        } else {
-          await supabase.from('live_locations').insert(row);
-        }
-      } catch (err) {
-        console.warn('DB Telemetry sync notice:', err);
-      }
+        supabase.from('live_locations').upsert(row).then(() => {}, () => {});
+      } catch (_) {}
     }
   }, [busDetails, selectedRouteId, selectedRouteDetails, tripStops, currentStopIndex, user?.name, currentTripId]);
 

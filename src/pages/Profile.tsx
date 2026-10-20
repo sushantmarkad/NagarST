@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useApp } from '../context/AppContext';
 import { useToast, useConfirm } from '../context/FeedbackContext';
-import { supabase } from '../utils/supabaseClient';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../utils/firebaseClient';
 import {
   User as UserIcon,
   Mail,
@@ -42,13 +43,11 @@ export const Profile: React.FC = () => {
 
   const checkRequestStatus = async () => {
     try {
-      const { data } = await supabase
-        .from('user_profiles')
-        .select('admin_request_status')
-        .eq('id', user?.id)
-        .single();
-      if (data) {
-        setRequestStatus(data.admin_request_status || 'NONE');
+      if (!user?.id) return;
+      const userRef = doc(db, 'users', user.id);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        setRequestStatus(userSnap.data()?.admin_request_status || 'NONE');
       }
     } catch {
       // Ignored for demo users
@@ -58,12 +57,9 @@ export const Profile: React.FC = () => {
   const handleRequestAdmin = async () => {
     setIsRequesting(true);
     try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({ admin_request_status: 'PENDING' })
-        .eq('id', user?.id);
-
-      if (error) throw error;
+      if (!user?.id) throw new Error('Not authenticated');
+      const userRef = doc(db, 'users', user.id);
+      await updateDoc(userRef, { admin_request_status: 'PENDING' });
       setRequestStatus('PENDING');
       toast.success(
         t(
