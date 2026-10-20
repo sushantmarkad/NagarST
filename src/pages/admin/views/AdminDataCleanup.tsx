@@ -26,8 +26,6 @@ import {
   RotateCcw,
   Sparkles
 } from 'lucide-react';
-import { MOCK_ROUTES } from '../../../data/mockRoutes';
-import { MOCK_BUSES } from '../../../data/mockBuses';
 
 interface DataCounts {
   buses: number;
@@ -538,65 +536,7 @@ export const AdminDataCleanup: React.FC = () => {
    * Helper: Restore initial starter municipal data
    */
   const handleSeedDefaultData = async () => {
-    const ok = await confirm({
-      title: 'Repopulate Starter Transit Data?',
-      message: 'This will insert standard Ahilyanagar starter buses (AH-12, AH-01, AH-24) and key route corridors (CBS to Savedi, MIDC Nagapur) into the database.',
-      confirmText: 'Populate Starter Data',
-      variant: 'brand',
-    });
-    if (!ok) return;
-
-    setIsSeeding(true);
-    try {
-      // 1. Insert starter buses
-      for (const b of MOCK_BUSES.slice(0, 3)) {
-        await supabase.from('buses').insert([{
-          bus_number: b.busNumber,
-          plate_number: b.plateNumber,
-          capacity: 40,
-          type: b.busType || 'Standard City',
-          status: 'Active',
-        }]);
-      }
-
-      // 2. Insert starter routes & stops
-      for (const r of MOCK_ROUTES.slice(0, 2)) {
-        const { data: routeRow } = await supabase.from('routes').insert([{
-          route_number: r.routeNumber,
-          origin: r.origin,
-          destination: r.destination,
-          route_path: r.route_path || [],
-        }]).select().single();
-
-        if (routeRow && r.stops && r.stops.length > 0) {
-          for (let i = 0; i < r.stops.length; i++) {
-            const st = r.stops[i];
-            const { data: stopRow } = await supabase.from('stops').insert([{
-              stop_name: st.stopName,
-              lat: st.lat,
-              lng: st.lng,
-            }]).select().single();
-
-            if (stopRow) {
-              await supabase.from('route_stops').insert([{
-                route_id: routeRow.id,
-                stop_id: stopRow.id,
-                stop_order: i + 1,
-                estimated_minutes_from_origin: (i + 1) * 4,
-              }]);
-            }
-          }
-        }
-      }
-
-      await refreshData();
-      await fetchAllCounts();
-      toast.success('Starter Data Loaded', 'Sample municipal routes, stops, and buses have been populated.');
-    } catch (err: any) {
-      toast.error('Failed restoring starter data: ' + (err.message || 'Unknown error'));
-    } finally {
-      setIsSeeding(false);
-    }
+    toast.info('Database Started Fresh', 'All mock and legacy starter data have been purged. Use Route Management and Fleet Management to add your fresh live routes and buses directly into Firestore.');
   };
 
   const totalRecordsCount =

@@ -184,72 +184,14 @@ function densifyServerPath(path, targetPoints = 120) {
 // =========================================================================
 // MULTI-BUS SIMULATOR ENGINE (Server-Side)
 // =========================================================================
-const DEMO_FLEET_CONFIG = [
-  {
-    id: 'demo-bus-1515',
-    busNumber: 'MH-16 BT-1515',
-    plateNumber: 'MH-16 BT-1515',
-    routeId: 'route-maliwada-savedi',
-    routeNumber: 'Route 1-B',
-    routeName: 'Maliwada Galli ↔ Savedi Bus Depot',
-    origin: 'Maliwada Galli',
-    destination: 'Savedi Bus Depot',
-    stops: [
-      { id: 'stop-mw', name: 'Maliwada Galli', lat: 19.0910, lng: 74.7290 },
-      { id: 'stop-swk', name: 'Swastik Chowk', lat: 19.0940, lng: 74.7350 },
-      { id: 'stop-cbs', name: 'Ahilyanagar CBS', lat: 19.0975, lng: 74.7420 },
-      { id: 'stop-dlg', name: 'Delhi Gate Transit', lat: 19.1025, lng: 74.7380 },
-      { id: 'stop-svd', name: 'Savedi Bus Depot', lat: 19.1235, lng: 74.7321 },
-    ],
-    waypoints: densifyServerPath([
-      { lat: 19.0910, lng: 74.7290 },
-      { lat: 19.0925, lng: 74.7315 },
-      { lat: 19.0940, lng: 74.7350 },
-      { lat: 19.0955, lng: 74.7385 },
-      { lat: 19.0975, lng: 74.7420 },
-      { lat: 19.1000, lng: 74.7400 },
-      { lat: 19.1025, lng: 74.7380 },
-      { lat: 19.1120, lng: 74.7350 },
-      { lat: 19.1180, lng: 74.7335 },
-      { lat: 19.1235, lng: 74.7321 },
-    ], 120),
-    currentIndex: 0,
-    direction: 1
-  },
-  {
-    id: 'demo-bus-1516',
-    busNumber: 'MH-16 BT-1516',
-    plateNumber: 'MH-16 BT-1516',
-    routeId: 'route-mg-station',
-    routeNumber: 'Route 2',
-    routeName: 'Mahatma Gandhi Road ↔ Railway Station',
-    origin: 'Mahatma Gandhi Road',
-    destination: 'Railway Station Terminal',
-    stops: [
-      { id: 'stop-mg', name: 'Mahatma Gandhi Road', lat: 19.1025, lng: 74.7380 },
-      { id: 'stop-dlg2', name: 'Delhi Gate Terminal', lat: 19.0990, lng: 74.7400 },
-      { id: 'stop-mky', name: 'Market Yard', lat: 19.0880, lng: 74.7510 },
-      { id: 'stop-stn', name: 'Ahilyanagar Railway Station', lat: 19.0820, lng: 74.7590 },
-    ],
-    waypoints: densifyServerPath([
-      { lat: 19.1025, lng: 74.7380 },
-      { lat: 19.0990, lng: 74.7400 },
-      { lat: 19.0945, lng: 74.7440 },
-      { lat: 19.0880, lng: 74.7510 },
-      { lat: 19.0850, lng: 74.7550 },
-      { lat: 19.0820, lng: 74.7590 },
-    ], 120),
-    currentIndex: 0,
-    direction: 1
-  }
-];
+const DEMO_FLEET_CONFIG = [];
 
 let demoInterval = null;
 let demoState = {
   isRunning: false,
   speedMultiplier: 1,
   delayMinutes: 0,
-  activeBusCount: DEMO_FLEET_CONFIG.length
+  activeBusCount: 0
 };
 
 function generateBusTelemetry(busConfig, isMoving = true) {
@@ -310,10 +252,8 @@ function generateBusTelemetry(busConfig, isMoving = true) {
   };
 }
 
-// Pre-populate initial demo buses in memory so connecting passengers immediately see them
-DEMO_FLEET_CONFIG.forEach(b => {
-  demoBuses.set(b.id, generateBusTelemetry(b, false));
-});
+// Fleet starts empty until administrator initiates trips or routes
+// No automatic pre-population of demo buses
 
 function tickDemoSimulator() {
   if (!demoState.isRunning) return;

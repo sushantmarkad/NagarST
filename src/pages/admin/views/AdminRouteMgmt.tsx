@@ -83,23 +83,7 @@ export const AdminRouteMgmt: React.FC = () => {
       }
     } catch (_) {}
 
-    if (list.length === 0) {
-      try {
-        const { data, error } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
-        if (!error && data && data.length > 0) {
-          list = data;
-        } else {
-          const local = localStorage.getItem('nagarst_configured_routes');
-          if (local) list = JSON.parse(local);
-        }
-      } catch {
-        const local = localStorage.getItem('nagarst_configured_routes');
-        if (local) list = JSON.parse(local);
-      }
-    }
-
     setRoutes(list);
-    syncLocalBackup(list);
 
     if (list.length > 0) {
       setSelectedRoute((current: any) => {

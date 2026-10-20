@@ -61,7 +61,6 @@ import {
   type DemoStop
 } from '../../utils/demoSimulatorEngine';
 import { fetchShortestRoadCorridor, findStopsAlongRoad } from '../../utils/routing';
-import { MOCK_BUS_STOPS } from '../../data/mockStops';
 import { Link } from 'react-router-dom';
 
 import { useApp } from '../../context/AppContext';

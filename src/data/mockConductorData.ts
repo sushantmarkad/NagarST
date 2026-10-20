@@ -10,14 +10,14 @@ export interface ConductorTripStats {
 }
 
 export const INITIAL_CONDUCTOR_STATS: ConductorTripStats = {
-  ticketsSold: 32,
-  passengerCount: 47,
+  ticketsSold: 0,
+  passengerCount: 0,
   maxCapacity: 60,
-  cashCollection: 420,
-  digitalCollection: 220,
-  passHoldersCount: 15,
+  cashCollection: 0,
+  digitalCollection: 0,
+  passHoldersCount: 0,
   refundsCount: 0,
-  totalCollection: 640,
+  totalCollection: 0,
 };
 
 export interface TicketLog {
@@ -31,35 +31,4 @@ export interface TicketLog {
   time: string;
 }
 
-export const MOCK_TICKET_LOGS: TicketLog[] = [
-  {
-    id: 'TKT-901',
-    source: 'Central Bus Stand',
-    destination: 'Savedi Terminal',
-    count: 2,
-    passengerType: 'Adult',
-    fare: 40,
-    paymentMethod: 'UPI / QR',
-    time: '08:18 AM',
-  },
-  {
-    id: 'TKT-900',
-    source: 'Railway Station Chowk',
-    destination: 'New Arts College',
-    count: 1,
-    passengerType: 'Student',
-    fare: 10,
-    paymentMethod: 'Cash',
-    time: '08:10 AM',
-  },
-  {
-    id: 'TKT-899',
-    source: 'Central Bus Stand',
-    destination: 'Savedi Road',
-    count: 1,
-    passengerType: 'Senior Citizen',
-    fare: 15,
-    paymentMethod: 'Cash',
-    time: '08:02 AM',
-  },
-];
+export const MOCK_TICKET_LOGS: TicketLog[] = [];

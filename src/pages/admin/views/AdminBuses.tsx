@@ -88,43 +88,6 @@ export const AdminBuses: React.FC = () => {
         }
       } catch (_) {}
 
-      if (list.length === 0) {
-        const { data, error: err } = await supabase
-          .from('buses')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!err && data) {
-          list = data.filter(b => !isDeleted(b.id, b.bus_number, b.plate_number));
-        }
-      }
-
-      // Merge local buses if any
-      try {
-        const localRaw = localStorage.getItem('nagarst_custom_buses');
-        if (localRaw) {
-          const localParsed = JSON.parse(localRaw);
-          localParsed.forEach((lb: any) => {
-            const bNum = lb.busNumber || lb.bus_number;
-            const pNum = lb.plateNumber || lb.plate_number;
-            if (isDeleted(lb.id, bNum, pNum)) return;
-
-            if (!list.some(b => b.id === lb.id || b.bus_number.trim().toUpperCase() === (bNum || '').trim().toUpperCase())) {
-              list.push({
-                id: lb.id,
-                bus_number: bNum,
-                plate_number: pNum || bNum,
-                capacity: lb.capacity || 35,
-                type: lb.busType || lb.type || 'Standard City',
-                status: lb.status || 'Active',
-                route_id: lb.routeId || lb.route_id,
-                created_at: lb.created_at || new Date().toISOString()
-              });
-            }
-          });
-        }
-      } catch (_) {}
-
       // Deduplicate by bus_number
       const seen = new Set<string>();
       const dedupedList: BusRecord[] = [];

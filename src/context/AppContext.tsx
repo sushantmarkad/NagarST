@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { Bus, Route, BusStop, Ticket, BusPass, NotificationItem, FavoriteItem } from '../types';
-import { supabase } from '../utils/supabaseClient';
 import {
   getFirebaseRoutes,
   saveFirebaseRoute,
@@ -180,37 +179,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       localStorage.removeItem('nagarst_notifications');
       localStorage.removeItem('nagarst_incidents');
       localStorage.removeItem('nagarst_conductor_shift');
+      localStorage.removeItem('nagarst_configured_routes');
+      localStorage.removeItem('nagarst_custom_buses');
+      localStorage.removeItem('nagarst_demo_buses');
+      localStorage.removeItem('nagarst_demo_assignments');
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('nagarst_live_bus_') || k.startsWith('nagarst_demo_'))) {
+          localStorage.removeItem(k);
+        }
+      }
     } catch (e) {
       console.warn('Failed clearing localStorage:', e);
     }
   };
 
-  // --- COMPREHENSIVE SUPABASE REAL-TIME & DATABASE FETCH ---
+  // --- PURE FIREBASE FIRESTORE REAL-TIME & DATABASE FETCH ---
   const refreshData = async () => {
     try {
-      // 1. Fetch all real Stops directly from Supabase 'stops' table
-      const { data: dbStops } = await supabase.from('stops').select('*').order('created_at', { ascending: false });
-      if (dbStops && dbStops.length > 0) {
-        const formattedStops = dbStops.map((s: any) => ({
-          id: s.id,
-          name: s.stop_name || 'Stop',
-          nameMarathi: s.stop_name || 'थांबा',
-          area: 'City Center',
-          lat: s.lat || 19.0975,
-          lng: s.lng || 74.7420,
-          lines: [],
-          facilities: ['Shelter', 'Bus Bay'],
-          accessibility: true,
-          shelter: true,
-          digitalBoard: true,
-          liveArrivals: []
-        }));
-        setStops(formattedStops as BusStop[]);
-      } else {
-        setStops([]);
-      }
+      // Clean up legacy localStorage cache on initial load if routes were deleted
+      try {
+        localStorage.removeItem('nagarst_configured_routes');
+        localStorage.removeItem('nagarst_custom_buses');
+      } catch (_) {}
 
-      // 2. Fetch routes: Check Firebase first, fallback to Supabase / local
+      // 1. Fetch routes strictly from Firebase Firestore
       let combinedRoutes: any[] = [];
       try {
         const fbRoutes = await getFirebaseRoutes();
@@ -233,7 +226,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             activeBusesCount: 1,
             status: 'normal',
             route_path: r.route_path,
-            stops: (r.stops || []).map((s, idx) => ({
+            stops: (r.stops || []).map((s: any, idx: number) => ({
               stopId: s.stopId || `stop-${idx}`,
               stopName: s.stopName,
               stopNameMarathi: s.stopName,
@@ -246,285 +239,85 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }))
           }));
         }
-      } catch (_) {}
-
-      if (combinedRoutes.length === 0) {
-        const { data: dbRoutes } = await supabase
-          .from('routes')
-          .select(`
-            id,
-            route_number,
-            origin,
-            destination,
-            route_path,
-            route_stops (
-              id,
-              stop_order,
-              estimated_minutes_from_origin,
-              stops (
-                id,
-                stop_name,
-                lat,
-                lng
-              )
-            )
-          `);
-
-        if (dbRoutes && dbRoutes.length > 0) {
-          combinedRoutes = dbRoutes.map((r: any) => ({
-            id: r.id,
-            routeNumber: r.route_number,
-            origin: r.origin,
-            destination: r.destination,
-            name: `${r.origin} ↔ ${r.destination}`,
-            nameMarathi: `${r.origin} ↔ ${r.destination}`,
-            firstBus: '06:00 AM',
-            lastBus: '10:00 PM',
-            frequencyMinutes: 15,
-            baseFare: 10,
-            maxFare: 30,
-            totalStops: r.route_stops?.length || 0,
-            durationMinutes: 30,
-            color: '#7847CB',
-            activeBusesCount: 1,
-            status: 'normal',
-            route_path: r.route_path,
-            stops: (() => {
-              const rawStops = r.route_stops
-                ? r.route_stops
-                    .sort((a: any, b: any) => a.stop_order - b.stop_order)
-                    .map((rs: any) => ({
-                      stopId: rs.stops?.id,
-                      stopName: rs.stops?.stop_name,
-                      stopNameMarathi: rs.stops?.stop_name,
-                      lat: rs.stops?.lat,
-                      lng: rs.stops?.lng,
-                      sequence: rs.stop_order,
-                      fareFromOrigin: rs.stop_order * 5,
-                      estimatedMinutesFromOrigin: rs.estimated_minutes_from_origin || rs.stop_order * 4,
-                      isMajorHub: rs.stop_order === 1
-                    }))
-                : [];
-
-              if (r.destination && rawStops.length > 2) {
-                const destNorm = r.destination.trim().toLowerCase();
-                const lastStopName = (rawStops[rawStops.length - 1]?.stopName || '').trim().toLowerCase();
-                const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
-                if (!isMatch(lastStopName, destNorm)) {
-                  const dIdx = rawStops.findIndex((s: any) => isMatch((s.stopName || '').trim().toLowerCase(), destNorm));
-                  if (dIdx !== -1 && dIdx < rawStops.length - 1) {
-                    const destStop = rawStops.splice(dIdx, 1)[0];
-                    rawStops.push(destStop);
-                    rawStops.forEach((s: any, idx: number) => {
-                      s.sequence = idx + 1;
-                      s.estimatedMinutesFromOrigin = idx * 4;
-                    });
-                  }
-                }
-              }
-              return rawStops;
-            })()
-          }));
-
-          // Seed to Firebase Firestore
-          combinedRoutes.forEach(r => {
-            saveFirebaseRoute({
-              id: r.id,
-              route_number: r.routeNumber,
-              name: r.name,
-              origin: r.origin,
-              destination: r.destination,
-              color: r.color,
-              route_path: r.route_path,
-              stops: r.stops
-            }).catch(() => {});
-          });
-        }
+      } catch (err) {
+        console.warn('Firebase routes fetch error:', err);
       }
-
-      // Check localStorage for offline / admin-configured routes
-      try {
-        const localRoutesRaw = localStorage.getItem('nagarst_configured_routes');
-        if (localRoutesRaw) {
-          const localRoutes = JSON.parse(localRoutesRaw);
-          localRoutes.forEach((lr: any) => {
-            if (lr.destination && lr.stops && lr.stops.length > 2) {
-              const destNorm = lr.destination.trim().toLowerCase();
-              const lastStopName = (lr.stops[lr.stops.length - 1]?.stopName || lr.stops[lr.stops.length - 1]?.name || '').trim().toLowerCase();
-              const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
-              if (!isMatch(lastStopName, destNorm)) {
-                const dIdx = lr.stops.findIndex((s: any) => isMatch((s.stopName || s.name || '').trim().toLowerCase(), destNorm));
-                if (dIdx !== -1 && dIdx < lr.stops.length - 1) {
-                  const destStop = lr.stops.splice(dIdx, 1)[0];
-                  lr.stops.push(destStop);
-                  lr.stops.forEach((s: any, idx: number) => {
-                    s.sequence = idx + 1;
-                    s.estimatedMinutesFromOrigin = idx * 4;
-                  });
-                }
-              }
-            }
-            const isDairy = (lr.destination || '').toLowerCase().includes('dairy') || (lr.name || '').toLowerCase().includes('dairy');
-            if (isDairy && lr.stops && lr.stops.length > 0) {
-              const lastStop = lr.stops[lr.stops.length - 1];
-              if (lastStop.lat > 19.10) {
-                lastStop.lat = 19.0830;
-                lastStop.lng = 74.7460;
-              }
-            }
-            if (!combinedRoutes.some((cr) => cr.id === lr.id || (cr.routeNumber && cr.routeNumber === lr.routeNumber))) {
-              combinedRoutes.push(lr);
-            }
-          });
-        }
-      } catch (_) {}
 
       setRoutes(combinedRoutes as unknown as Route[]);
 
-      // 3. Fetch all Buses: Check Firebase first, fallback to Supabase
+      // Extract real stops from active routes
+      const uniqueStopsMap = new Map<string, BusStop>();
+      combinedRoutes.forEach(r => {
+        (r.stops || []).forEach((s: any) => {
+          const key = (s.stopName || '').trim().toLowerCase();
+          if (key && !uniqueStopsMap.has(key)) {
+            uniqueStopsMap.set(key, {
+              id: s.stopId || `stop-${s.sequence}`,
+              name: s.stopName,
+              nameMarathi: s.stopName,
+              area: 'City Center',
+              lat: s.lat,
+              lng: s.lng,
+              lines: [r.routeNumber],
+              facilities: ['Shelter', 'Bus Bay'],
+              accessibility: true,
+              shelter: true,
+              digitalBoard: true,
+              liveArrivals: []
+            });
+          }
+        });
+      });
+      setStops(Array.from(uniqueStopsMap.values()));
+
+      // 2. Fetch all buses strictly from Firebase Firestore
       let dbBuses: any[] = [];
       try {
         const fbBuses = await getFirebaseBuses();
         if (fbBuses && fbBuses.length > 0) {
           dbBuses = fbBuses;
         }
-      } catch (_) {}
-
-      if (dbBuses.length === 0) {
-        const { data: supaBuses } = await supabase.from('buses').select('*');
-        if (supaBuses && supaBuses.length > 0) {
-          dbBuses = supaBuses;
-          // Seed to Firebase
-          supaBuses.forEach(b => saveFirebaseBus(b).catch(() => {}));
-        }
+      } catch (err) {
+        console.warn('Firebase buses fetch error:', err);
       }
 
-      const { data: liveLocs } = await supabase
-        .from('live_locations')
-        .select(`
-          *,
-          buses ( bus_number, plate_number, type ),
-          trips (
-            route_id,
-            routes ( route_number, origin, destination )
-          )
-        `);
-
-      const liveLocMap = new Map();
-      if (liveLocs) {
-        liveLocs.forEach((loc: any) => {
-          liveLocMap.set(loc.bus_id, loc);
-        });
-      }
-
-      let allBusesList: any[] = dbBuses ? [...dbBuses] : [];
-
-      // Also merge any custom buses registered by admin in localStorage (excluding deleted ones)
-      try {
-        const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
-        const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
-        const isDeleted = (id?: string, bNum?: string, pNum?: string) => {
-          const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
-          const cId = norm(id);
-          const cB = norm(bNum);
-          const cP = norm(pNum);
-          return deletedIds.some((d) => {
-            const cD = norm(d);
-            return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
-          });
-        };
-
-        // Purge any deleted buses from allBusesList
-        if (deletedIds.length > 0) {
-          allBusesList = allBusesList.filter(
-            (b) => !isDeleted(b.id, b.bus_number, b.plate_number)
-          );
-        }
-
-        const customBusesRaw = localStorage.getItem('nagarst_custom_buses');
-        if (customBusesRaw) {
-          const customBuses = JSON.parse(customBusesRaw);
-          customBuses.forEach((cb: any) => {
-            if (cb.id?.startsWith('demo-')) return;
-            const bNum = cb.busNumber || cb.bus_number;
-            const pNum = cb.plateNumber || cb.plate_number;
-            if (isDeleted(cb.id, bNum, pNum)) return;
-            if (!allBusesList.some((b) => b.id === cb.id || b.bus_number?.trim().toUpperCase() === (bNum || '').trim().toUpperCase())) {
-              allBusesList.push({
-                id: cb.id,
-                bus_number: bNum,
-                plate_number: pNum || bNum,
-                type: cb.busType || cb.type || 'Standard City',
-                route_id: cb.routeId || cb.route_id,
-                status: cb.status || 'Active',
-                created_at: cb.created_at || new Date().toISOString()
-              });
-            }
-          });
-        }
-      } catch (_) {}
-
-      // If no transit routes exist, aggressively purge stale demo bus caches from localStorage
-      if (combinedRoutes.length === 0) {
-        try {
-          localStorage.removeItem('nagarst_demo_buses');
-          localStorage.removeItem('nagarst_demo_assignments');
-          localStorage.removeItem('nagarst_custom_buses');
-          for (let i = localStorage.length - 1; i >= 0; i--) {
-            const k = localStorage.key(i);
-            if (k && (k.startsWith('nagarst_live_bus_demo-') || k === 'nagarst_demo_bus')) {
-              localStorage.removeItem(k);
-            }
-          }
-        } catch (_) {}
-      }
-
-      if (allBusesList.length > 0) {
-        const mappedBuses = allBusesList.map((b: any) => {
-          const live = liveLocMap.get(b.id);
-          let cached: any = null;
-          try {
-            const raw = localStorage.getItem('nagarst_live_bus_' + b.id);
-            if (raw) cached = JSON.parse(raw);
-          } catch (_) {}
-
-          // Match assigned route
-          const targetRouteId = b.route_id || cached?.routeId || live?.trips?.route_id || '';
+      if (dbBuses.length > 0) {
+        const mappedBuses = dbBuses.map((b: any) => {
+          const targetRouteId = b.route_id || b.routeId || '';
           const matchedRoute = combinedRoutes.find((r) => r.id === targetRouteId);
-
-          const routeNum = matchedRoute?.routeNumber || cached?.routeNumber || live?.trips?.routes?.route_number || '';
-          const routeTitle = matchedRoute?.name || cached?.routeName || (live?.trips?.routes ? `${live.trips.routes.origin} ➔ ${live.trips.routes.destination}` : 'Unassigned Route');
-          const originName = matchedRoute?.origin || live?.trips?.routes?.origin || 'Depot';
-          const destName = matchedRoute?.destination || live?.trips?.routes?.destination || 'Depot';
+          const routeNum = matchedRoute?.routeNumber || '';
+          const routeTitle = matchedRoute?.name || 'Unassigned Route';
+          const originName = matchedRoute?.origin || 'Depot';
+          const destName = matchedRoute?.destination || 'Depot';
 
           return {
             id: b.id,
-            busNumber: b.bus_number,
-            plateNumber: b.plate_number,
+            busNumber: b.bus_number || b.busNumber,
+            plateNumber: b.plate_number || b.plateNumber || b.bus_number || b.busNumber,
             routeId: targetRouteId,
             routeNumber: routeNum,
             routeName: routeTitle,
             origin: originName,
             destination: destName,
             currentStopId: 'stop1',
-            currentStopName: cached?.nextStopName || matchedRoute?.stops?.[0]?.stopName || 'Central Depot',
+            currentStopName: matchedRoute?.stops?.[0]?.stopName || 'Central Depot',
             nextStopId: 'stop2',
-            nextStopName: cached?.nextStopName || matchedRoute?.stops?.[1]?.stopName || 'Approaching Corridor',
+            nextStopName: matchedRoute?.stops?.[1]?.stopName || 'Approaching Corridor',
             etaToNextMinutes: 4,
-            speedKmh: cached?.speedKmh ?? (live?.speed_kmh || 0),
-            occupancy: (cached?.occupancy || 'moderate') as Bus['occupancy'],
-            status: (cached?.status || (live ? 'on_time' : 'on_time')) as Bus['status'],
-            lat: cached?.lat ?? (live?.lat || 19.0975),
-            lng: cached?.lng ?? (live?.lng || 74.7420),
-            heading: cached?.heading || live?.heading || 0,
-            driverName: cached?.driverName || 'Assigned Driver',
+            speedKmh: 0,
+            occupancy: 'moderate' as Bus['occupancy'],
+            status: 'on_time' as Bus['status'],
+            lat: 19.0975,
+            lng: 74.7420,
+            heading: 0,
+            driverName: 'Assigned Driver',
             conductorName: 'Duty Conductor',
             busType: b.type || 'Standard City',
-            lastUpdated: cached?.lastUpdated || live?.updated_at || b.created_at
+            lastUpdated: b.created_at || new Date().toISOString()
           };
         });
+
         setBuses(mappedBuses as Bus[]);
-        // Synchronize simulator engine fleet immediately with mapped fleet & routes
         try {
           syncSimulatorFleetWithAdminConfig(mappedBuses as Bus[], combinedRoutes as unknown as Route[]);
         } catch (_) {}
