@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import { db } from '../../../utils/firebaseClient';
 import { supabase } from '../../../utils/supabaseClient';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { Badge, Button } from '../../../components/ui';
@@ -29,6 +31,27 @@ export const AdminRoleMgmt: React.FC = () => {
     setLoading(true);
     setError('');
     try {
+      // 1. Try Firebase Firestore users collection
+      const snap = await getDocs(collection(db, 'users'));
+      const fbUsers: Profile[] = [];
+      snap.forEach(d => {
+        const item = d.data();
+        fbUsers.push({
+          id: d.id,
+          full_name: item.full_name || item.name || 'User',
+          role: item.role || 'PASSENGER',
+          created_at: item.created_at || new Date().toISOString(),
+          admin_request_status: item.admin_request_status || 'APPROVED'
+        });
+      });
+
+      if (fbUsers.length > 0) {
+        setUsers(fbUsers);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Fallback to Supabase if Firestore is empty
       const { data, error: err } = await supabase
         .from('user_profiles')
         .select('*')
@@ -59,12 +82,10 @@ export const AdminRoleMgmt: React.FC = () => {
     }
 
     try {
-      const { error: err } = await supabase
-        .from('user_profiles')
-        .update({ role: newRole })
-        .eq('id', userId);
-
-      if (err) throw err;
+      await setDoc(doc(db, 'users', userId), { role: newRole, admin_request_status: 'APPROVED' }, { merge: true });
+      try {
+        await supabase.from('user_profiles').update({ role: newRole }).eq('id', userId);
+      } catch (_) {}
       
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole, admin_request_status: 'APPROVED' } : u));
       toast.success('Role Updated', `${userName}'s role set to ${newRole.replace('_', ' ')}.`);
@@ -84,12 +105,10 @@ export const AdminRoleMgmt: React.FC = () => {
     if (!confirmed) return;
 
     try {
-      const { error: err } = await supabase
-        .from('user_profiles')
-        .update({ admin_request_status: 'REJECTED' })
-        .eq('id', userId);
-
-      if (err) throw err;
+      await setDoc(doc(db, 'users', userId), { admin_request_status: 'REJECTED' }, { merge: true });
+      try {
+        await supabase.from('user_profiles').update({ admin_request_status: 'REJECTED' }).eq('id', userId);
+      } catch (_) {}
       
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, admin_request_status: 'REJECTED' } : u));
       toast.info('Request Declined', `Administrative access declined for ${userName}.`);

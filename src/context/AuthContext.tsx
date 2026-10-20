@@ -49,10 +49,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        const isSuperAdminEmail = firebaseUser.email?.toLowerCase() === 'sushantmarkad1@gmail.com';
         try {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data();
+          const data = userDoc.exists() ? userDoc.data() : null;
+
+          if (isSuperAdminEmail) {
+            const superUser: UserProfile = {
+              id: firebaseUser.uid,
+              name: 'Sushant Markad',
+              email: 'sushantmarkad1@gmail.com',
+              role: 'SUPER_ADMIN'
+            };
+            setUser(superUser);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(superUser));
+            return;
+          }
+
+          if (data) {
             const newUser: UserProfile = {
               id: firebaseUser.uid,
               name: data.full_name || firebaseUser.displayName || 'User',
@@ -63,12 +77,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setUser(newUser);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
           }
-        } catch (_) {}
-      } else {
-        // If logged out from Firebase and not in driver demo session
-        if (user && user.role !== 'DRIVER') {
-          setUser(null);
-          localStorage.removeItem(STORAGE_KEY);
+        } catch (_) {
+          if (isSuperAdminEmail) {
+            const superUser: UserProfile = {
+              id: firebaseUser.uid,
+              name: 'Sushant Markad',
+              email: 'sushantmarkad1@gmail.com',
+              role: 'SUPER_ADMIN'
+            };
+            setUser(superUser);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(superUser));
+          }
         }
       }
     });
@@ -110,11 +129,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Attempt Firebase Auth sign-in or auto-create account in Firebase Auth
       try {
-        await signInWithEmailAndPassword(auth, email, password);
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        if (cred?.user?.uid) {
+          superAdminUser.id = cred.user.uid;
+          await setDoc(doc(db, 'users', cred.user.uid), {
+            id: cred.user.uid,
+            full_name: 'Sushant Markad',
+            email: 'sushantmarkad1@gmail.com',
+            role: 'SUPER_ADMIN',
+            admin_request_status: 'APPROVED',
+            created_at: new Date().toISOString()
+          }, { merge: true });
+        }
       } catch (fbErr: any) {
         if (fbErr.code === 'auth/user-not-found' || fbErr.code === 'auth/invalid-credential') {
           try {
-            await createUserWithEmailAndPassword(auth, email, password);
+            const cred = await createUserWithEmailAndPassword(auth, email, password);
+            if (cred?.user?.uid) {
+              superAdminUser.id = cred.user.uid;
+              await setDoc(doc(db, 'users', cred.user.uid), {
+                id: cred.user.uid,
+                full_name: 'Sushant Markad',
+                email: 'sushantmarkad1@gmail.com',
+                role: 'SUPER_ADMIN',
+                admin_request_status: 'APPROVED',
+                created_at: new Date().toISOString()
+              }, { merge: true });
+            }
           } catch (_) {}
         }
       }
@@ -275,7 +316,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (_) {}
     setUser(null);
     localStorage.removeItem(STORAGE_KEY);
-    window.location.href = '/auth';
+    window.location.href = '/login';
   };
 
   const switchRole = (role: UserRole) => {
