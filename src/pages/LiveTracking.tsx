@@ -45,6 +45,7 @@ import {
   buildBusTelemetry,
   ensureTimerRunning,
   syncSimulatorFleetWithAdminConfig,
+  restoreSimRunningState,
   type DemoSimulatorState,
   type DemoStop
 } from '../utils/demoSimulatorEngine';
@@ -146,6 +147,9 @@ export const LiveTracking: React.FC = () => {
               [incoming.id]: { ...incoming, isDemo, isLiveDriver: !isDemo }
             }));
           }
+        } else if (payload?.type === 'simRunningSync' || payload?.type === 'fleetSync' || payload?.type === 'resetDemo') {
+          restoreSimRunningState();
+          setSimState(getDemoSimulatorState());
         } else if (payload?.type === 'busOffline' && event.data?.busId) {
           const offNorm = event.data.busId.trim().toUpperCase().replace(/\s+/g, '');
           setActiveLiveBuses((prev) => {
@@ -280,14 +284,23 @@ export const LiveTracking: React.FC = () => {
             r => r.id === liveBus.routeId || r.routeNumber === liveBus.routeNumber || r.routeNumber === runtime.def.routeNumber
           );
 
+          const registered = buses?.find(b => 
+            (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
+            (b.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
+            (b.id || '').trim().toUpperCase().replace(/\s+/g, '') === key
+          );
+
           byNumber.set(key, {
             ...liveBus,
+            id: registered?.id || liveBus.id,
+            busNumber: registered?.busNumber || liveBus.busNumber,
+            plateNumber: registered?.plateNumber || liveBus.plateNumber,
             routeId: targetRoute?.id || liveBus.routeId || runtime.def.routeId,
             routeNumber: targetRoute?.routeNumber || runtime.def.routeNumber || liveBus.routeNumber,
             routeName: targetRoute?.name || runtime.def.routeName || liveBus.routeName,
             origin: targetRoute?.origin || runtime.def.origin || liveBus.origin,
             destination: targetRoute?.destination || runtime.def.destination || liveBus.destination,
-            isDemo: true
+            isDemo: registered ? false : true
           });
         }
       });

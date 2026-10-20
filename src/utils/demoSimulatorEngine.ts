@@ -542,6 +542,117 @@ export function buildBusTelemetry(runtime: BusSimRuntime): Bus {
 
 const fbThrottleTimes: Record<string, number> = {};
 
+let simSocket: any = null;
+function getSimSocket() {
+  if (typeof window === 'undefined') return null;
+  if (!simSocket) {
+    try {
+      const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://nagarst.onrender.com');
+      import('socket.io-client').then(({ io }) => {
+        simSocket = io(SOCKET_URL);
+      }).catch(() => {});
+    } catch (_) {}
+  }
+  return simSocket;
+}
+
+export function persistSimRunningState() {
+  if (typeof window === 'undefined') return;
+  try {
+    const runningMap: Record<string, { isRunning: boolean; speedMultiplier: number; currentIndex: number; direction: number; delayMinutes: number }> = {};
+    Object.values(runtimeStore).forEach(r => {
+      if (r.isRunning) {
+        runningMap[r.id] = {
+          isRunning: true,
+          speedMultiplier: r.speedMultiplier,
+          currentIndex: r.currentIndex,
+          direction: r.direction,
+          delayMinutes: r.delayMinutes
+        };
+      }
+    });
+    localStorage.setItem('nagarst_sim_running_state', JSON.stringify(runningMap));
+
+    const ch = getBroadcastChannel();
+    if (ch) {
+      ch.postMessage({ type: 'simRunningSync', runningMap });
+    }
+  } catch (_) {}
+}
+
+export function restoreSimRunningState() {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem('nagarst_sim_running_state');
+    if (!raw) return;
+    const runningMap = JSON.parse(raw);
+    if (!runningMap || typeof runningMap !== 'object') return;
+
+    let anyRunning = false;
+    Object.entries(runningMap).forEach(([id, st]: [string, any]) => {
+      if (st && st.isRunning) {
+        const normKey = id.trim().toUpperCase().replace(/\s+/g, '');
+        const r = runtimeStore[id] || Object.values(runtimeStore).find(
+          item => (item.def.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === normKey ||
+                  (item.def.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === normKey ||
+                  item.id.trim().toUpperCase().replace(/\s+/g, '') === normKey
+        );
+        if (r) {
+          r.isRunning = true;
+          if (st.speedMultiplier) r.speedMultiplier = st.speedMultiplier;
+          if (st.currentIndex !== undefined) r.currentIndex = st.currentIndex;
+          if (st.direction !== undefined) r.direction = st.direction;
+          if (st.delayMinutes !== undefined) r.delayMinutes = st.delayMinutes;
+          r.currentBus = buildBusTelemetry(r);
+          anyRunning = true;
+        }
+      }
+    });
+
+    if (anyRunning) {
+      ensureTimerRunning();
+      notifyListeners();
+    }
+  } catch (_) {}
+}
+
+// Cross-tab real-time sync for running simulation status
+if (typeof BroadcastChannel !== 'undefined') {
+  try {
+    const syncCh = new BroadcastChannel('nagarst_bus_telemetry');
+    syncCh.addEventListener('message', (e) => {
+      if (e.data?.type === 'simRunningSync' && e.data?.runningMap) {
+        const runningMap = e.data.runningMap;
+        let anyRunning = false;
+        Object.values(runtimeStore).forEach(r => {
+          const normKey = r.id.trim().toUpperCase().replace(/\s+/g, '');
+          const normNum = (r.def.busNumber || '').trim().toUpperCase().replace(/\s+/g, '');
+          const matchEntry = Object.entries(runningMap).find(([k]) => {
+            const kn = k.trim().toUpperCase().replace(/\s+/g, '');
+            return kn === normKey || kn === normNum;
+          });
+
+          if (matchEntry) {
+            const st: any = matchEntry[1];
+            r.isRunning = Boolean(st.isRunning);
+            if (st.speedMultiplier) r.speedMultiplier = st.speedMultiplier;
+            if (st.currentIndex !== undefined) r.currentIndex = st.currentIndex;
+            if (st.direction !== undefined) r.direction = st.direction;
+            if (r.isRunning) anyRunning = true;
+          } else {
+            r.isRunning = false;
+          }
+          r.currentBus = buildBusTelemetry(r);
+        });
+        ensureTimerRunning();
+        notifyListeners();
+      } else if (e.data?.type === 'resetDemo') {
+        restoreSimRunningState();
+      }
+    });
+  } catch (_) {}
+}
+
 /**
  * Dispatches simulated telemetry to all map listeners (BroadcastChannel, LocalStorage, Socket, Firebase)
  */
@@ -566,6 +677,14 @@ function broadcastBusLocation(bus: Bus) {
 
     if (ch) {
       ch.postMessage({ type: 'fleetSync', buses: aggregate });
+    }
+  } catch (_) {}
+
+  // Relay via Socket.IO for cross-device & network listeners
+  try {
+    const s = getSimSocket();
+    if (s && s.connected) {
+      s.emit('updateLocation', bus);
     }
   } catch (_) {}
 
@@ -612,6 +731,8 @@ function broadcastBusOffline(busId: string) {
   } catch (_) {}
 }
 
+let tickCount = 0;
+
 /**
  * Single tick across all active demo buses
  */
@@ -643,6 +764,11 @@ export function tickDemoSimulation() {
     broadcastBusLocation(bus);
   });
 
+  tickCount++;
+  if (tickCount % 5 === 0) {
+    persistSimRunningState();
+  }
+
   notifyListeners();
 }
 
@@ -671,6 +797,7 @@ export function ensureTimerRunning() {
 if (typeof window !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
+      restoreSimRunningState();
       ensureTimerRunning();
     }
   });
@@ -678,22 +805,7 @@ if (typeof window !== 'undefined') {
 
 // Restore running simulator state from localStorage on load if previously running
 try {
-  const savedDemoBuses = typeof window !== 'undefined' ? localStorage.getItem('nagarst_demo_buses') : null;
-  if (savedDemoBuses) {
-    const parsed = JSON.parse(savedDemoBuses);
-    if (parsed && typeof parsed === 'object') {
-      const ids = Object.keys(parsed);
-      if (ids.length > 0) {
-        ids.forEach(busId => {
-          if (runtimeStore[busId]) {
-            runtimeStore[busId].isRunning = true;
-            runtimeStore[busId].currentBus = parsed[busId];
-          }
-        });
-        ensureTimerRunning();
-      }
-    }
-  }
+  restoreSimRunningState();
 } catch (_) {}
 
 /**
@@ -714,6 +826,7 @@ export function startBus(busId: string, options?: { speedMultiplier?: number; de
   broadcastBusLocation(bus);
 
   ensureTimerRunning();
+  persistSimRunningState();
   notifyListeners();
 }
 
@@ -731,6 +844,7 @@ export function stopBus(busId: string) {
   broadcastBusLocation(bus);
 
   ensureTimerRunning();
+  persistSimRunningState();
   notifyListeners();
 }
 
@@ -748,6 +862,7 @@ export function startAllBuses(options?: { speedMultiplier?: number }) {
   });
 
   ensureTimerRunning();
+  persistSimRunningState();
   notifyListeners();
 }
 
@@ -790,6 +905,7 @@ export function resetAllBuses(options?: { speedMultiplier?: number }) {
 
   // 4. Restart continuous simulation timer
   ensureTimerRunning();
+  persistSimRunningState();
   notifyListeners();
 
   const ch = getBroadcastChannel();
@@ -821,6 +937,7 @@ export function resetBus(busId: string) {
   broadcastBusLocation(bus);
 
   ensureTimerRunning();
+  persistSimRunningState();
   notifyListeners();
 }
 
@@ -841,6 +958,7 @@ export function stopAllBuses() {
     activeInterval = null;
   }
 
+  persistSimRunningState();
   notifyListeners();
 }
 
@@ -1533,20 +1651,42 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
         }
       }
 
+      const savedRunningRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_sim_running_state') : null;
+      let savedRunning: any = null;
+      if (savedRunningRaw) {
+        try {
+          const map = JSON.parse(savedRunningRaw);
+          const kNorm = existingDef.busNumber.trim().toUpperCase().replace(/\s+/g, '');
+          savedRunning = map[existingDef.id] || map[existingDef.busNumber] || Object.entries(map).find(([k]) => k.trim().toUpperCase().replace(/\s+/g, '') === kNorm)?.[1];
+        } catch (_) {}
+      }
+
+      const wasRunning = Boolean(runtimeStore[existingDef.id]?.isRunning || savedRunning?.isRunning);
+      const curIndex = runtimeStore[existingDef.id]?.currentIndex ?? (savedRunning?.currentIndex ?? 0);
+      const curDirection = runtimeStore[existingDef.id]?.direction ?? (savedRunning?.direction ?? 1);
+      const curSpeed = runtimeStore[existingDef.id]?.speedMultiplier ?? (savedRunning?.speedMultiplier ?? 1);
+      const curDelay = runtimeStore[existingDef.id]?.delayMinutes ?? (savedRunning?.delayMinutes ?? 0);
+
       if (!runtimeStore[existingDef.id]) {
         runtimeStore[existingDef.id] = {
           id: existingDef.id,
           def: existingDef,
-          isRunning: false,
-          currentIndex: 0,
-          direction: 1,
-          speedMultiplier: 1,
-          delayMinutes: 0,
+          isRunning: wasRunning,
+          currentIndex: curIndex,
+          direction: curDirection,
+          speedMultiplier: curSpeed,
+          delayMinutes: curDelay,
           currentBus: null,
-          progressPercent: 0
+          progressPercent: Math.round((curIndex / Math.max(1, existingDef.waypoints.length - 1)) * 100)
         };
       } else {
         runtimeStore[existingDef.id].def = existingDef;
+        if (savedRunning) {
+          runtimeStore[existingDef.id].isRunning = wasRunning;
+          runtimeStore[existingDef.id].currentIndex = curIndex;
+          runtimeStore[existingDef.id].direction = curDirection;
+          runtimeStore[existingDef.id].speedMultiplier = curSpeed;
+        }
       }
 
       // Generate up-to-date telemetry and broadcast
@@ -1602,6 +1742,7 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
     }
   } catch (_) {}
 
+  restoreSimRunningState();
   notifyListeners();
 }
 
