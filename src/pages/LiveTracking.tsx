@@ -43,6 +43,7 @@ import {
   getDemoSimulatorState,
   subscribeToDemoState,
   buildBusTelemetry,
+  ensureTimerRunning,
   type DemoSimulatorState,
   type DemoStop
 } from '../utils/demoSimulatorEngine';
@@ -120,9 +121,9 @@ export const LiveTracking: React.FC = () => {
       if (b && !map[b.id]) map[b.id] = { ...b, isDemo: true };
     });
 
-    // 3. Registry definitions fallback so passenger always sees all demo buses
-    DEMO_BUS_DEFINITIONS.forEach((def) => {
-      if (!map[def.id]) {
+    // 3. Fallback to DEMO_BUS_DEFINITIONS ONLY if no demo buses have been initialized yet
+    if (Object.keys(map).length === 0) {
+      DEMO_BUS_DEFINITIONS.forEach((def) => {
         const dummyRuntime = {
           id: def.id,
           def,
@@ -136,15 +137,20 @@ export const LiveTracking: React.FC = () => {
         };
         const b = buildBusTelemetry(dummyRuntime);
         if (b) map[b.id] = { ...b, isDemo: true };
-      }
-    });
+      });
+    }
 
-    // 4. Purge any deleted demo buses
+    // 4. Purge any deleted demo buses (matching id, busNumber, or plateNumber)
     try {
       const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
       if (deletedRaw) {
         const deletedIds: string[] = JSON.parse(deletedRaw);
-        deletedIds.forEach(id => delete map[id]);
+        Object.keys(map).forEach(id => {
+          const b = map[id];
+          if (deletedIds.includes(id) || (b?.busNumber && deletedIds.includes(b.busNumber)) || (b?.plateNumber && deletedIds.includes(b.plateNumber))) {
+            delete map[id];
+          }
+        });
       }
     } catch (_) {}
 
@@ -158,7 +164,7 @@ export const LiveTracking: React.FC = () => {
           const raw = localStorage.getItem(k);
           if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && parsed.id && !deletedIds.includes(parsed.id)) {
+            if (parsed && parsed.id && !deletedIds.includes(parsed.id) && !deletedIds.includes(parsed.busNumber)) {
               const isDemo = Boolean(parsed.isDemo || parsed.id.startsWith('demo-'));
               map[parsed.id] = { ...parsed, isDemo, isLiveDriver: !isDemo };
             }
@@ -301,6 +307,9 @@ export const LiveTracking: React.FC = () => {
       } catch (_) {}
     });
 
+    // Ensure simulation timer is ticking in this active tab so buses never freeze due to background throttling
+    ensureTimerRunning();
+
     return () => {
       ch?.close();
       window.removeEventListener('storage', onStorage);
@@ -308,9 +317,21 @@ export const LiveTracking: React.FC = () => {
     };
   }, []);
 
-  // Combined active fleet strictly from active live telemetry (0 ghost buses)
+  // Combined active fleet strictly from active live telemetry, deduplicated by busNumber (0 ghost or duplicate buses)
   const allFleetBuses = useMemo<Bus[]>(() => {
-    return Object.values(activeLiveBuses);
+    const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
+    const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+
+    const byNumber = new Map<string, Bus>();
+    Object.values(activeLiveBuses).forEach((b) => {
+      if (!b || !b.id) return;
+      if (deletedIds.includes(b.id) || (b.busNumber && deletedIds.includes(b.busNumber)) || (b.plateNumber && deletedIds.includes(b.plateNumber))) {
+        return;
+      }
+      const key = (b.busNumber || b.id).trim().toUpperCase();
+      byNumber.set(key, b);
+    });
+    return Array.from(byNumber.values());
   }, [activeLiveBuses]);
 
   const selectedBus = selectedBusId ? allFleetBuses.find((b) => b.id === selectedBusId) : null;
@@ -420,8 +441,16 @@ export const LiveTracking: React.FC = () => {
     const activeRouteMap = new Map<string, RouteType>();
 
     allFleetBuses.forEach((bus) => {
-      // 1. From DEMO_BUS_DEFINITIONS
-      const demoDef = DEMO_BUS_DEFINITIONS.find((d: any) => d.id === bus.id || d.routeId === bus.routeId);
+      // 1. First check if configured route exists in allRoutes (Route Corridors tab)
+      const dbRoute = allRoutes.find((r) => r.id === bus.routeId);
+      if (dbRoute) {
+        activeRouteMap.set(dbRoute.id, dbRoute);
+        return;
+      }
+
+      // 2. Check in-memory simulator runtime or DEMO_BUS_DEFINITIONS
+      const runtime = simState.buses[bus.id];
+      const demoDef = runtime?.def || DEMO_BUS_DEFINITIONS.find((d: any) => d.id === bus.id || d.busNumber === bus.busNumber);
       if (demoDef && demoDef.stops && demoDef.stops.length > 0) {
         activeRouteMap.set(demoDef.routeId, {
           id: demoDef.routeId,
@@ -453,12 +482,6 @@ export const LiveTracking: React.FC = () => {
           })),
           route_path: demoDef.waypoints,
         });
-      }
-
-      // 2. From allRoutes (database configured routes)
-      const dbRoute = allRoutes.find((r) => r.id === bus.routeId);
-      if (dbRoute) {
-        activeRouteMap.set(dbRoute.id, dbRoute);
       }
     });
 

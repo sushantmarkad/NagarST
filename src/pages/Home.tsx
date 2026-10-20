@@ -264,9 +264,21 @@ export const Home: React.FC = () => {
     };
   }, []);
 
-  // Display buses strictly from active live telemetry (0 ghost buses)
+  // Display buses strictly from active live telemetry, deduplicated by busNumber (0 ghost or duplicate buses)
   const displayBuses = useMemo<Bus[]>(() => {
-    return Object.values(activeLiveBuses);
+    const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
+    const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+
+    const byNumber = new Map<string, Bus>();
+    Object.values(activeLiveBuses).forEach((b) => {
+      if (!b || !b.id) return;
+      if (deletedIds.includes(b.id) || (b.busNumber && deletedIds.includes(b.busNumber)) || (b.plateNumber && deletedIds.includes(b.plateNumber))) {
+        return;
+      }
+      const key = (b.busNumber || b.id).trim().toUpperCase();
+      byNumber.set(key, b);
+    });
+    return Array.from(byNumber.values());
   }, [activeLiveBuses]);
 
   const handleSearch = (e: React.FormEvent) => {

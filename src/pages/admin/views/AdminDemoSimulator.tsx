@@ -83,23 +83,27 @@ export const AdminDemoSimulator: React.FC = () => {
     setInteractiveMode('view');
   };
 
-  // Merge live simulator buses with app buses so that the demo buses render directly on LiveMap
+  // Display ONLY active demo simulator buses, deduplicated by busNumber (prevents duplicate or ghost DB markers)
   const displayBuses = React.useMemo(() => {
+    const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
+    const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
     const map = new Map<string, any>();
-    buses.forEach(b => map.set(b.id, b));
+
     Object.values(simState.buses).forEach(runtime => {
-      if (runtime) {
+      if (runtime && runtime.def) {
+        if (deletedIds.includes(runtime.id) || deletedIds.includes(runtime.def.busNumber)) return;
         const activeBus = runtime.currentBus || buildBusTelemetry(runtime);
         if (activeBus) {
-          map.set(activeBus.id, activeBus);
+          // Key by busNumber to strictly guarantee NO duplicate markers appear on the map!
+          map.set(activeBus.busNumber, activeBus);
         }
       }
     });
     return Array.from(map.values());
-  }, [buses, simState.buses]);
+  }, [simState.buses]);
 
-  const selectedBus = displayBuses.find(b => b.id === selectedBusId);
-  const activeDemoBuses = displayBuses.filter(b => b.isDemo || b.id?.startsWith('demo-'));
+  const selectedBus = displayBuses.find(b => b.id === selectedBusId || b.busNumber === selectedBusId) || displayBuses[0] || null;
+  const activeDemoBuses = displayBuses;
 
   // Only display routes configured in Route Corridors tab or an actively assigned bus corridor with real road waypoints
   const allRoutes = React.useMemo(() => {

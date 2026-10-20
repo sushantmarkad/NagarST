@@ -299,12 +299,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       let allBusesList: any[] = dbBuses ? [...dbBuses] : [];
 
-      // Also merge any custom buses registered by admin in localStorage
+      // Also merge any custom buses registered by admin in localStorage (excluding deleted ones)
       try {
+        const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+        const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+
+        // Purge any deleted buses from allBusesList
+        if (deletedIds.length > 0) {
+          allBusesList = allBusesList.filter(
+            (b) => !deletedIds.includes(b.id) && !deletedIds.includes(b.bus_number)
+          );
+        }
+
         const customBusesRaw = localStorage.getItem('nagarst_custom_buses');
         if (customBusesRaw) {
           const customBuses = JSON.parse(customBusesRaw);
           customBuses.forEach((cb: any) => {
+            if (deletedIds.includes(cb.id) || deletedIds.includes(cb.busNumber)) return;
             if (!allBusesList.some((b) => b.id === cb.id || b.bus_number === cb.busNumber)) {
               allBusesList.push({
                 id: cb.id,
