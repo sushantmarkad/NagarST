@@ -292,6 +292,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         userCircleRef.current.remove();
         userCircleRef.current = null;
       }
+      Object.values(markersRef.current).forEach((m) => {
+        try { m.remove(); } catch (_) {}
+      });
+      markersRef.current = {};
       map.remove();
       mapRef.current = null;
     };
@@ -413,9 +417,11 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         );
         markersRef.current[key] = marker;
       } else {
-        markersRef.current[key].setIcon(stopIcon);
-        markersRef.current[key].setLatLng([stop.lat, stop.lng]);
-        markersRef.current[key].setTooltipContent(
+        const marker = markersRef.current[key];
+        if (!map.hasLayer(marker)) marker.addTo(map);
+        marker.setIcon(stopIcon);
+        marker.setLatLng([stop.lat, stop.lng]);
+        marker.setTooltipContent(
           `<div style="font-weight: 600; color: #7847CB;">${stop.name}</div>`
         );
       }
@@ -710,21 +716,28 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         onSelectBus?.(bus);
       };
 
+      const lat = Number(bus.lat);
+      const lng = Number(bus.lng);
+      if (isNaN(lat) || isNaN(lng)) return;
+
       if (!markersRef.current[key]) {
-        const marker = L.marker([bus.lat, bus.lng], { icon: busIcon }).addTo(map);
+        const marker = L.marker([lat, lng], { icon: busIcon, zIndexOffset: 850 }).addTo(map);
         marker.on('click', handleMarkerClick);
         marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -10], className: 'custom-tooltip' });
         markersRef.current[key] = marker;
       } else {
-        markersRef.current[key].setIcon(busIcon);
-        markersRef.current[key].setLatLng([bus.lat, bus.lng]);
-        markersRef.current[key].setTooltipContent(tooltipHtml);
-        markersRef.current[key].off('click');
-        markersRef.current[key].on('click', handleMarkerClick);
+        const marker = markersRef.current[key];
+        if (!map.hasLayer(marker)) marker.addTo(map);
+        marker.setIcon(busIcon);
+        marker.setLatLng([lat, lng]);
+        marker.setZIndexOffset(850);
+        marker.setTooltipContent(tooltipHtml);
+        marker.off('click');
+        marker.on('click', handleMarkerClick);
       }
 
       if (isSelected && isFollowingRef.current) {
-        map.panTo([bus.lat, bus.lng], { animate: true, duration: 0.5 });
+        map.panTo([lat, lng], { animate: true, duration: 0.5 });
       }
     });
 

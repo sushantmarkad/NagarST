@@ -102,14 +102,25 @@ export const LiveTracking: React.FC = () => {
   const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>(() => {
     const map: Record<string, Bus> = {};
 
-    // 1. In-memory demo simulator state (so passenger immediately sees demo fleet)
+    // 1. Cross-tab aggregate demo buses from localStorage (highest source of truth for synced fleet)
+    try {
+      const demoRaw = localStorage.getItem('nagarst_demo_buses');
+      if (demoRaw) {
+        const parsed = JSON.parse(demoRaw);
+        Object.values(parsed).forEach((b: any) => {
+          if (b && b.id) map[b.id] = { ...b, isDemo: true };
+        });
+      }
+    } catch (_) {}
+
+    // 2. In-memory demo simulator state fallback
     const localSim = getDemoSimulatorState();
     Object.values(localSim.buses).forEach((r) => {
       const b = r.currentBus || buildBusTelemetry(r);
-      if (b) map[b.id] = { ...b, isDemo: true };
+      if (b && !map[b.id]) map[b.id] = { ...b, isDemo: true };
     });
 
-    // 2. Registry definitions fallback so passenger always sees all demo buses
+    // 3. Registry definitions fallback so passenger always sees all demo buses
     DEMO_BUS_DEFINITIONS.forEach((def) => {
       if (!map[def.id]) {
         const dummyRuntime = {
@@ -128,26 +139,26 @@ export const LiveTracking: React.FC = () => {
       }
     });
 
-    // 3. Cross-tab aggregate demo buses from localStorage
+    // 4. Purge any deleted demo buses
     try {
-      const demoRaw = localStorage.getItem('nagarst_demo_buses');
-      if (demoRaw) {
-        const parsed = JSON.parse(demoRaw);
-        Object.values(parsed).forEach((b: any) => {
-          if (b && b.id) map[b.id] = { ...b, isDemo: true };
-        });
+      const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+      if (deletedRaw) {
+        const deletedIds: string[] = JSON.parse(deletedRaw);
+        deletedIds.forEach(id => delete map[id]);
       }
     } catch (_) {}
 
-    // 4. Individual active bus keys (live driver or demo)
+    // 5. Individual active bus keys (live driver or demo)
     try {
+      const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+      const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && k.startsWith('nagarst_live_bus_')) {
           const raw = localStorage.getItem(k);
           if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && parsed.id) {
+            if (parsed && parsed.id && !deletedIds.includes(parsed.id)) {
               const isDemo = Boolean(parsed.isDemo || parsed.id.startsWith('demo-'));
               map[parsed.id] = { ...parsed, isDemo, isLiveDriver: !isDemo };
             }
@@ -175,6 +186,34 @@ export const LiveTracking: React.FC = () => {
               [incoming.id]: { ...incoming, isDemo, isLiveDriver: !isDemo }
             }));
           }
+        } else if (payload?.type === 'fleetSync' && payload?.buses) {
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            // Purge deleted or unassigned demo buses
+            Object.keys(next).forEach((k) => {
+              if (k.startsWith('demo-') && !payload.buses[k]) {
+                delete next[k];
+              }
+            });
+            Object.values(payload.buses).forEach((b: any) => {
+              if (b && b.id) next[b.id] = { ...b, isDemo: true };
+            });
+            return next;
+          });
+        } else if (payload?.type === 'resetDemo') {
+          try {
+            const demoRaw = localStorage.getItem('nagarst_demo_buses');
+            if (demoRaw) {
+              const parsed = JSON.parse(demoRaw);
+              setActiveLiveBuses((prev) => {
+                const next = { ...prev };
+                Object.values(parsed).forEach((b: any) => {
+                  if (b && b.id) next[b.id] = { ...b, isDemo: true };
+                });
+                return next;
+              });
+            }
+          } catch (_) {}
         } else if (event.data?.type === 'busOffline' && event.data?.busId) {
           const offlineId = event.data.busId;
           setActiveLiveBuses((prev) => {
@@ -187,29 +226,30 @@ export const LiveTracking: React.FC = () => {
     } catch (_) {}
 
     const onStorage = (e: StorageEvent) => {
-      if (e.key === 'nagarst_demo_buses') {
-        if (e.newValue) {
-          try {
-            const parsed = JSON.parse(e.newValue);
+      if (e.key === 'nagarst_demo_buses' || e.key === 'nagarst_custom_buses' || e.key === 'nagarst_demo_assignments' || e.key === 'nagarst_deleted_demo_buses') {
+        try {
+          const demoRaw = localStorage.getItem('nagarst_demo_buses');
+          const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+          const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+
+          if (demoRaw) {
+            const parsed = JSON.parse(demoRaw);
             setActiveLiveBuses((prev) => {
               const next = { ...prev };
+              Object.keys(next).forEach((k) => {
+                if (k.startsWith('demo-') && (!parsed[k] || deletedIds.includes(k))) {
+                  delete next[k];
+                }
+              });
               Object.values(parsed).forEach((b: any) => {
-                if (b && b.id) next[b.id] = { ...b, isDemo: true };
+                if (b && b.id && !deletedIds.includes(b.id)) {
+                  next[b.id] = { ...b, isDemo: true };
+                }
               });
               return next;
             });
-          } catch (_) {}
-        } else {
-          setActiveLiveBuses((prev) => {
-            const next = { ...prev };
-            Object.keys(next).forEach((id) => {
-              if (next[id]?.isDemo || id.startsWith('demo-')) {
-                delete next[id];
-              }
-            });
-            return next;
-          });
-        }
+          }
+        } catch (_) {}
       } else if (e.key?.startsWith('nagarst_live_bus_')) {
         if (e.newValue) {
           try {
@@ -236,18 +276,29 @@ export const LiveTracking: React.FC = () => {
 
     // Also subscribe to in-memory simulator engine if running in this same tab
     const unsubSim = subscribeToDemoState((newState) => {
-      setActiveLiveBuses((prev) => {
-        let hasChanges = false;
-        const next = { ...prev };
-        Object.values(newState.buses).forEach((r) => {
-          const b = r.currentBus || buildBusTelemetry(r);
-          if (b) {
-            next[b.id] = { ...b, isDemo: true };
-            hasChanges = true;
-          }
+      try {
+        const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+        const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+        setActiveLiveBuses((prev) => {
+          let hasChanges = false;
+          const next = { ...prev };
+          Object.values(newState.buses).forEach((r) => {
+            if (deletedIds.includes(r.id)) {
+              if (next[r.id]) {
+                delete next[r.id];
+                hasChanges = true;
+              }
+              return;
+            }
+            const b = r.currentBus || buildBusTelemetry(r);
+            if (b) {
+              next[b.id] = { ...b, isDemo: true };
+              hasChanges = true;
+            }
+          });
+          return hasChanges ? next : prev;
         });
-        return hasChanges ? next : prev;
-      });
+      } catch (_) {}
     });
 
     return () => {

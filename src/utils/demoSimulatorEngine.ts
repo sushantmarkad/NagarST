@@ -208,6 +208,36 @@ try {
   }
 } catch (_) {}
 
+// Restore any custom buses created by admin
+try {
+  const customBusesRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_custom_buses') : null;
+  if (customBusesRaw) {
+    const customBuses: DemoBusDefinition[] = JSON.parse(customBusesRaw);
+    customBuses.forEach(cb => {
+      const existingIdx = DEMO_BUS_DEFINITIONS.findIndex(d => d.id === cb.id || d.busNumber === cb.busNumber);
+      if (existingIdx !== -1) {
+        DEMO_BUS_DEFINITIONS[existingIdx] = cb;
+      } else {
+        DEMO_BUS_DEFINITIONS.push(cb);
+      }
+    });
+  }
+} catch (_) {}
+
+// Restore any saved route assignments
+try {
+  const assignmentsRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_demo_assignments') : null;
+  if (assignmentsRaw) {
+    const assignments: Record<string, Partial<DemoBusDefinition>> = JSON.parse(assignmentsRaw);
+    Object.keys(assignments).forEach(busId => {
+      const def = DEMO_BUS_DEFINITIONS.find(d => d.id === busId || d.busNumber === busId);
+      if (def) {
+        Object.assign(def, assignments[busId]);
+      }
+    });
+  }
+} catch (_) {}
+
 DEMO_BUS_DEFINITIONS.forEach(def => {
   runtimeStore[def.id] = {
     id: def.id,
@@ -221,6 +251,18 @@ DEMO_BUS_DEFINITIONS.forEach(def => {
     progressPercent: def.waypoints.length > 1 ? Math.round((def.initialIndex / (def.waypoints.length - 1)) * 100) : 0
   };
 });
+
+// Ensure initial demo fleet aggregate is populated in localStorage immediately on load
+try {
+  const initAggregate: Record<string, Bus> = {};
+  Object.values(runtimeStore).forEach(r => {
+    const b = r.currentBus || buildBusTelemetry(r);
+    if (b) initAggregate[r.id] = b;
+  });
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('nagarst_demo_buses', JSON.stringify(initAggregate));
+  }
+} catch (_) {}
 
 let activeInterval: ReturnType<typeof setInterval> | null = null;
 let broadcastChannel: BroadcastChannel | null = null;
@@ -381,14 +423,19 @@ function broadcastBusLocation(bus: Bus) {
 
   try {
     localStorage.setItem('nagarst_live_bus_' + bus.id, JSON.stringify(bus));
-    // Also save into aggregate demo map
+    // Save aggregate demo fleet with ALL demo buses (both running & standby)
     const aggregate: Record<string, Bus> = {};
     Object.values(runtimeStore).forEach(r => {
-      if (r.isRunning && r.currentBus) aggregate[r.id] = r.currentBus;
+      const b = r.currentBus || buildBusTelemetry(r);
+      if (b) aggregate[r.id] = b;
     });
     localStorage.setItem('nagarst_demo_buses', JSON.stringify(aggregate));
     if (bus.id === DEMO_BUS_ID) {
       localStorage.setItem('nagarst_demo_bus', JSON.stringify(bus));
+    }
+
+    if (ch) {
+      ch.postMessage({ type: 'fleetSync', buses: aggregate });
     }
   } catch (_) {}
 }
@@ -406,9 +453,15 @@ function broadcastBusOffline(busId: string) {
     }
     const aggregate: Record<string, Bus> = {};
     Object.values(runtimeStore).forEach(r => {
-      if (r.isRunning && r.currentBus && r.id !== busId) aggregate[r.id] = r.currentBus;
+      if (r.id !== busId) {
+        const b = r.currentBus || buildBusTelemetry(r);
+        if (b) aggregate[r.id] = b;
+      }
     });
     localStorage.setItem('nagarst_demo_buses', JSON.stringify(aggregate));
+    if (ch) {
+      ch.postMessage({ type: 'fleetSync', buses: aggregate });
+    }
   } catch (_) {}
 }
 
@@ -516,8 +569,10 @@ export function stopBus(busId: string) {
   if (!runtime) return;
 
   runtime.isRunning = false;
-  runtime.currentBus = null;
-  broadcastBusOffline(busId);
+  // Bus remains stationary on the corridor at its current progress
+  const bus = buildBusTelemetry(runtime);
+  runtime.currentBus = bus;
+  broadcastBusLocation(bus);
 
   ensureTimerRunning();
   notifyListeners();
@@ -620,19 +675,15 @@ export function stopAllBuses() {
   Object.keys(runtimeStore).forEach(busId => {
     const runtime = runtimeStore[busId];
     runtime.isRunning = false;
-    runtime.currentBus = null;
-    broadcastBusOffline(busId);
+    const bus = buildBusTelemetry(runtime);
+    runtime.currentBus = bus;
+    broadcastBusLocation(bus);
   });
 
   if (activeInterval) {
     clearInterval(activeInterval);
     activeInterval = null;
   }
-
-  try {
-    localStorage.removeItem('nagarst_demo_buses');
-    localStorage.removeItem('nagarst_demo_bus');
-  } catch (_) {}
 
   notifyListeners();
 }
@@ -759,12 +810,30 @@ export function setBusAssignedRoute(
   runtime.direction = 1;
   runtime.progressPercent = 0;
 
+  const bus = buildBusTelemetry(runtime);
+  runtime.currentBus = bus;
+  broadcastBusLocation(bus);
+
   if (runtime.isRunning) {
-    const bus = buildBusTelemetry(runtime);
-    runtime.currentBus = bus;
-    broadcastBusLocation(bus);
     ensureTimerRunning();
   }
+
+  // Persist route assignment to localStorage for cross-tab sync
+  try {
+    const raw = localStorage.getItem('nagarst_demo_assignments');
+    const assignments = raw ? JSON.parse(raw) : {};
+    assignments[busId] = {
+      routeId: runtime.def.routeId,
+      routeNumber: runtime.def.routeNumber,
+      routeName: runtime.def.routeName,
+      origin: runtime.def.origin,
+      destination: runtime.def.destination,
+      color: runtime.def.color,
+      stops: runtime.def.stops,
+      waypoints: runtime.def.waypoints
+    };
+    localStorage.setItem('nagarst_demo_assignments', JSON.stringify(assignments));
+  } catch (_) {}
 
   notifyListeners();
 }
@@ -895,11 +964,15 @@ export function addNewCustomBus(busData: {
   };
   runtimeStore[id] = runtime;
 
+  const bus = buildBusTelemetry(runtime);
+  runtime.currentBus = bus;
+
   try {
-    const customBuses = DEMO_BUS_DEFINITIONS.filter((b) => b.id.startsWith('demo-bus-custom-'));
+    const customBuses = DEMO_BUS_DEFINITIONS.filter((b) => b.id.startsWith('demo-bus-custom-') || b.id.startsWith('demo-bus-'));
     localStorage.setItem('nagarst_custom_buses', JSON.stringify(customBuses));
   } catch (_) {}
 
+  broadcastBusLocation(bus);
   notifyListeners();
   return runtime;
 }
@@ -913,21 +986,21 @@ export function deleteDemoBus(busId: string): boolean {
   if (runtime) {
     runtime.isRunning = false;
     runtime.currentBus = null;
-    broadcastBusOffline(busId);
   }
+  broadcastBusOffline(busId);
 
   // 2. Remove from runtimeStore
   delete runtimeStore[busId];
 
   // 3. Remove from DEMO_BUS_DEFINITIONS
-  const defIdx = DEMO_BUS_DEFINITIONS.findIndex(d => d.id === busId);
+  const defIdx = DEMO_BUS_DEFINITIONS.findIndex(d => d.id === busId || d.busNumber === busId);
   if (defIdx !== -1) {
     DEMO_BUS_DEFINITIONS.splice(defIdx, 1);
   }
 
   // 4. Update localStorage
   try {
-    const customBuses = DEMO_BUS_DEFINITIONS.filter((b) => b.id.startsWith('demo-bus-custom-'));
+    const customBuses = DEMO_BUS_DEFINITIONS.filter((b) => b.id.startsWith('demo-bus-custom-') || b.id.startsWith('demo-bus-'));
     localStorage.setItem('nagarst_custom_buses', JSON.stringify(customBuses));
 
     const deletedIdsRaw = localStorage.getItem('nagarst_deleted_demo_buses');
@@ -935,6 +1008,13 @@ export function deleteDemoBus(busId: string): boolean {
     if (!deletedIds.includes(busId)) {
       deletedIds.push(busId);
       localStorage.setItem('nagarst_deleted_demo_buses', JSON.stringify(deletedIds));
+    }
+
+    const assignmentsRaw = localStorage.getItem('nagarst_demo_assignments');
+    if (assignmentsRaw) {
+      const assignments = JSON.parse(assignmentsRaw);
+      delete assignments[busId];
+      localStorage.setItem('nagarst_demo_assignments', JSON.stringify(assignments));
     }
   } catch (_) {}
 
