@@ -53,114 +53,157 @@ export const Home: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Listen for real-time driver transmissions
-  const [liveDriverBuses, setLiveDriverBuses] = useState<Bus[]>(() => {
+  // 1. Real-time Active Buses (Simulated Demo Buses + Live GPS Driver Telemetry)
+  const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>(() => {
+    const map: Record<string, Bus> = {};
+
+    // 1. In-memory demo simulator state (if running in same tab)
+    const localSim = getDemoSimulatorState();
+    Object.values(localSim.buses).forEach((r) => {
+      if (r.isRunning) {
+        const b = r.currentBus || buildBusTelemetry(r);
+        if (b) map[b.id] = { ...b, isDemo: true };
+      }
+    });
+
+    // 2. Cross-tab aggregate demo buses from localStorage
     try {
-      const stored = localStorage.getItem('nagarst_active_live_drivers');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          return parsed.filter(
-            (b: any) => Date.now() - new Date(b.updatedAt || 0).getTime() < 300000
-          );
+      const demoRaw = localStorage.getItem('nagarst_demo_buses');
+      if (demoRaw) {
+        const parsed = JSON.parse(demoRaw);
+        Object.values(parsed).forEach((b: any) => {
+          if (b && b.id) map[b.id] = { ...b, isDemo: true };
+        });
+      }
+    } catch (_) {}
+
+    // 3. Individual active bus keys (live driver or demo)
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('nagarst_live_bus_')) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.id) {
+              const isDemo = Boolean(parsed.isDemo || parsed.id.startsWith('demo-'));
+              map[parsed.id] = { ...parsed, isDemo, isLiveDriver: !isDemo };
+            }
+          }
         }
       }
-    } catch (e) {}
-    return [];
+    } catch (_) {}
+
+    return map;
   });
 
+  // Listen to cross-tab BroadcastChannel & storage events for ALL live bus telemetry (both demo & real driver)
   useEffect(() => {
-    let channel: BroadcastChannel | null = null;
+    let ch: BroadcastChannel | null = null;
     try {
-      channel = new BroadcastChannel('nagarst_bus_telemetry');
-      channel.onmessage = (event) => {
+      ch = new BroadcastChannel('nagarst_bus_telemetry');
+      ch.onmessage = (event) => {
         const payload = event.data;
-        const busObj = payload?.bus || payload?.data;
-        if ((payload?.type === 'driver_location_update' || payload?.type === 'locationUpdate') && busObj && !busObj.isDemo) {
-          const incomingBus: Bus = {
-            ...busObj,
-            isDemo: false,
-            updatedAt: new Date().toISOString(),
-          };
-          setLiveDriverBuses((prev) => {
-            const next = [incomingBus, ...prev.filter((b) => b.id !== incomingBus.id)];
-            try {
-              localStorage.setItem('nagarst_active_live_drivers', JSON.stringify(next));
-            } catch (err) {}
+        if ((payload?.type === 'locationUpdate' || payload?.type === 'driver_location_update') && (payload?.data || payload?.bus)) {
+          const incoming = (payload.data || payload.bus) as Bus;
+          if (incoming && incoming.id) {
+            const isDemo = Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
+            setActiveLiveBuses((prev) => ({
+              ...prev,
+              [incoming.id]: { ...incoming, isDemo, isLiveDriver: !isDemo }
+            }));
+          }
+        } else if (event.data?.type === 'busOffline' && event.data?.busId) {
+          const offlineId = event.data.busId;
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            delete next[offlineId];
             return next;
           });
         }
       };
-    } catch (e) {}
+    } catch (_) {}
 
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'nagarst_active_live_drivers' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) {
-            setLiveDriverBuses(parsed);
-          }
-        } catch (err) {}
-      } else if (e.key?.startsWith('nagarst_live_bus_') && !e.key.startsWith('nagarst_live_bus_demo-')) {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'nagarst_demo_buses') {
+        if (e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            setActiveLiveBuses((prev) => {
+              const next = { ...prev };
+              Object.values(parsed).forEach((b: any) => {
+                if (b && b.id) next[b.id] = { ...b, isDemo: true };
+              });
+              return next;
+            });
+          } catch (_) {}
+        } else {
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            Object.keys(next).forEach((id) => {
+              if (next[id]?.isDemo || id.startsWith('demo-')) {
+                delete next[id];
+              }
+            });
+            return next;
+          });
+        }
+      } else if (e.key?.startsWith('nagarst_live_bus_')) {
         if (e.newValue) {
           try {
             const b = JSON.parse(e.newValue);
-            if (b && !b.isDemo) {
-              setLiveDriverBuses((prev) => [b, ...prev.filter((x) => x.id !== b.id)]);
+            if (b && b.id) {
+              const isDemo = Boolean(b.isDemo || b.id.startsWith('demo-'));
+              setActiveLiveBuses((prev) => ({
+                ...prev,
+                [b.id]: { ...b, isDemo, isLiveDriver: !isDemo }
+              }));
             }
           } catch (_) {}
+        } else {
+          const id = e.key.replace('nagarst_live_bus_', '');
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
         }
       }
     };
-    window.addEventListener('storage', handleStorage);
+    window.addEventListener('storage', onStorage);
+
+    // Also subscribe to in-memory simulator engine if running in this same tab
+    const unsubSim = subscribeToDemoState((newState) => {
+      setActiveLiveBuses((prev) => {
+        let hasChanges = false;
+        const next = { ...prev };
+        Object.values(newState.buses).forEach((r) => {
+          if (r.isRunning) {
+            const b = r.currentBus || buildBusTelemetry(r);
+            if (b) {
+              next[b.id] = { ...b, isDemo: true };
+              hasChanges = true;
+            }
+          } else if (next[r.id]?.isDemo) {
+            delete next[r.id];
+            hasChanges = true;
+          }
+        });
+        return hasChanges ? next : prev;
+      });
+    });
 
     return () => {
-      channel?.close();
-      window.removeEventListener('storage', handleStorage);
+      ch?.close();
+      window.removeEventListener('storage', onStorage);
+      unsubSim();
     };
   }, []);
 
-  // Filter only active running demo buses
-  const activeRunningDemoBuses = useMemo<Bus[]>(() => {
-    const list: Bus[] = [];
-    Object.values(simState.buses).forEach((runtime) => {
-      if (runtime && runtime.isRunning) {
-        const telemetry = runtime.currentBus || buildBusTelemetry(runtime);
-        if (telemetry) {
-          list.push({ ...telemetry, isDemo: true });
-        }
-      }
-    });
-
-    if (list.length === 0) {
-      try {
-        const stored = localStorage.getItem('nagarst_demo_buses');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) {
-            parsed.forEach((b: any) => {
-              if (b.isRunning) {
-                const telemetry = b.currentBus || buildBusTelemetry(b);
-                if (telemetry) {
-                  list.push({ ...telemetry, isDemo: true });
-                }
-              }
-            });
-          }
-        }
-      } catch (err) {}
-    }
-
-    return list;
-  }, [simState.buses]);
-
-  // Merge strictly active simulator and driver buses (no offline ghost buses)
+  // Display buses strictly from active live telemetry (0 ghost buses)
   const displayBuses = useMemo<Bus[]>(() => {
-    const map = new Map<string, Bus>();
-    activeRunningDemoBuses.forEach((b) => map.set(b.id, b));
-    liveDriverBuses.forEach((b) => map.set(b.id, { ...b, isDemo: false }));
-    return Array.from(map.values());
-  }, [activeRunningDemoBuses, liveDriverBuses]);
+    return Object.values(activeLiveBuses);
+  }, [activeLiveBuses]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

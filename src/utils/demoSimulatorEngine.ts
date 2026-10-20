@@ -58,6 +58,49 @@ export interface DemoRoutePreset {
   waypoints: { lat: number; lng: number }[];
 }
 
+/**
+ * Densifies a polyline into evenly spaced sub-waypoints (~25-35m apart)
+ * so buses glide smoothly along actual roads continuously without getting stuck.
+ */
+export function densifyPath(path: { lat: number; lng: number }[], targetPoints = 120): { lat: number; lng: number }[] {
+  if (!path || path.length === 0) return [];
+  if (path.length === 1) return [path[0], path[0]];
+  if (path.length >= targetPoints) return path;
+
+  let totalDist = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    totalDist += getDistance(path[i], path[i + 1]);
+  }
+  if (totalDist <= 0) return path;
+
+  const result: { lat: number; lng: number }[] = [];
+  const stepDist = totalDist / (targetPoints - 1);
+
+  result.push({ lat: path[0].lat, lng: path[0].lng });
+
+  for (let p = 1; p < targetPoints - 1; p++) {
+    const targetDist = p * stepDist;
+    let accumulated = 0;
+
+    for (let i = 0; i < path.length - 1; i++) {
+      const segDist = getDistance(path[i], path[i + 1]);
+      if (accumulated + segDist >= targetDist) {
+        const remaining = targetDist - accumulated;
+        const ratio = segDist > 0 ? remaining / segDist : 0;
+        result.push({
+          lat: Number((path[i].lat + (path[i + 1].lat - path[i].lat) * ratio).toFixed(6)),
+          lng: Number((path[i].lng + (path[i + 1].lng - path[i].lng) * ratio).toFixed(6)),
+        });
+        break;
+      }
+      accumulated += segDist;
+    }
+  }
+
+  result.push({ lat: path[path.length - 1].lat, lng: path[path.length - 1].lng });
+  return result;
+}
+
 // Routes are dynamically loaded from Route Corridors tab - no hardcoded routes
 export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [];
 
@@ -83,7 +126,7 @@ export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
       { id: 'stop-dlg', name: 'Delhi Gate Transit', lat: 19.1025, lng: 74.7380 },
       { id: 'stop-svd', name: 'Savedi Bus Depot', lat: 19.1235, lng: 74.7321 },
     ],
-    waypoints: [
+    waypoints: densifyPath([
       { lat: 19.0910, lng: 74.7290 },
       { lat: 19.0925, lng: 74.7315 },
       { lat: 19.0940, lng: 74.7350 },
@@ -94,7 +137,7 @@ export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
       { lat: 19.1120, lng: 74.7350 },
       { lat: 19.1180, lng: 74.7335 },
       { lat: 19.1235, lng: 74.7321 },
-    ],
+    ], 120),
     initialIndex: 0
   },
   {
@@ -114,14 +157,14 @@ export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
       { id: 'stop-mky', name: 'Market Yard', lat: 19.0880, lng: 74.7510 },
       { id: 'stop-stn', name: 'Ahilyanagar Railway Station', lat: 19.0820, lng: 74.7590 },
     ],
-    waypoints: [
+    waypoints: densifyPath([
       { lat: 19.1025, lng: 74.7380 },
       { lat: 19.0990, lng: 74.7400 },
       { lat: 19.0945, lng: 74.7440 },
       { lat: 19.0880, lng: 74.7510 },
       { lat: 19.0850, lng: 74.7550 },
       { lat: 19.0820, lng: 74.7590 },
-    ],
+    ], 120),
     initialIndex: 0
   }
 ];
@@ -378,6 +421,8 @@ export function tickDemoSimulation() {
 
   activeBuses.forEach(runtime => {
     const waypoints = runtime.def.waypoints;
+    if (!waypoints || waypoints.length < 2) return;
+
     let nextIndex = runtime.currentIndex + runtime.direction;
 
     // Ping-pong reversal on route ends for realistic round trips
@@ -416,11 +461,31 @@ function ensureTimerRunning() {
 
   // Find max speed multiplier among running buses to set interval
   const maxSpeed = Math.max(1, ...Object.values(runtimeStore).filter(r => r.isRunning).map(r => r.speedMultiplier));
-  const ms = Math.max(160, Math.round(1400 / maxSpeed));
+  const ms = Math.max(100, Math.round(800 / maxSpeed));
 
   if (activeInterval) clearInterval(activeInterval);
   activeInterval = setInterval(tickDemoSimulation, ms);
 }
+
+// Restore running simulator state from localStorage on load if previously running
+try {
+  const savedDemoBuses = typeof window !== 'undefined' ? localStorage.getItem('nagarst_demo_buses') : null;
+  if (savedDemoBuses) {
+    const parsed = JSON.parse(savedDemoBuses);
+    if (parsed && typeof parsed === 'object') {
+      const ids = Object.keys(parsed);
+      if (ids.length > 0) {
+        ids.forEach(busId => {
+          if (runtimeStore[busId]) {
+            runtimeStore[busId].isRunning = true;
+            runtimeStore[busId].currentBus = parsed[busId];
+          }
+        });
+        ensureTimerRunning();
+      }
+    }
+  }
+} catch (_) {}
 
 /**
  * Start a specific demo bus
@@ -608,7 +673,7 @@ export function setBusAssignedRoute(
     destination,
     color: preset.color,
     stops,
-    waypoints
+    waypoints: densifyPath(waypoints, 120)
   };
 
   runtime.currentIndex = 0;
@@ -659,7 +724,7 @@ export function setBusCustomCorridor(
     destination: destination.name,
     routeName: `${runtime.def.routeNumber}: ${origin.name} ↔ ${destination.name}`,
     stops: allStops,
-    waypoints: waypoints.length > 1 ? waypoints : [origin, destination]
+    waypoints: densifyPath(waypoints.length > 1 ? waypoints : [origin, destination], 120)
   };
 
   runtime.currentIndex = 0;

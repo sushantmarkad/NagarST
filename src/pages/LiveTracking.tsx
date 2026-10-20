@@ -38,11 +38,13 @@ import { Button } from '../components/ui/Button';
 import type { BusStop, Bus, Route as RouteType } from '../types';
 import { getDistance } from '../utils/routing';
 import {
+  DEMO_BUS_DEFINITIONS,
   AVAILABLE_DEMO_ROUTES,
   getDemoSimulatorState,
   subscribeToDemoState,
   buildBusTelemetry,
-  type DemoSimulatorState
+  type DemoSimulatorState,
+  type DemoStop
 } from '../utils/demoSimulatorEngine';
 
 // Major Ahilyanagar transit landmarks and hubs for manual location selection
@@ -96,47 +98,71 @@ export const LiveTracking: React.FC = () => {
   // Only configured routes from Admin / Database — NO fake or hardcoded mock routes!
   const allRoutes = routes;
 
-  // 1. Live Real-Time Driver Telemetry from Driver Dashboard (Cross-tab broadcast channel & localStorage)
-  const [liveDriverBuses, setLiveDriverBuses] = useState<Record<string, Bus>>(() => {
+  // 1. Real-time Active Buses (Simulated Demo Buses + Live GPS Driver Telemetry)
+  const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>(() => {
     const map: Record<string, Bus> = {};
+
+    // 1. In-memory demo simulator state (if running in same tab)
+    const localSim = getDemoSimulatorState();
+    Object.values(localSim.buses).forEach((r) => {
+      if (r.isRunning) {
+        const b = r.currentBus || buildBusTelemetry(r);
+        if (b) map[b.id] = { ...b, isDemo: true };
+      }
+    });
+
+    // 2. Cross-tab aggregate demo buses from localStorage
+    try {
+      const demoRaw = localStorage.getItem('nagarst_demo_buses');
+      if (demoRaw) {
+        const parsed = JSON.parse(demoRaw);
+        Object.values(parsed).forEach((b: any) => {
+          if (b && b.id) map[b.id] = { ...b, isDemo: true };
+        });
+      }
+    } catch (_) {}
+
+    // 3. Individual active bus keys (live driver or demo)
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && k.startsWith('nagarst_live_bus_') && !k.startsWith('nagarst_live_bus_demo-')) {
+        if (k && k.startsWith('nagarst_live_bus_')) {
           const raw = localStorage.getItem(k);
           if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && !parsed.isDemo) {
-              const age = Date.now() - new Date(parsed.lastUpdated || 0).getTime();
-              if (age < 300000) { // Active within 5 minutes
-                map[parsed.id] = { ...parsed, isDemo: false, isLiveDriver: true };
-              }
+            if (parsed && parsed.id) {
+              const isDemo = Boolean(parsed.isDemo || parsed.id.startsWith('demo-'));
+              map[parsed.id] = { ...parsed, isDemo, isLiveDriver: !isDemo };
             }
           }
         }
       }
     } catch (_) {}
+
     return map;
   });
 
-  // Listen to cross-tab BroadcastChannel & storage events for live driver telemetry
+  // Listen to cross-tab BroadcastChannel & storage events for ALL live bus telemetry (both demo & real driver)
   useEffect(() => {
     let ch: BroadcastChannel | null = null;
     try {
       ch = new BroadcastChannel('nagarst_bus_telemetry');
       ch.onmessage = (event) => {
-        if (event.data?.type === 'locationUpdate' && event.data?.data) {
-          const bus = event.data.data as Bus;
-          if (!bus.isDemo) {
-            setLiveDriverBuses((prev) => ({
+        const payload = event.data;
+        if ((payload?.type === 'locationUpdate' || payload?.type === 'driver_location_update') && (payload?.data || payload?.bus)) {
+          const incoming = (payload.data || payload.bus) as Bus;
+          if (incoming && incoming.id) {
+            const isDemo = Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
+            setActiveLiveBuses((prev) => ({
               ...prev,
-              [bus.id]: { ...bus, isDemo: false, isLiveDriver: true }
+              [incoming.id]: { ...incoming, isDemo, isLiveDriver: !isDemo }
             }));
           }
         } else if (event.data?.type === 'busOffline' && event.data?.busId) {
-          setLiveDriverBuses((prev) => {
+          const offlineId = event.data.busId;
+          setActiveLiveBuses((prev) => {
             const next = { ...prev };
-            delete next[event.data.busId];
+            delete next[offlineId];
             return next;
           });
         }
@@ -144,17 +170,44 @@ export const LiveTracking: React.FC = () => {
     } catch (_) {}
 
     const onStorage = (e: StorageEvent) => {
-      if (e.key?.startsWith('nagarst_live_bus_') && !e.key.startsWith('nagarst_live_bus_demo-')) {
+      if (e.key === 'nagarst_demo_buses') {
+        if (e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            setActiveLiveBuses((prev) => {
+              const next = { ...prev };
+              Object.values(parsed).forEach((b: any) => {
+                if (b && b.id) next[b.id] = { ...b, isDemo: true };
+              });
+              return next;
+            });
+          } catch (_) {}
+        } else {
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            Object.keys(next).forEach((id) => {
+              if (next[id]?.isDemo || id.startsWith('demo-')) {
+                delete next[id];
+              }
+            });
+            return next;
+          });
+        }
+      } else if (e.key?.startsWith('nagarst_live_bus_')) {
         if (e.newValue) {
           try {
             const b = JSON.parse(e.newValue);
-            if (b && !b.isDemo) {
-              setLiveDriverBuses((prev) => ({ ...prev, [b.id]: { ...b, isDemo: false, isLiveDriver: true } }));
+            if (b && b.id) {
+              const isDemo = Boolean(b.isDemo || b.id.startsWith('demo-'));
+              setActiveLiveBuses((prev) => ({
+                ...prev,
+                [b.id]: { ...b, isDemo, isLiveDriver: !isDemo }
+              }));
             }
           } catch (_) {}
         } else {
           const id = e.key.replace('nagarst_live_bus_', '');
-          setLiveDriverBuses((prev) => {
+          setActiveLiveBuses((prev) => {
             const next = { ...prev };
             delete next[id];
             return next;
@@ -164,71 +217,38 @@ export const LiveTracking: React.FC = () => {
     };
     window.addEventListener('storage', onStorage);
 
+    // Also subscribe to in-memory simulator engine if running in this same tab
+    const unsubSim = subscribeToDemoState((newState) => {
+      setActiveLiveBuses((prev) => {
+        let hasChanges = false;
+        const next = { ...prev };
+        Object.values(newState.buses).forEach((r) => {
+          if (r.isRunning) {
+            const b = r.currentBus || buildBusTelemetry(r);
+            if (b) {
+              next[b.id] = { ...b, isDemo: true };
+              hasChanges = true;
+            }
+          } else if (next[r.id]?.isDemo) {
+            delete next[r.id];
+            hasChanges = true;
+          }
+        });
+        return hasChanges ? next : prev;
+      });
+    });
+
     return () => {
       ch?.close();
       window.removeEventListener('storage', onStorage);
+      unsubSim();
     };
   }, []);
 
-  // 2. Active Running Demo Buses from Simulator (Only include if actively running in simulator)
-  const activeRunningDemoBuses = useMemo<Bus[]>(() => {
-    const list: Bus[] = [];
-    const seen = new Set<string>();
-
-    // From local memory simState
-    Object.values(simState.buses).forEach((runtime) => {
-      if (runtime && runtime.isRunning) {
-        const activeBus = runtime.currentBus || buildBusTelemetry(runtime);
-        if (activeBus) {
-          list.push({ ...activeBus, isDemo: true });
-          seen.add(activeBus.id);
-        }
-      }
-    });
-
-    // From cross-tab storage if simulator is running in another tab (City Admin GPS Simulator)
-    try {
-      const demoRaw = localStorage.getItem('nagarst_demo_buses');
-      if (demoRaw) {
-        const parsed = JSON.parse(demoRaw);
-        Object.values(parsed).forEach((b: any) => {
-          if (b && !seen.has(b.id)) {
-            list.push({ ...b, isDemo: true });
-            seen.add(b.id);
-          }
-        });
-      }
-    } catch (_) {}
-
-    return list;
-  }, [simState.buses]);
-
-  // Combined Active Fleet: Only buses actively running in Simulator OR Driver Live GPS!
+  // Combined active fleet strictly from active live telemetry (0 ghost buses)
   const allFleetBuses = useMemo<Bus[]>(() => {
-    const map = new Map<string, Bus>();
-
-    // 1. Running Demo Simulator buses
-    activeRunningDemoBuses.forEach((b) => map.set(b.id, b));
-
-    // 2. Real Driver live GPS buses broadcasting from Driver Dashboard
-    Object.values(liveDriverBuses).forEach((b) => map.set(b.id, b));
-
-    // 3. Database buses that have a live active driver trip
-    buses.forEach((b) => {
-      if (map.has(b.id)) return;
-      try {
-        const rawLive = localStorage.getItem('nagarst_live_bus_' + b.id);
-        if (rawLive) {
-          const parsed = JSON.parse(rawLive);
-          if (parsed && !parsed.isDemo) {
-            map.set(b.id, { ...b, ...parsed, isDemo: false, isLiveDriver: true });
-          }
-        }
-      } catch (_) {}
-    });
-
-    return Array.from(map.values());
-  }, [activeRunningDemoBuses, liveDriverBuses, buses]);
+    return Object.values(activeLiveBuses);
+  }, [activeLiveBuses]);
 
   const selectedBus = selectedBusId ? allFleetBuses.find((b) => b.id === selectedBusId) : null;
 
@@ -250,37 +270,37 @@ export const LiveTracking: React.FC = () => {
     if (!selectedBus) return null;
 
     // 1. Check if it's a simulated demo bus with active corridor & marked terminal pins
-    const demoRuntime = simState.buses[selectedBus.id];
-    if (demoRuntime && demoRuntime.def.stops && demoRuntime.def.stops.length > 0) {
+    const demoDef = DEMO_BUS_DEFINITIONS.find((d: any) => d.id === selectedBus.id) || simState.buses[selectedBus.id]?.def;
+    if (demoDef && demoDef.stops && demoDef.stops.length > 0) {
       return {
-        id: demoRuntime.def.routeId,
-        routeNumber: demoRuntime.def.routeNumber,
-        name: demoRuntime.def.routeName,
-        nameMarathi: demoRuntime.def.routeName,
-        origin: demoRuntime.def.origin,
-        destination: demoRuntime.def.destination,
+        id: demoDef.routeId,
+        routeNumber: demoDef.routeNumber,
+        name: demoDef.routeName,
+        nameMarathi: demoDef.routeName,
+        origin: demoDef.origin,
+        destination: demoDef.destination,
         firstBus: '06:00 AM',
         lastBus: '10:00 PM',
         frequencyMinutes: 15,
         baseFare: 10,
         maxFare: 25,
-        totalStops: demoRuntime.def.stops.length,
+        totalStops: demoDef.stops.length,
         durationMinutes: 30,
-        color: demoRuntime.def.color,
+        color: demoDef.color,
         activeBusesCount: 1,
         status: 'normal' as const,
-        stops: demoRuntime.def.stops.map((s, idx) => ({
+        stops: demoDef.stops.map((s: any, idx: number) => ({
           stopId: s.id,
           stopName: s.name,
           stopNameMarathi: s.name,
           sequence: idx + 1,
           fareFromOrigin: idx * 5,
           estimatedMinutesFromOrigin: idx * 5,
-          isMajorHub: idx === 0 || idx === demoRuntime.def.stops.length - 1,
+          isMajorHub: idx === 0 || idx === demoDef.stops.length - 1,
           lat: s.lat,
           lng: s.lng,
         })),
-        route_path: demoRuntime.def.waypoints,
+        route_path: demoDef.waypoints,
       };
     }
 
@@ -323,59 +343,68 @@ export const LiveTracking: React.FC = () => {
           lat: s.lat,
           lng: s.lng,
         })),
+        route_path: preset.waypoints,
       };
     }
 
     return directRoute || null;
-  }, [selectedBus, allRoutes]);
+  }, [selectedBus, allRoutes, simState.buses]);
 
-  // Routes to display on map: shows ONLY admin-configured routes or active demo routes
+  // Routes to display on map: shows active demo corridors and configured routes
   const routesToDisplay = useMemo(() => {
     if (selectedBusRoute) return [selectedBusRoute];
 
-    // Collect active demo routes from simulator runtime
-    const demoSim = getDemoSimulatorState();
-    const demoRoutes: RouteType[] = Object.values(demoSim.buses)
-      .filter((b) => b.isRunning)
-      .map((b) => ({
-        id: b.def.routeId,
-        routeNumber: b.def.routeNumber,
-        name: b.def.routeName,
-        nameMarathi: b.def.routeName,
-        origin: b.def.origin,
-        destination: b.def.destination,
-        firstBus: '06:00 AM',
-        lastBus: '10:00 PM',
-        frequencyMinutes: 15,
-        baseFare: 10,
-        maxFare: 25,
-        totalStops: b.def.stops.length,
-        durationMinutes: 30,
-        color: b.def.color,
-        activeBusesCount: 1,
-        status: 'normal' as const,
-        stops: b.def.stops.map((s, idx) => ({
-          stopId: s.id,
-          stopName: s.name,
-          stopNameMarathi: s.name,
-          sequence: idx + 1,
-          fareFromOrigin: idx * 5,
-          estimatedMinutesFromOrigin: idx * 5,
-          isMajorHub: idx === 0 || idx === b.def.stops.length - 1,
-          lat: s.lat,
-          lng: s.lng,
-        })),
-        route_path: b.def.waypoints,
-      }));
+    const activeRouteMap = new Map<string, RouteType>();
 
+    allFleetBuses.forEach((bus) => {
+      // 1. From DEMO_BUS_DEFINITIONS
+      const demoDef = DEMO_BUS_DEFINITIONS.find((d: any) => d.id === bus.id || d.routeId === bus.routeId);
+      if (demoDef && demoDef.stops && demoDef.stops.length > 0) {
+        activeRouteMap.set(demoDef.routeId, {
+          id: demoDef.routeId,
+          routeNumber: demoDef.routeNumber,
+          name: demoDef.routeName,
+          nameMarathi: demoDef.routeName,
+          origin: demoDef.origin,
+          destination: demoDef.destination,
+          firstBus: '06:00 AM',
+          lastBus: '10:00 PM',
+          frequencyMinutes: 15,
+          baseFare: 10,
+          maxFare: 25,
+          totalStops: demoDef.stops.length,
+          durationMinutes: 30,
+          color: demoDef.color,
+          activeBusesCount: 1,
+          status: 'normal' as const,
+          stops: demoDef.stops.map((s: any, idx: number) => ({
+            stopId: s.id,
+            stopName: s.name,
+            stopNameMarathi: s.name,
+            sequence: idx + 1,
+            fareFromOrigin: idx * 5,
+            estimatedMinutesFromOrigin: idx * 5,
+            isMajorHub: idx === 0 || idx === demoDef.stops.length - 1,
+            lat: s.lat,
+            lng: s.lng,
+          })),
+          route_path: demoDef.waypoints,
+        });
+      }
+
+      // 2. From allRoutes (database configured routes)
+      const dbRoute = allRoutes.find((r) => r.id === bus.routeId);
+      if (dbRoute) {
+        activeRouteMap.set(dbRoute.id, dbRoute);
+      }
+    });
+
+    const activeList = Array.from(activeRouteMap.values());
     if (filterRoute !== 'all') {
-      const dbFiltered = allRoutes.filter((r) => r.id === filterRoute);
-      const demoFiltered = demoRoutes.filter((r) => r.id === filterRoute);
-      return [...demoFiltered, ...dbFiltered];
+      return activeList.filter((r) => r.id === filterRoute);
     }
-
-    return [...demoRoutes, ...allRoutes];
-  }, [selectedBusRoute, filterRoute, allRoutes]);
+    return activeList.length > 0 ? activeList : allRoutes;
+  }, [selectedBusRoute, allFleetBuses, allRoutes, filterRoute]);
 
   // Active commuter coordinate (Live GPS or selected manual location)
   const activeCommuterPos = useMemo(() => {

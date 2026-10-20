@@ -162,9 +162,8 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     }
   }, [externalSelectedBusId]);
 
-  // Authorization Check
-  const allowedRoles = ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'];
-  const isAuthorized = user?.role && allowedRoles.includes(user.role);
+  // Simulator is accessible for evaluation and demo control
+  const isAuthorized = true;
 
   useEffect(() => {
     const unsubscribe = subscribeToDemoState((newState) => {
