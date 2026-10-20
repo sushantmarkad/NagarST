@@ -44,6 +44,7 @@ import {
   subscribeToDemoState,
   buildBusTelemetry,
   ensureTimerRunning,
+  syncSimulatorFleetWithAdminConfig,
   type DemoSimulatorState,
   type DemoStop
 } from '../utils/demoSimulatorEngine';
@@ -317,24 +318,72 @@ export const LiveTracking: React.FC = () => {
     };
   }, []);
 
-  // Combined active fleet strictly from active live telemetry, deduplicated by busNumber (0 ghost or duplicate buses)
+  // Synchronize simulator engine fleet whenever configured buses or routes load from AppContext
+  useEffect(() => {
+    if (buses && buses.length > 0 && routes && routes.length > 0) {
+      syncSimulatorFleetWithAdminConfig(buses, routes);
+    }
+  }, [buses, routes]);
+
+  // Combined active fleet strictly reflecting configured municipal fleet + active real-time GPS telemetry
   const allFleetBuses = useMemo<Bus[]>(() => {
     const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
     const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
 
-    const byNumber = new Map<string, Bus>();
-    Object.values(activeLiveBuses).forEach((b) => {
-      if (!b || !b.id) return;
-      if (deletedIds.includes(b.id) || (b.busNumber && deletedIds.includes(b.busNumber)) || (b.plateNumber && deletedIds.includes(b.plateNumber))) {
-        return;
-      }
-      const key = (b.busNumber || b.id).trim().toUpperCase();
-      byNumber.set(key, b);
-    });
-    return Array.from(byNumber.values());
-  }, [activeLiveBuses]);
+    const isDeleted = (b: { id?: string; busNumber?: string; plateNumber?: string }) => {
+      const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
+      const cId = norm(b.id);
+      const cB = norm(b.busNumber);
+      const cP = norm(b.plateNumber);
+      return deletedIds.some((d) => {
+        const cD = norm(d);
+        return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
+      });
+    };
 
-  const selectedBus = selectedBusId ? allFleetBuses.find((b) => b.id === selectedBusId) : null;
+    const byNumber = new Map<string, Bus>();
+
+    // 1. Authoritative fleet buses from Municipal Vehicle Fleet that have assigned routes
+    const validConfigured = buses.filter(b => b.routeId && !isDeleted(b));
+    if (validConfigured.length > 0) {
+      validConfigured.forEach(cb => {
+        const key = cb.busNumber.trim().toUpperCase().replace(/\s+/g, '');
+        // Check active live telemetry (coordinates, speed, next stop)
+        const live = Object.values(activeLiveBuses).find(
+          lb => (lb.busNumber || lb.id).trim().toUpperCase().replace(/\s+/g, '') === key
+        );
+
+        const targetRoute = allRoutes.find(
+          r => r.id === cb.routeId || r.routeNumber === cb.routeNumber || r.routeNumber === cb.routeId
+        );
+
+        byNumber.set(key, {
+          ...cb,
+          ...(live || {}),
+          id: live?.id || cb.id,
+          busNumber: cb.busNumber,
+          plateNumber: cb.plateNumber,
+          routeId: targetRoute?.id || cb.routeId,
+          routeNumber: targetRoute?.routeNumber || cb.routeNumber || 'Route',
+          routeName: targetRoute?.name || cb.routeName || `${targetRoute?.origin || cb.origin} ➔ ${targetRoute?.destination || cb.destination}`,
+          origin: targetRoute?.origin || cb.origin,
+          destination: targetRoute?.destination || cb.destination,
+          isDemo: true
+        });
+      });
+    } else {
+      // Fallback to active live buses if buses haven't loaded yet
+      Object.values(activeLiveBuses).forEach((b) => {
+        if (!b || !b.id || isDeleted(b)) return;
+        const key = (b.busNumber || b.id).trim().toUpperCase().replace(/\s+/g, '');
+        byNumber.set(key, b);
+      });
+    }
+
+    return Array.from(byNumber.values());
+  }, [activeLiveBuses, buses, allRoutes]);
+
+  const selectedBus = selectedBusId ? allFleetBuses.find((b) => b.id === selectedBusId || b.busNumber === selectedBusId) : null;
 
   // Filtered buses list
   const filteredBuses = useMemo(() => {
@@ -353,8 +402,41 @@ export const LiveTracking: React.FC = () => {
   const selectedBusRoute = useMemo<RouteType | null>(() => {
     if (!selectedBus) return null;
 
-    // 1. Check if it's a simulated demo bus with active corridor & marked terminal pins
-    const demoDef = DEMO_BUS_DEFINITIONS.find((d: any) => d.id === selectedBus.id) || simState.buses[selectedBus.id]?.def;
+    // 1. Direct configured route match from allRoutes (highest priority!)
+    const matchedRoute = allRoutes.find(
+      (r) => r.id === selectedBus.routeId || r.routeNumber === selectedBus.routeNumber || r.routeNumber === selectedBus.routeId
+    );
+    if (matchedRoute && matchedRoute.stops && matchedRoute.stops.length > 0) {
+      const runtime = simState.buses[selectedBus.id] || Object.values(simState.buses).find(
+        r => r.def.busNumber.trim().toUpperCase() === selectedBus.busNumber.trim().toUpperCase()
+      );
+      if (runtime?.def?.waypoints && runtime.def.waypoints.length > 2) {
+        return {
+          ...matchedRoute,
+          route_path: runtime.def.waypoints,
+          stops: runtime.def.stops && runtime.def.stops.length > 0
+            ? runtime.def.stops.map((s: any, idx: number) => ({
+                stopId: s.id,
+                stopName: s.name,
+                stopNameMarathi: s.name,
+                sequence: idx + 1,
+                fareFromOrigin: idx * 5,
+                estimatedMinutesFromOrigin: idx * 5,
+                isMajorHub: idx === 0 || idx === runtime.def.stops.length - 1,
+                lat: s.lat,
+                lng: s.lng,
+              }))
+            : matchedRoute.stops
+        };
+      }
+      return matchedRoute;
+    }
+
+    // 2. Direct simulation runtime route definition
+    const runtime = simState.buses[selectedBus.id] || Object.values(simState.buses).find(
+      r => r.def.busNumber.trim().toUpperCase() === selectedBus.busNumber.trim().toUpperCase()
+    );
+    const demoDef = runtime?.def || DEMO_BUS_DEFINITIONS.find((d: any) => d.id === selectedBus.id || d.busNumber === selectedBus.busNumber);
     if (demoDef && demoDef.stops && demoDef.stops.length > 0) {
       return {
         id: demoDef.routeId,
@@ -388,50 +470,7 @@ export const LiveTracking: React.FC = () => {
       };
     }
 
-    // 2. Direct DB configured route match
-    const directRoute = allRoutes.find((r) => r.id === selectedBus.routeId);
-    if (directRoute && directRoute.stops && directRoute.stops.length > 0) {
-      return directRoute;
-    }
-
-    // 3. Demo Route Presets match
-    const preset = AVAILABLE_DEMO_ROUTES.find(
-      (p) => p.id === selectedBus.routeId || selectedBus.routeName?.includes(p.routeNumber)
-    );
-    if (preset) {
-      return {
-        id: preset.id,
-        routeNumber: preset.routeNumber,
-        name: preset.routeName,
-        nameMarathi: preset.routeName,
-        origin: preset.origin,
-        destination: preset.destination,
-        firstBus: '06:00 AM',
-        lastBus: '10:00 PM',
-        frequencyMinutes: 15,
-        baseFare: 10,
-        maxFare: 25,
-        totalStops: preset.stops.length,
-        durationMinutes: 30,
-        color: preset.color,
-        activeBusesCount: 1,
-        status: 'normal' as const,
-        stops: preset.stops.map((s, idx) => ({
-          stopId: s.id,
-          stopName: s.name,
-          stopNameMarathi: s.name,
-          sequence: idx + 1,
-          fareFromOrigin: idx * 5,
-          estimatedMinutesFromOrigin: idx * 5,
-          isMajorHub: idx === 0 || idx === preset.stops.length - 1,
-          lat: s.lat,
-          lng: s.lng,
-        })),
-        route_path: preset.waypoints,
-      };
-    }
-
-    return directRoute || null;
+    return null;
   }, [selectedBus, allRoutes, simState.buses]);
 
   // Routes to display on map: shows active demo corridors and configured routes

@@ -264,22 +264,62 @@ export const Home: React.FC = () => {
     };
   }, []);
 
-  // Display buses strictly from active live telemetry, deduplicated by busNumber (0 ghost or duplicate buses)
+  // Display buses strictly reflecting configured municipal fleet + active real-time GPS telemetry
   const displayBuses = useMemo<Bus[]>(() => {
     const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
     const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
 
+    const isDeleted = (b: { id?: string; busNumber?: string; plateNumber?: string }) => {
+      const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
+      const cId = norm(b.id);
+      const cB = norm(b.busNumber);
+      const cP = norm(b.plateNumber);
+      return deletedIds.some((d) => {
+        const cD = norm(d);
+        return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
+      });
+    };
+
     const byNumber = new Map<string, Bus>();
-    Object.values(activeLiveBuses).forEach((b) => {
-      if (!b || !b.id) return;
-      if (deletedIds.includes(b.id) || (b.busNumber && deletedIds.includes(b.busNumber)) || (b.plateNumber && deletedIds.includes(b.plateNumber))) {
-        return;
-      }
-      const key = (b.busNumber || b.id).trim().toUpperCase();
-      byNumber.set(key, b);
-    });
+
+    // 1. Authoritative fleet buses from Municipal Vehicle Fleet that have assigned routes
+    const validConfigured = buses.filter(b => b.routeId && !isDeleted(b));
+    if (validConfigured.length > 0) {
+      validConfigured.forEach(cb => {
+        const key = cb.busNumber.trim().toUpperCase().replace(/\s+/g, '');
+        const live = Object.values(activeLiveBuses).find(
+          lb => (lb.busNumber || lb.id).trim().toUpperCase().replace(/\s+/g, '') === key
+        );
+
+        const targetRoute = routes.find(
+          r => r.id === cb.routeId || r.routeNumber === cb.routeNumber || r.routeNumber === cb.routeId
+        );
+
+        byNumber.set(key, {
+          ...cb,
+          ...(live || {}),
+          id: live?.id || cb.id,
+          busNumber: cb.busNumber,
+          plateNumber: cb.plateNumber,
+          routeId: targetRoute?.id || cb.routeId,
+          routeNumber: targetRoute?.routeNumber || cb.routeNumber || 'Route',
+          routeName: targetRoute?.name || cb.routeName || `${targetRoute?.origin || cb.origin} ➔ ${targetRoute?.destination || cb.destination}`,
+          origin: targetRoute?.origin || cb.origin,
+          destination: targetRoute?.destination || cb.destination,
+          isDemo: true
+        });
+      });
+    } else {
+      // Fallback to active live buses if buses haven't loaded yet
+      Object.values(activeLiveBuses).forEach((b) => {
+        if (!b || !b.id || isDeleted(b)) return;
+        const key = (b.busNumber || b.id).trim().toUpperCase().replace(/\s+/g, '');
+        byNumber.set(key, b);
+      });
+    }
+
     return Array.from(byNumber.values());
-  }, [activeLiveBuses]);
+  }, [activeLiveBuses, buses, routes]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

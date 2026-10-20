@@ -113,57 +113,52 @@ export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
     busNumber: 'MH-16 BT-1515',
     plateNumber: 'MH-16 BT-1515',
     tripId: 'demo-trip-1515',
-    routeId: 'route-maliwada-savedi',
-    routeNumber: 'Route 1-B',
-    routeName: 'Route 1-B: Maliwada Galli ↔ Savedi Depot',
-    origin: 'Maliwada Galli',
-    destination: 'Savedi Bus Depot',
+    routeId: 'R-01',
+    routeNumber: 'R-01',
+    routeName: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
+    origin: 'माळीवाडा गल्ली',
+    destination: 'Dairy Chowk',
     color: '#7847CB',
     stops: [
-      { id: 'stop-mw', name: 'Maliwada Galli', lat: 19.0910, lng: 74.7290 },
+      { id: 'stop-mw', name: 'माळीवाडा गल्ली', lat: 19.0910, lng: 74.7290 },
       { id: 'stop-swk', name: 'Swastik Chowk', lat: 19.0940, lng: 74.7350 },
       { id: 'stop-cbs', name: 'Ahilyanagar CBS', lat: 19.0975, lng: 74.7420 },
-      { id: 'stop-dlg', name: 'Delhi Gate Transit', lat: 19.1025, lng: 74.7380 },
-      { id: 'stop-svd', name: 'Savedi Bus Depot', lat: 19.1235, lng: 74.7321 },
+      { id: 'stop-dairy', name: 'Dairy Chowk', lat: 19.0830, lng: 74.7460 },
     ],
     waypoints: densifyPath([
       { lat: 19.0910, lng: 74.7290 },
       { lat: 19.0925, lng: 74.7315 },
       { lat: 19.0940, lng: 74.7350 },
-      { lat: 19.0955, lng: 74.7385 },
       { lat: 19.0975, lng: 74.7420 },
-      { lat: 19.1000, lng: 74.7400 },
-      { lat: 19.1025, lng: 74.7380 },
-      { lat: 19.1120, lng: 74.7350 },
-      { lat: 19.1180, lng: 74.7335 },
-      { lat: 19.1235, lng: 74.7321 },
+      { lat: 19.0900, lng: 74.7440 },
+      { lat: 19.0830, lng: 74.7460 },
     ], 120),
     initialIndex: 0
   },
   {
-    id: 'demo-bus-1516',
-    busNumber: 'MH-16 BT-1516',
-    plateNumber: 'MH-16 BT-1516',
-    tripId: 'demo-trip-1516',
-    routeId: 'route-mg-station',
-    routeNumber: 'Route 2',
-    routeName: 'Route 2: Mahatma Gandhi Road ↔ Railway Station',
+    id: 'demo-bus-1519',
+    busNumber: 'MH-16 BT-1519',
+    plateNumber: 'MH-16 BT-1519',
+    tripId: 'demo-trip-1519',
+    routeId: 'R-02',
+    routeNumber: 'R-02',
+    routeName: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
     origin: 'Mahatma Gandhi Road',
-    destination: 'Railway Station Terminal',
-    color: '#2563eb',
+    destination: 'Chhatrapati Sambhaji Nagar',
+    color: '#d97706',
     stops: [
       { id: 'stop-mg', name: 'Mahatma Gandhi Road', lat: 19.1025, lng: 74.7380 },
-      { id: 'stop-dlg2', name: 'Delhi Gate Terminal', lat: 19.0990, lng: 74.7400 },
-      { id: 'stop-mky', name: 'Market Yard', lat: 19.0880, lng: 74.7510 },
-      { id: 'stop-stn', name: 'Ahilyanagar Railway Station', lat: 19.0820, lng: 74.7590 },
+      { id: 'stop-gandhi-chk', name: 'Gandhi Chowk', lat: 19.1090, lng: 74.7395 },
+      { id: 'stop-delhi-gate', name: 'Delhi Gate Transit', lat: 19.1150, lng: 74.7430 },
+      { id: 'stop-sambhaji', name: 'Chhatrapati Sambhaji Nagar', lat: 19.1320, lng: 74.7550 },
     ],
     waypoints: densifyPath([
       { lat: 19.1025, lng: 74.7380 },
-      { lat: 19.0990, lng: 74.7400 },
-      { lat: 19.0945, lng: 74.7440 },
-      { lat: 19.0880, lng: 74.7510 },
-      { lat: 19.0850, lng: 74.7550 },
-      { lat: 19.0820, lng: 74.7590 },
+      { lat: 19.1060, lng: 74.7385 },
+      { lat: 19.1090, lng: 74.7395 },
+      { lat: 19.1150, lng: 74.7430 },
+      { lat: 19.1235, lng: 74.7490 },
+      { lat: 19.1320, lng: 74.7550 },
     ], 120),
     initialIndex: 0
   }
@@ -199,6 +194,23 @@ const runtimeStore: Record<string, BusSimRuntime> = {};
 try {
   const deletedIdsRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
   const deletedIds: string[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
+  ['demo-bus-1516', 'MH-16 BT-1516'].forEach(legacyId => {
+    if (!deletedIds.includes(legacyId)) deletedIds.push(legacyId);
+  });
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('nagarst_deleted_demo_buses', JSON.stringify(deletedIds));
+    const demoRaw = localStorage.getItem('nagarst_demo_buses');
+    if (demoRaw) {
+      const demoBuses = JSON.parse(demoRaw);
+      delete demoBuses['demo-bus-1516'];
+      delete demoBuses['MH-16 BT-1516'];
+      if (demoBuses['demo-bus-1515'] && demoBuses['demo-bus-1515'].routeNumber === 'Route 1-B') {
+        delete demoBuses['demo-bus-1515'];
+      }
+      localStorage.setItem('nagarst_demo_buses', JSON.stringify(demoBuses));
+    }
+  }
+
   const isDeleted = (id?: string, bNum?: string, pNum?: string) => {
     const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
     const cId = norm(id);
