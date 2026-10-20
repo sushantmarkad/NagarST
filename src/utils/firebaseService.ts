@@ -163,6 +163,94 @@ export function subscribeFirebaseLiveLocations(
   });
 }
 
+// ==================== DRIVERS ====================
+
+export interface FirebaseDriver {
+  id: string;
+  full_name: string;
+  email: string;
+  password?: string;
+  assigned_bus_id?: string;
+  status?: string;
+  created_at?: string;
+}
+
+export async function getFirebaseDrivers(): Promise<FirebaseDriver[]> {
+  try {
+    const q = collection(db, 'driver_credentials');
+    const snapshot = await getDocs(q);
+    const drivers: FirebaseDriver[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data() as FirebaseDriver;
+      if (data.status !== 'Deleted') {
+        drivers.push({
+          ...data,
+          id: docSnap.id
+        });
+      }
+    });
+    return drivers;
+  } catch (err) {
+    console.warn('Firebase getFirebaseDrivers fallback notice:', err);
+    return [];
+  }
+}
+
+export async function saveFirebaseDriver(driver: FirebaseDriver): Promise<void> {
+  const driverRef = doc(db, 'driver_credentials', driver.id);
+  await setDoc(driverRef, {
+    ...driver,
+    created_at: driver.created_at || new Date().toISOString()
+  }, { merge: true });
+}
+
+export async function deleteFirebaseDriver(driverId: string): Promise<void> {
+  await deleteDoc(doc(db, 'driver_credentials', driverId));
+}
+
+// ==================== TRIPS ====================
+
+export interface FirebaseTrip {
+  id: string;
+  route_id: string;
+  bus_id: string;
+  driver_id: string;
+  status?: string;
+  start_time?: string;
+  end_time?: string;
+  created_at?: string;
+}
+
+export async function getFirebaseTrips(): Promise<FirebaseTrip[]> {
+  try {
+    const q = collection(db, 'trips');
+    const snapshot = await getDocs(q);
+    const trips: FirebaseTrip[] = [];
+    snapshot.forEach(docSnap => {
+      trips.push({
+        ...docSnap.data() as FirebaseTrip,
+        id: docSnap.id
+      });
+    });
+    return trips;
+  } catch (err) {
+    console.warn('Firebase getFirebaseTrips fallback notice:', err);
+    return [];
+  }
+}
+
+export async function saveFirebaseTrip(trip: FirebaseTrip): Promise<void> {
+  const tripRef = doc(db, 'trips', trip.id);
+  await setDoc(tripRef, {
+    ...trip,
+    created_at: trip.created_at || new Date().toISOString()
+  }, { merge: true });
+}
+
+export async function deleteFirebaseTrip(tripId: string): Promise<void> {
+  await deleteDoc(doc(db, 'trips', tripId));
+}
+
 // ==================== CLEANUP ====================
 
 export async function clearFirebaseCollection(colName: string): Promise<void> {
@@ -175,3 +263,4 @@ export async function clearFirebaseCollection(colName: string): Promise<void> {
     console.warn(`Error clearing Firebase collection ${colName}:`, err);
   }
 }
+

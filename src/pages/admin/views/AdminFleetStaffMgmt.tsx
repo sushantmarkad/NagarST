@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../utils/supabaseClient';
-import { getFirebaseBuses, getFirebaseRoutes } from '../../../utils/firebaseService';
+import {
+  getFirebaseBuses,
+  getFirebaseRoutes,
+  getFirebaseDrivers,
+  saveFirebaseDriver,
+  deleteFirebaseDriver,
+  getFirebaseTrips,
+  saveFirebaseTrip,
+  deleteFirebaseTrip
+} from '../../../utils/firebaseService';
 import { useApp } from '../../../context/AppContext';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { Button, Badge, Modal } from '../../../components/ui';
@@ -100,28 +109,20 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
   };
 
   const fetchTrips = async () => {
-    const { data, error } = await supabase.from('trips').select(`
-      id,
-      status,
-      start_time,
-      end_time,
-      buses(bus_number),
-      routes(route_number),
-      driver_credentials(full_name)
-    `).order('created_at', { ascending: false });
-    
-    if (!error && data) {
-      setRealTrips(data);
+    try {
+      const fbTrips = await getFirebaseTrips();
+      setRealTrips(fbTrips);
+    } catch {
+      setRealTrips([]);
     }
   };
 
   const fetchDrivers = async () => {
-    const { data, error } = await supabase
-      .from('driver_credentials')
-      .select('*')
-      .neq('status', 'Deleted');
-    if (!error && data) {
-      setRealDrivers(data);
+    try {
+      const fbDrivers = await getFirebaseDrivers();
+      setRealDrivers(fbDrivers);
+    } catch {
+      setRealDrivers([]);
     }
   };
 
@@ -147,26 +148,36 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
   const handleSaveDriver = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingDriver(true);
+    const driverId = isEditDriverMode && currentEditDriverId ? currentEditDriverId : `driver-${Date.now()}`;
     try {
-      if (isEditDriverMode && currentEditDriverId) {
-        const { error } = await supabase.from('driver_credentials').update({
-          full_name: driverForm.fullName,
-          email: driverForm.email,
-          password: driverForm.password,
-          assigned_bus_id: driverForm.busId
-        }).eq('id', currentEditDriverId);
-        if (error) throw error;
-        toast.success('Driver Updated', 'Driver credentials have been updated.');
-      } else {
-        const { error } = await supabase.from('driver_credentials').insert([{
-          full_name: driverForm.fullName,
-          email: driverForm.email,
-          password: driverForm.password,
-          assigned_bus_id: driverForm.busId
-        }]);
-        if (error) throw error;
-        toast.success('Driver Created', 'Driver account created. They can now log in.');
-      }
+      await saveFirebaseDriver({
+        id: driverId,
+        full_name: driverForm.fullName,
+        email: driverForm.email,
+        password: driverForm.password,
+        assigned_bus_id: driverForm.busId,
+        status: 'Active'
+      });
+      try {
+        if (isEditDriverMode && currentEditDriverId) {
+          await supabase.from('driver_credentials').update({
+            full_name: driverForm.fullName,
+            email: driverForm.email,
+            password: driverForm.password,
+            assigned_bus_id: driverForm.busId
+          }).eq('id', currentEditDriverId);
+        } else {
+          await supabase.from('driver_credentials').insert([{
+            id: driverId,
+            full_name: driverForm.fullName,
+            email: driverForm.email,
+            password: driverForm.password,
+            assigned_bus_id: driverForm.busId
+          }]);
+        }
+      } catch (_) {}
+
+      toast.success(isEditDriverMode ? 'Driver Updated' : 'Driver Created', 'Driver account saved to Firestore.');
       setIsAddDriverOpen(false);
       fetchDrivers();
     } catch (err: any) {
@@ -187,24 +198,11 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
     if (!confirmed) return;
 
     try {
-      // 1. Unlink assigned bus first
+      await deleteFirebaseDriver(id);
       try {
-        await supabase.from('driver_credentials').update({ assigned_bus_id: null }).eq('id', id);
-      } catch {}
-
-      // 2. Clean up any trips associated with this driver to prevent foreign key errors
-      await supabase.from('trips').delete().eq('driver_id', id);
-
-      // 3. Attempt direct delete
-      const { data } = await supabase.from('driver_credentials').delete().eq('id', id).select();
-
-      // 4. If Postgres RLS filters out DELETE, seamlessly deactivate and remove from roster
-      if (!data || data.length === 0) {
-        await supabase
-          .from('driver_credentials')
-          .update({ status: 'Deleted', assigned_bus_id: null })
-          .eq('id', id);
-      }
+        await supabase.from('trips').delete().eq('driver_id', id);
+        await supabase.from('driver_credentials').delete().eq('id', id);
+      } catch (_) {}
 
       setRealDrivers(prev => prev.filter(d => d.id !== id));
       toast.success('Driver Deleted', `Driver "${name}" was removed from the roster.`);
@@ -225,8 +223,10 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
     if (!confirmed) return;
 
     try {
-      const { error } = await supabase.from('trips').delete().eq('id', id);
-      if (error) throw error;
+      await deleteFirebaseTrip(id);
+      try {
+        await supabase.from('trips').delete().eq('id', id);
+      } catch (_) {}
       toast.success('Trip Removed', 'The scheduled trip was cancelled and removed.');
       fetchTrips();
     } catch (err: any) {
@@ -237,14 +237,24 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
   const handleAddTrip = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingTrip(true);
+    const tripId = `trip-${Date.now()}`;
     try {
-      const { error } = await supabase.from('trips').insert([{
+      await saveFirebaseTrip({
+        id: tripId,
         route_id: newTrip.routeId,
         bus_id: newTrip.busId,
         driver_id: newTrip.driverId,
         status: 'Scheduled'
-      }]);
-      if (error) throw error;
+      });
+      try {
+        await supabase.from('trips').insert([{
+          id: tripId,
+          route_id: newTrip.routeId,
+          bus_id: newTrip.busId,
+          driver_id: newTrip.driverId,
+          status: 'Scheduled'
+        }]);
+      } catch (_) {}
       toast.success('Trip Scheduled', 'Route and bus have been successfully assigned.');
       setIsAddTripOpen(false);
       fetchTrips();

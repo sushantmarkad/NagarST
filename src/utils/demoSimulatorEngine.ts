@@ -135,30 +135,7 @@ export const AUTHORITATIVE_R02_STOPS: DemoStop[] = [
   { id: 'stop-sambhaji', name: 'Chhatrapati Sambhaji Nagar', lat: 19.1320, lng: 74.7550 },
 ];
 
-export const DEFAULT_DEMO_ROUTES: DemoRoutePreset[] = [
-  {
-    id: 'R-01',
-    routeNumber: 'R-01',
-    routeName: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
-    origin: 'माळीवाडा गल्ली',
-    destination: 'Dairy Chowk',
-    color: '#7847CB',
-    description: 'माळीवाडा गल्ली ➔ Swastik Chowk ➔ CBS ➔ Dairy Chowk',
-    stops: AUTHORITATIVE_R01_STOPS,
-    waypoints: densifyPath(AUTHORITATIVE_R01_WAYPOINTS, 120),
-  },
-  {
-    id: 'R-02',
-    routeNumber: 'R-02',
-    routeName: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
-    origin: 'Mahatma Gandhi Road',
-    destination: 'Chhatrapati Sambhaji Nagar',
-    color: '#d97706',
-    description: 'MG Road ➔ Gandhi Chowk ➔ Delhi Gate ➔ Chhatrapati Sambhaji Nagar',
-    stops: AUTHORITATIVE_R02_STOPS,
-    waypoints: densifyPath(AUTHORITATIVE_R02_WAYPOINTS, 120),
-  }
-];
+export const DEFAULT_DEMO_ROUTES: DemoRoutePreset[] = [];
 
 export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [];
 
@@ -1454,6 +1431,27 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
     if (isDeleted(b.id, b.busNumber, b.plateNumber)) return false;
     return true;
   });
+
+  // If no assigned fleet buses exist, purge ALL demo buses and clear runtimeStore completely
+  if (assignedFleetBuses.length === 0) {
+    for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
+      const d = DEMO_BUS_DEFINITIONS[i];
+      broadcastBusOffline(d.id);
+      broadcastBusOffline(d.busNumber);
+      delete runtimeStore[d.id];
+      DEMO_BUS_DEFINITIONS.splice(i, 1);
+    }
+    Object.keys(runtimeStore).forEach(k => {
+      broadcastBusOffline(k);
+      delete runtimeStore[k];
+    });
+    try {
+      localStorage.removeItem('nagarst_demo_buses');
+      localStorage.removeItem('nagarst_demo_assignments');
+    } catch (_) {}
+    notifyListeners();
+    return;
+  }
 
   // If the admin has configured assigned fleet buses (e.g. MH-16 BT-1515, MH-16 BT-1519),
   // then the simulation fleet MUST strictly contain ONLY these configured buses!

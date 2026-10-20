@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../utils/supabaseClient';
-import { getFirebaseBuses, getFirebaseRoutes } from '../../../utils/firebaseService';
+import { getFirebaseBuses, getFirebaseRoutes, getFirebaseDrivers, getFirebaseTrips } from '../../../utils/firebaseService';
 import { useApp } from '../../../context/AppContext';
 import {
   Bus,
@@ -44,22 +44,24 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
     try {
       const fbBuses = await getFirebaseBuses();
       const fbRoutes = await getFirebaseRoutes();
-      const bCount = fbBuses.length > 0 ? fbBuses.length : liveBuses.length;
-      const rCount = fbRoutes.length > 0 ? fbRoutes.length : contextRoutes.length;
+      const fbDrivers = await getFirebaseDrivers();
+      const fbTrips = await getFirebaseTrips();
 
-      setDbBusesCount(bCount);
-      setDbRoutesCount(rCount);
-      setDbDriversCount(bCount > 0 ? bCount : 2);
-      setActiveTripsCount(bCount > 0 ? bCount : 2);
+      setDbBusesCount(fbBuses.length);
+      setDbRoutesCount(fbRoutes.length);
+      setDbDriversCount(fbDrivers.length);
+      setActiveTripsCount(fbTrips.filter(t => t.status === 'In Progress' || t.status === 'Active').length);
     } catch {
-      setDbBusesCount(liveBuses.length);
-      setDbRoutesCount(contextRoutes.length);
+      setDbBusesCount(0);
+      setDbRoutesCount(0);
+      setDbDriversCount(0);
+      setActiveTripsCount(0);
     } finally {
       setLoading(false);
     }
   };
 
-  const activeLiveCount = (liveBuses as any[]).filter((b: any) => b.isLive || b.status === 'in-service' || b.status === 'on-time' || b.status === 'on_time').length;
+  const activeLiveCount = (liveBuses as any[]).filter((b: any) => !b.isDemo && !b.id?.startsWith('demo-') && !b.routeName?.includes('[DEMO]') && (b.isLive || b.status === 'in-service' || b.status === 'on-time' || b.status === 'on_time')).length;
 
   const navigateTo = (view: any) => {
     if (onNavigateView) {
@@ -131,7 +133,7 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-2xl md:text-3xl font-black text-slate-900 tabular-nums">
-              {activeLiveCount || activeTripsCount || 0}
+              {activeLiveCount}
             </span>
             <span className="text-xs font-semibold text-slate-500">
               / {dbBusesCount} registered buses
@@ -139,7 +141,7 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
           </div>
           <div className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
             <TrendingUp className="w-3.5 h-3.5 text-[#7847CB]" />
-            <span>{dbBusesCount > 0 ? `${Math.round(((activeLiveCount || activeTripsCount) / dbBusesCount) * 100)}% fleet in motion` : 'Ready to assign'}</span>
+            <span>{dbBusesCount > 0 ? `${Math.round((activeLiveCount / dbBusesCount) * 100)}% fleet in motion` : 'Ready to assign'}</span>
           </div>
         </div>
 
@@ -226,42 +228,47 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
           </div>
 
           <div className="space-y-2.5">
-            {(liveBuses as any[]).slice(0, 5).map((bus: any) => (
-              <div
-                key={bus.id}
-                className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-purple-50/50 border border-slate-100 hover:border-purple-200 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center font-black text-xs text-[#7847CB] shadow-2xs shrink-0">
-                    {bus.busNumber}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-900 truncate">
-                        {bus.routeName || 'City Route'}
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
-                        {bus.status || 'Active'}
+            {(liveBuses as any[])
+              .filter((bus: any) => !bus.isDemo && !bus.id?.startsWith('demo-') && !bus.routeName?.includes('[DEMO]'))
+              .slice(0, 5)
+              .map((bus: any) => (
+                <div
+                  key={bus.id}
+                  className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-purple-50/50 border border-slate-100 hover:border-purple-200 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center font-black text-xs text-[#7847CB] shadow-2xs shrink-0">
+                      {bus.busNumber}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-900 truncate">
+                          {bus.routeName || 'City Route'}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                          {bus.status || 'Active'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 block truncate mt-0.5">
+                        Plate: <span className="font-mono">{bus.plateNumber}</span> • Driver: <strong>{bus.driverName || 'Assigned'}</strong>
                       </span>
                     </div>
-                    <span className="text-[11px] text-slate-500 block truncate mt-0.5">
-                      Plate: <span className="font-mono">{bus.plateNumber}</span> • Driver: <strong>{bus.driverName || 'Assigned'}</strong>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="text-xs font-black text-slate-900 block tabular-nums">
+                      {bus.speedKmh ? `${bus.speedKmh} km/h` : '0 km/h'}
                     </span>
+                    <span className="text-[10px] text-slate-400 block font-medium">GPS Locked</span>
                   </div>
                 </div>
+              ))}
 
-                <div className="text-right shrink-0">
-                  <span className="text-xs font-black text-slate-900 block tabular-nums">
-                    {bus.speedKmh ? `${bus.speedKmh} km/h` : '0 km/h'}
-                  </span>
-                  <span className="text-[10px] text-slate-400 block font-medium">GPS Locked</span>
-                </div>
-              </div>
-            ))}
-
-            {liveBuses.length === 0 && (
-              <div className="text-center py-8 text-slate-400 text-xs">
-                No buses active on road currently. Check driver dispatch console.
+            {(liveBuses as any[]).filter((bus: any) => !bus.isDemo && !bus.id?.startsWith('demo-') && !bus.routeName?.includes('[DEMO]')).length === 0 && (
+              <div className="text-center py-8 px-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200">
+                <Bus className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-bold text-slate-700">No Active Vehicles on Roads</p>
+                <p className="text-xs text-slate-400 mt-1">Add buses in Vehicle Fleet to assign and start live transit.</p>
               </div>
             )}
           </div>

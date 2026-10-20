@@ -335,15 +335,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Central updater for incoming telemetry across any channel
     const handleBusUpdate = (updatedBus: Partial<Bus>) => {
       if (!updatedBus || !updatedBus.id) return;
+      if (updatedBus.isDemo || updatedBus.id.startsWith('demo-') || (updatedBus as any).routeName?.includes('[DEMO]')) return;
       setBuses(prevBuses => {
         const index = prevBuses.findIndex(b => b.id === updatedBus.id);
         if (index !== -1) {
           const newBuses = [...prevBuses];
           newBuses[index] = { ...newBuses[index], ...updatedBus, lastUpdated: new Date().toISOString() };
           return newBuses;
-        } else {
-          return [...prevBuses, { ...updatedBus, lastUpdated: new Date().toISOString() } as Bus];
         }
+        return prevBuses;
       });
     };
 
@@ -379,14 +379,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } else if (e.key?.startsWith('nagarst_live_bus_') && !e.newValue) {
         const busId = e.key.replace('nagarst_live_bus_', '');
         handleBusOffline(busId);
-      } else if (e.key === 'nagarst_demo_buses' && !e.newValue) {
-        setBuses(prev => prev.filter(b => !b.isDemo && !b.id.startsWith('demo-')));
+      } else if (e.key === 'nagarst_demo_buses') {
+        setBuses(prev => prev.filter(b => !b.isDemo && !b.id.startsWith('demo-') && !b.routeName?.includes('[DEMO]')));
       }
     };
     window.addEventListener('storage', onStorage);
 
     // 3. Socket.IO Real-time Connection
-    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
+    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://nagarst.onrender.com');
     let socketInstance: any = null;
 
     import('socket.io-client').then(({ io }) => {
@@ -404,11 +404,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setBuses(prevBuses => {
           let newBuses = [...prevBuses];
           activeBuses.forEach(updatedBus => {
+            if (!updatedBus || !updatedBus.id) return;
+            if (updatedBus.isDemo || updatedBus.id.startsWith('demo-') || (updatedBus as any).routeName?.includes('[DEMO]')) return;
             const index = newBuses.findIndex(b => b.id === updatedBus.id);
             if (index !== -1) {
               newBuses[index] = { ...newBuses[index], ...updatedBus };
-            } else if (updatedBus.isDemo || updatedBus.id?.startsWith('demo-')) {
-              newBuses.push(updatedBus as Bus);
             }
           });
           return newBuses;
