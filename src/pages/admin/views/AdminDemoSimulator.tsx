@@ -76,41 +76,52 @@ export const AdminDemoSimulator: React.FC = () => {
     setInteractiveMode('view');
   };
 
-  // Combine loaded routes or fallback to mock routes for demo paths, augmented with active simulator corridor definitions & marked terminal pins
-  const demoRoutes = React.useMemo(() => {
-    return Object.values(simState.buses).map((b) => ({
-      id: b.def.routeId,
-      routeNumber: b.def.routeNumber,
-      name: b.def.routeName,
-      nameMarathi: b.def.routeName,
-      origin: b.def.origin,
-      destination: b.def.destination,
-      firstBus: '06:00 AM',
-      lastBus: '10:00 PM',
-      frequencyMinutes: 15,
-      baseFare: 10,
-      maxFare: 25,
-      totalStops: b.def.stops.length,
-      durationMinutes: 30,
-      color: b.def.color,
-      activeBusesCount: 1,
-      status: 'normal' as const,
-      stops: b.def.stops.map((s, idx) => ({
-        stopId: s.id,
-        stopName: s.name,
-        stopNameMarathi: s.name,
-        sequence: idx + 1,
-        fareFromOrigin: idx * 5,
-        estimatedMinutesFromOrigin: idx * 5,
-        isMajorHub: idx === 0 || idx === b.def.stops.length - 1,
-        lat: s.lat,
-        lng: s.lng,
-      })),
-      route_path: b.def.waypoints,
-    }));
-  }, [simState]);
+  // Only display routes configured in Route Corridors tab or an actively assigned bus corridor with real road waypoints
+  const allRoutes = React.useMemo(() => {
+    // 1. Configured routes from Route Corridors tab with valid road paths
+    const configured = routes.filter((r) => (r.route_path && r.route_path.length > 2) || (r.stops && r.stops.length >= 2));
 
-  const allRoutes = [...demoRoutes, ...routes.filter((r) => !demoRoutes.some((dr) => dr.id === r.id))];
+    // 2. Active demo bus route if it has road waypoints assigned
+    const activeCorridors: any[] = [];
+    Object.values(simState.buses).forEach((b) => {
+      if (b.def.routeId && b.def.waypoints && b.def.waypoints.length > 2) {
+        if (!configured.some((cr) => cr.id === b.def.routeId)) {
+          activeCorridors.push({
+            id: b.def.routeId,
+            routeNumber: b.def.routeNumber,
+            name: b.def.routeName,
+            nameMarathi: b.def.routeName,
+            origin: b.def.origin,
+            destination: b.def.destination,
+            firstBus: '06:00 AM',
+            lastBus: '10:00 PM',
+            frequencyMinutes: 15,
+            baseFare: 10,
+            maxFare: 25,
+            totalStops: b.def.stops.length,
+            durationMinutes: 30,
+            color: b.def.color || '#7847CB',
+            activeBusesCount: 1,
+            status: 'normal' as const,
+            stops: b.def.stops.map((s, idx) => ({
+              stopId: s.id,
+              stopName: s.name,
+              stopNameMarathi: s.name,
+              sequence: idx + 1,
+              fareFromOrigin: idx * 5,
+              estimatedMinutesFromOrigin: idx * 5,
+              isMajorHub: idx === 0 || idx === b.def.stops.length - 1,
+              lat: s.lat,
+              lng: s.lng,
+            })),
+            route_path: b.def.waypoints,
+          });
+        }
+      }
+    });
+
+    return [...configured, ...activeCorridors];
+  }, [routes, simState.buses]);
 
   return (
     <div className="flex-1 w-full h-full flex flex-col p-4 md:p-6 gap-6 bg-[#f8f9fc] text-slate-900 overflow-y-auto">

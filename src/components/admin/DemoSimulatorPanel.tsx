@@ -60,6 +60,8 @@ import { fetchShortestRoadCorridor, findStopsAlongRoad } from '../../utils/routi
 import { MOCK_BUS_STOPS } from '../../data/mockStops';
 import { Link } from 'react-router-dom';
 
+import { useApp } from '../../context/AppContext';
+
 interface DemoSimulatorPanelProps {
   onSelectBusOnMap?: (busId: string) => void;
   selectedBusId?: string;
@@ -84,13 +86,52 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   onClearCustomPins
 }) => {
   const { user } = useAuth();
+  const { routes, stops: appStops } = useApp();
   const toast = useToast();
 
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
   const [selectedBusId, setSelectedBusId] = useState<string>(
     externalSelectedBusId || DEMO_BUS_DEFINITIONS[0].id
   );
-  const [selectedRoutePresetId, setSelectedRoutePresetId] = useState<string>('route-12');
+
+  // Dynamically compute corridors strictly from Route Corridors tab
+  const availableCorridors: DemoRoutePreset[] = React.useMemo(() => {
+    const list: DemoRoutePreset[] = [];
+    routes.forEach((r) => {
+      const waypoints = (r.route_path && r.route_path.length > 1) 
+        ? r.route_path 
+        : (r.stops || []).map((s) => ({ lat: s.lat, lng: s.lng }));
+
+      const stops: DemoStop[] = (r.stops || []).map((s, idx) => ({
+        id: s.stopId || `stop-${idx}`,
+        name: s.stopName || `Stop ${idx + 1}`,
+        lat: s.lat,
+        lng: s.lng
+      }));
+
+      list.push({
+        id: r.id,
+        routeNumber: r.routeNumber,
+        routeName: r.name || `${r.routeNumber}: ${r.origin} ↔ ${r.destination}`,
+        origin: r.origin,
+        destination: r.destination,
+        color: r.color || '#7847CB',
+        description: `${r.origin} ➔ ${r.destination}`,
+        stops,
+        waypoints
+      });
+    });
+
+    AVAILABLE_DEMO_ROUTES.forEach((dr) => {
+      if (!list.some((item) => item.id === dr.id)) {
+        list.push(dr);
+      }
+    });
+
+    return list;
+  }, [routes, AVAILABLE_DEMO_ROUTES]);
+
+  const [selectedRoutePresetId, setSelectedRoutePresetId] = useState<string>('');
   const [isReverseDirection, setIsReverseDirection] = useState<boolean>(false);
   const [showStopsList, setShowStopsList] = useState<boolean>(true);
   const [startTerminalPinId, setStartTerminalPinId] = useState<string>('');
@@ -105,7 +146,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   const [newBusNumber, setNewBusNumber] = useState<string>('MH-16 BT-');
   const [newBusPlate, setNewBusPlate] = useState<string>('MH-16 BT-');
   const [newBusColor, setNewBusColor] = useState<string>('#7847CB');
-  const [newBusRouteId, setNewBusRouteId] = useState<string>('route-12');
+  const [newBusRouteId, setNewBusRouteId] = useState<string>('');
   const [newBusType, setNewBusType] = useState<'EV Metro Shuttle' | 'AC Express' | 'Standard City'>('Standard City');
 
   // Save Route Form State
@@ -135,12 +176,25 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   const isSelectedDelayActive = Boolean(activeBusRuntime && activeBusRuntime.delayMinutes > 0);
 
   const activePreset: DemoRoutePreset =
-    AVAILABLE_DEMO_ROUTES.find((r) => r.id === selectedRoutePresetId) || AVAILABLE_DEMO_ROUTES[0];
+    availableCorridors.find((r) => r.id === selectedRoutePresetId) ||
+    availableCorridors[0] || {
+      id: '',
+      routeNumber: 'Unassigned',
+      routeName: 'No Corridor Assigned',
+      origin: 'Unassigned',
+      destination: 'Unassigned',
+      color: '#7847CB',
+      description: '',
+      stops: [],
+      waypoints: [],
+    };
 
-  // Sync route preset ID and terminal pins when active bus changes
+  // Sync route preset ID and terminal pins when active bus changes or corridors change
   useEffect(() => {
     if (activeBusRuntime?.def.routeId) {
       setSelectedRoutePresetId(activeBusRuntime.def.routeId);
+    } else if (availableCorridors.length > 0 && !selectedRoutePresetId) {
+      setSelectedRoutePresetId(availableCorridors[0].id);
     }
     if (activeBusRuntime?.def.stops && activeBusRuntime.def.stops.length > 0) {
       setStartTerminalPinId(activeBusRuntime.def.stops[0].id);
@@ -149,7 +203,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
       setStartTerminalPinId(activePreset.stops[0].id);
       setEndTerminalPinId(activePreset.stops[activePreset.stops.length - 1].id);
     }
-  }, [selectedBusId, activeBusRuntime]);
+  }, [selectedBusId, activeBusRuntime, availableCorridors]);
 
   const handleStartAll = () => {
     if (!isAuthorized) {
@@ -181,14 +235,14 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
 
   const handleRouteChange = (newRouteId: string) => {
     setSelectedRoutePresetId(newRouteId);
-    const preset = AVAILABLE_DEMO_ROUTES.find((r) => r.id === newRouteId) || activePreset;
+    const preset = availableCorridors.find((r) => r.id === newRouteId) || activePreset;
     const startPin = preset.stops[0]?.id || '';
     const endPin = preset.stops[preset.stops.length - 1]?.id || '';
     setStartTerminalPinId(startPin);
     setEndTerminalPinId(endPin);
     if (!activeBusRuntime) return;
     setBusAssignedRoute(activeBusRuntime.id, newRouteId, isReverseDirection, startPin, endPin);
-    toast.info(`Assigned ${newRouteId.toUpperCase()} with full corridor terminals to ${activeBusRuntime.def.busNumber}.`);
+    toast.info(`Assigned ${preset.routeNumber} (${preset.origin} ↔ ${preset.destination}) to ${activeBusRuntime.def.busNumber}.`);
     onSelectBusOnMap?.(activeBusRuntime.id);
   };
 
@@ -275,10 +329,10 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
         return;
       }
 
-      // Collect candidate stops from all known sources
+      // Collect candidate stops from active database stops & corridors
       const allCandidateStops: DemoStop[] = [
-        ...MOCK_BUS_STOPS.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng })),
-        ...AVAILABLE_DEMO_ROUTES.flatMap((r) => r.stops)
+        ...appStops.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng })),
+        ...availableCorridors.flatMap((r) => r.stops)
       ];
 
       // Remove duplicate stop IDs
@@ -341,10 +395,11 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
       return;
     }
 
+    const assignedId = newBusRouteId || (availableCorridors[0]?.id || '');
     const created = addNewCustomBus({
       busNumber: newBusNumber.trim(),
       plateNumber: newBusPlate.trim() || newBusNumber.trim(),
-      routeId: newBusRouteId,
+      routeId: assignedId,
       color: newBusColor,
       busType: newBusType
     });
@@ -565,17 +620,42 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
               <label className="text-[11px] font-semibold text-slate-500 block">
                 Corridor:
               </label>
-              <select
-                value={selectedRoutePresetId}
-                onChange={(e) => handleRouteChange(e.target.value)}
-                className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
-              >
-                {AVAILABLE_DEMO_ROUTES.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.routeNumber} — {preset.origin} to {preset.destination} ({preset.stops.length} stops)
-                  </option>
-                ))}
-              </select>
+              {availableCorridors.length === 0 ? (
+                <div className="space-y-2">
+                  <select
+                    disabled
+                    value=""
+                    className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-400 italic"
+                  >
+                    <option value="">No corridors created yet (Add in Route Corridors tab)</option>
+                  </select>
+                  <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 text-amber-800">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span className="text-[11px]">Configure a route corridor to run buses.</span>
+                    </div>
+                    <Link
+                      to="/admin/routes"
+                      className="px-2 py-0.5 rounded-lg bg-[#7847CB] text-white text-[10px] font-bold hover:bg-[#683bb5] transition-colors shrink-0"
+                    >
+                      Route Corridors
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <select
+                  value={selectedRoutePresetId}
+                  onChange={(e) => handleRouteChange(e.target.value)}
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
+                >
+                  <option value="" disabled>-- Select Route Corridor --</option>
+                  {availableCorridors.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.routeNumber} — {preset.origin} to {preset.destination} ({preset.stops.length} stops)
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* 3. MANUALLY MARK START & END TERMINAL PINS ON MAP */}
@@ -961,13 +1041,21 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                 <select
                   value={newBusRouteId}
                   onChange={(e) => setNewBusRouteId(e.target.value)}
+                  disabled={availableCorridors.length === 0}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-[#7847CB]"
                 >
-                  {AVAILABLE_DEMO_ROUTES.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.routeNumber} — {r.origin} to {r.destination}
-                    </option>
-                  ))}
+                  {availableCorridors.length === 0 ? (
+                    <option value="">No corridors created yet (Add in Route Corridors tab)</option>
+                  ) : (
+                    <>
+                      <option value="" disabled>-- Select Route Corridor --</option>
+                      {availableCorridors.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.routeNumber} — {r.origin} to {r.destination}
+                        </option>
+                      ))}
+                    </>
+                  )}
                 </select>
               </div>
 

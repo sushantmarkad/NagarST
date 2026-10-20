@@ -307,12 +307,12 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     polylinesRef.current = [];
 
     routes.forEach((route) => {
-      let pathPoints: [number, number][] = (route.route_path && route.route_path.length > 1) 
-        ? route.route_path.map((p) => [p.lat, p.lng] as [number, number])
-        : (route.stops ? route.stops.map((s) => [s.lat, s.lng] as [number, number]) : []);
-
-      // If route_path is missing or has fewer than 3 points while stops >= 2, fetch real road curve asynchronously from OSRM
-      if ((!route.route_path || route.route_path.length <= 2) && route.stops && route.stops.length >= 2) {
+      // Only draw the polyline when real road path exists (> 2 road points) to strictly keep lines on current road
+      let pathPoints: [number, number][] = [];
+      if (route.route_path && route.route_path.length > 2) {
+        pathPoints = route.route_path.map((p) => [p.lat, p.lng] as [number, number]);
+      } else if (route.stops && route.stops.length >= 2) {
+        // Asynchronously snap to real road using OSRM shortest path before rendering
         fetchOSRMRoute(route.stops.map((s) => ({ lat: s.lat, lng: s.lng }))).then((snapped) => {
           if (snapped && snapped.length > 2) {
             route.route_path = snapped;
