@@ -475,23 +475,28 @@ export const LiveTracking: React.FC = () => {
 
   // Routes to display on map: shows active demo corridors and configured routes
   const routesToDisplay = useMemo(() => {
+    if (!allRoutes || allRoutes.length === 0) return [];
     if (selectedBusRoute) return [selectedBusRoute];
 
     const activeRouteMap = new Map<string, RouteType>();
 
     allFleetBuses.forEach((bus) => {
+      // If the bus has no route assigned (or route is deleted), do NOT invent a route!
+      if (!bus.routeId) return;
+
+      // Check if configured route exists in allRoutes (Route Corridors tab)
+      const dbRoute = allRoutes.find(
+        (r) => r.id === bus.routeId || r.routeNumber === bus.routeNumber || r.routeNumber === bus.routeId
+      );
+      if (!dbRoute) return;
+
       // Find matching simulation runtime or definition (authoritative road corridor)
       const runtime = simState.buses[bus.id] || Object.values(simState.buses).find(
         (r) => r.def.busNumber.trim().toUpperCase() === bus.busNumber.trim().toUpperCase()
       );
       const demoDef = runtime?.def || DEMO_BUS_DEFINITIONS.find((d: any) => d.id === bus.id || d.busNumber === bus.busNumber);
 
-      // Check if configured route exists in allRoutes (Route Corridors tab)
-      const dbRoute = allRoutes.find(
-        (r) => r.id === bus.routeId || r.routeNumber === bus.routeNumber || r.routeNumber === bus.routeId
-      );
-
-      const targetRouteId = dbRoute?.id || demoDef?.routeId || bus.routeId || 'corridor';
+      const targetRouteId = dbRoute.id || demoDef?.routeId || bus.routeId || 'corridor';
 
       if (demoDef && demoDef.stops && demoDef.stops.length > 0) {
         activeRouteMap.set(targetRouteId, {

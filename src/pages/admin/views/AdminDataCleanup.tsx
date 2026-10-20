@@ -366,6 +366,10 @@ export const AdminDataCleanup: React.FC = () => {
           await deleteTableRows('route_stops', 'id');
           await deleteTableRows('routes', 'id');
           await deleteTableRows('stops', 'id');
+          try {
+            localStorage.removeItem('nagarst_configured_routes');
+            localStorage.removeItem('nagarst_demo_assignments');
+          } catch (_) {}
           await refreshData();
           await fetchAllCounts();
           toast.success('All routes, waypoints, and stops have been deleted.');

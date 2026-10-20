@@ -105,16 +105,22 @@ export const AdminDemoSimulator: React.FC = () => {
   const selectedBus = displayBuses.find(b => b.id === selectedBusId || b.busNumber === selectedBusId) || displayBuses[0] || null;
   const activeDemoBuses = displayBuses;
 
-  // Only display routes configured in Route Corridors tab or an actively assigned bus corridor with real road waypoints
+  // Only display routes configured in Route Corridors tab or actively running bus corridors
   const allRoutes = React.useMemo(() => {
+    // If the admin deleted all routes, return an empty array (do NOT show ghost corridors or pins!)
+    if (!routes || routes.length === 0) {
+      return [];
+    }
+
     // 1. Configured routes from Route Corridors tab with valid road paths
     const configured = routes.filter((r) => (r.route_path && r.route_path.length > 2) || (r.stops && r.stops.length >= 2));
 
-    // 2. Active demo bus route if it has road waypoints assigned
+    // 2. Active demo bus route ONLY if the bus is running and assigned to a recognized route
     const activeCorridors: any[] = [];
     Object.values(simState.buses).forEach((b) => {
-      if (b && b.def && b.def.routeId && b.def.waypoints && b.def.waypoints.length > 2) {
-        if (!configured.some((cr) => cr.id === b.def.routeId)) {
+      if (b && b.isRunning && b.def && b.def.routeId && b.def.waypoints && b.def.waypoints.length > 2) {
+        const matchesConfigured = configured.some((cr) => cr.id === b.def.routeId || cr.routeNumber === b.def.routeNumber);
+        if (!matchesConfigured) {
           activeCorridors.push({
             id: b.def.routeId,
             routeNumber: b.def.routeNumber || 'Route',

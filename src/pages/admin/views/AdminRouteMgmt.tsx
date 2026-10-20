@@ -552,16 +552,63 @@ export const AdminRouteMgmt: React.FC = () => {
     if (!isConfirmed) return;
 
     try {
+      await supabase.from('trips').delete().eq('route_id', routeId);
       await supabase.from('route_stops').delete().eq('route_id', routeId);
       await supabase.from('routes').delete().eq('id', routeId);
     } catch (_) {}
 
-    const updatedList = routes.filter(r => r.id !== routeId);
+    const updatedList = routes.filter(r => r.id !== routeId && r.routeNumber !== routeNumber && r.route_number !== routeNumber);
     setRoutes(updatedList);
     syncLocalBackup(updatedList);
     setSelectedRoute(null);
     setStops([]);
+
+    try {
+      const raw = localStorage.getItem('nagarst_demo_assignments');
+      if (raw) {
+        const assignments = JSON.parse(raw);
+        Object.keys(assignments).forEach(k => {
+          if (assignments[k]?.routeId === routeId || assignments[k]?.routeNumber === routeNumber) {
+            delete assignments[k];
+          }
+        });
+        localStorage.setItem('nagarst_demo_assignments', JSON.stringify(assignments));
+      }
+      if (updatedList.length === 0) {
+        localStorage.removeItem('nagarst_configured_routes');
+        localStorage.removeItem('nagarst_demo_assignments');
+      }
+    } catch (_) {}
+
     toast.success(`Route ${routeNumber} deleted.`);
+    await refreshData();
+  };
+
+  const handleDeleteAllRoutes = async () => {
+    const isConfirmed = await confirm({
+      title: 'Delete All Configured Routes?',
+      message: 'This will permanently delete all transit routes and stop assignments from the database and maps.',
+      confirmText: 'Delete All Routes',
+      isDestructive: true,
+    });
+    if (!isConfirmed) return;
+
+    try {
+      await supabase.from('trips').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('route_stops').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('routes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch (_) {}
+
+    try {
+      localStorage.removeItem('nagarst_configured_routes');
+      localStorage.removeItem('nagarst_demo_assignments');
+    } catch (_) {}
+
+    setRoutes([]);
+    syncLocalBackup([]);
+    setSelectedRoute(null);
+    setStops([]);
+    toast.success('All routes deleted.');
     await refreshData();
   };
 
@@ -824,16 +871,29 @@ export const AdminRouteMgmt: React.FC = () => {
             <h3 className="text-sm font-bold text-slate-900">Routes & Corridors</h3>
             <span className="text-[10px] text-slate-500 font-medium">{routes.length} Configured Routes</span>
           </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              setCreationStep('selecting_origin');
-              toast.info('Click anywhere on the map to set Origin Terminal pin.');
-            }}
-            leftIcon={<Plus className="w-3.5 h-3.5" />}
-          >
-            New Route
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {routes.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDeleteAllRoutes}
+                className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+              >
+                Clear All
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={() => {
+                setCreationStep('selecting_origin');
+                toast.info('Click anywhere on the map to set Origin Terminal pin.');
+              }}
+              leftIcon={<Plus className="w-3.5 h-3.5" />}
+            >
+              New Route
+            </Button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-4">

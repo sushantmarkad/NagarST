@@ -159,7 +159,7 @@ export const DEFAULT_DEMO_ROUTES: DemoRoutePreset[] = [
   }
 ];
 
-export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [...DEFAULT_DEMO_ROUTES];
+export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [];
 
 // =========================================================================
 // MULTI-BUS DEFINITION REGISTRY
@@ -1345,43 +1345,58 @@ export function subscribeToDemoState(listener: (s: DemoSimulatorState) => void):
  * Synchronizes the simulator fleet and available corridors with City Admin's configured routes and fleet
  */
 export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[]) {
-  // 1. Rebuild AVAILABLE_DEMO_ROUTES preserving default authoritative routes
+  // 1. Rebuild AVAILABLE_DEMO_ROUTES strictly from Admin Configured routes
   AVAILABLE_DEMO_ROUTES.length = 0;
-  AVAILABLE_DEMO_ROUTES.push(...DEFAULT_DEMO_ROUTES);
 
-  routes.forEach((r: Route) => {
-    if (!r.stops || r.stops.length < 2) return;
-    const waypoints = (r.route_path && r.route_path.length > 1) 
-      ? r.route_path 
-      : r.stops.map((s: RouteStop) => ({ lat: s.lat, lng: s.lng }));
+  if (routes && routes.length > 0) {
+    routes.forEach((r: Route) => {
+      if (!r.stops || r.stops.length < 2) return;
+      const waypoints = (r.route_path && r.route_path.length > 1) 
+        ? r.route_path 
+        : r.stops.map((s: RouteStop) => ({ lat: s.lat, lng: s.lng }));
 
-    const stops: DemoStop[] = r.stops.map((s: RouteStop, idx: number) => ({
-      id: s.stopId || `stop-${idx}`,
-      name: s.stopName || `Stop ${idx + 1}`,
-      lat: s.lat,
-      lng: s.lng
-    }));
+      const stops: DemoStop[] = r.stops.map((s: RouteStop, idx: number) => ({
+        id: s.stopId || `stop-${idx}`,
+        name: s.stopName || `Stop ${idx + 1}`,
+        lat: s.lat,
+        lng: s.lng
+      }));
 
-    const existingIdx = AVAILABLE_DEMO_ROUTES.findIndex(
-      dr => dr.id === r.id || dr.routeNumber === r.routeNumber
-    );
-    const newPreset: DemoRoutePreset = {
-      id: r.id,
-      routeNumber: r.routeNumber,
-      routeName: r.name || `${r.routeNumber}: ${r.origin} ↔ ${r.destination}`,
-      origin: r.origin,
-      destination: r.destination,
-      color: r.color || '#7847CB',
-      description: `${r.origin} ➔ ${r.destination}`,
-      stops,
-      waypoints: densifyPath(waypoints, 120)
-    };
-    if (existingIdx !== -1) {
-      AVAILABLE_DEMO_ROUTES[existingIdx] = newPreset;
-    } else {
-      AVAILABLE_DEMO_ROUTES.push(newPreset);
-    }
-  });
+      AVAILABLE_DEMO_ROUTES.push({
+        id: r.id,
+        routeNumber: r.routeNumber,
+        routeName: r.name || `${r.routeNumber}: ${r.origin} ↔ ${r.destination}`,
+        origin: r.origin,
+        destination: r.destination,
+        color: r.color || '#7847CB',
+        description: `${r.origin} ➔ ${r.destination}`,
+        stops,
+        waypoints: densifyPath(waypoints, 120)
+      });
+    });
+  } else {
+    // All routes were deleted by the admin — unassign all buses and clear ghost corridors
+    DEMO_BUS_DEFINITIONS.forEach((def) => {
+      def.routeId = '';
+      def.routeNumber = '';
+      def.routeName = '';
+      def.stops = [];
+      def.waypoints = [];
+    });
+    Object.values(runtimeStore).forEach((r) => {
+      r.isRunning = false;
+      if (r.def) {
+        r.def.routeId = '';
+        r.def.routeNumber = '';
+        r.def.routeName = '';
+        r.def.stops = [];
+        r.def.waypoints = [];
+      }
+    });
+    try {
+      localStorage.removeItem('nagarst_demo_assignments');
+    } catch (_) {}
+  }
 
   // 2. Read deleted buses
   let deletedBusIds: string[] = [];
