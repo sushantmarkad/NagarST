@@ -10,6 +10,9 @@ import { AdminAIInsights } from './views/AdminAIInsights';
 import { AdminIncidentsAnnouncements } from './views/AdminIncidentsAnnouncements';
 import { AdminDataCleanup } from './views/AdminDataCleanup';
 import { AdminDemoSimulator } from './views/AdminDemoSimulator';
+import { useAuth } from '../../context/AuthContext';
+import { Link } from 'react-router-dom';
+import { ShieldCheck, ArrowRight } from 'lucide-react';
 
 interface AdminDashboardProps {
   defaultView?: AdminView;
@@ -74,8 +77,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ defaultView = 'o
     }
   };
 
+  const { user } = useAuth();
+
   return (
     <AdminDashboardLayout currentView={currentView} onSelectView={handleSelectView}>
+      {user?.role === 'SUPER_ADMIN' && (
+        <div className="bg-[#7847CB] text-white px-4 py-2.5 flex items-center justify-between text-xs font-semibold shadow-xs shrink-0">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-purple-200" />
+            <span>Root Super Admin Session Active • Currently viewing Fleet Admin</span>
+          </div>
+          <Link
+            to="/super-admin"
+            className="bg-white text-[#7847CB] px-3 py-1 rounded-lg text-xs font-bold hover:bg-purple-50 transition flex items-center gap-1.5 shadow-xs"
+          >
+            <span>Open Super Admin Console</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      )}
       {renderViewContent()}
     </AdminDashboardLayout>
   );

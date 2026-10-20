@@ -38,6 +38,9 @@ const queryClient = new QueryClient({
 const PublicOnlyRoute: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user, isAuthenticated, getRoleStartRoute } = useAuth();
   if (isAuthenticated && user) {
+    if (user.role === 'SUPER_ADMIN') {
+      return <Navigate to="/super-admin" replace />;
+    }
     const targetRoute = getRoleStartRoute(user.role);
     return <Navigate to={targetRoute} replace />;
   }

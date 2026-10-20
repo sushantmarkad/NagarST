@@ -3,6 +3,52 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
+// =========================================================================
+// FIREBASE FIRESTORE INTEGRATION (Backend Control)
+// =========================================================================
+const { initializeApp } = require('firebase/app');
+const { getFirestore, doc, setDoc, deleteDoc, collection, getDocs } = require('firebase/firestore');
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCbxsoLoqqKQIORWGwMg4pJtkjYFJY3G5E",
+  authDomain: "nagarst-2111f.firebaseapp.com",
+  projectId: "nagarst-2111f",
+  storageBucket: "nagarst-2111f.firebasestorage.app",
+  messagingSenderId: "763785088493",
+  appId: "1:763785088493:web:6d1b2954f0c08d8b24ebe4",
+  measurementId: "G-1HFLYM8T8R"
+};
+
+let fbDb = null;
+try {
+  const fbApp = initializeApp(firebaseConfig);
+  fbDb = getFirestore(fbApp);
+  console.log('✅ Firebase Firestore connected in backend server (project: nagarst-2111f)');
+} catch (fbInitErr) {
+  console.warn('⚠️ Firebase initialization in backend:', fbInitErr.message);
+}
+
+async function syncToFirebaseLive(busPayload) {
+  if (!fbDb || !busPayload) return;
+  try {
+    const id = busPayload.busId || busPayload.id;
+    if (!id) return;
+    await setDoc(doc(fbDb, 'live_locations', id), {
+      ...busPayload,
+      updated_at: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    // silently catch network latency
+  }
+}
+
+async function removeFirebaseLive(busId) {
+  if (!fbDb || !busId) return;
+  try {
+    await deleteDoc(doc(fbDb, 'live_locations', busId));
+  } catch (err) {}
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -289,6 +335,9 @@ function tickDemoSimulator() {
 
     io.emit('locationUpdate', telemetryPayload);
     io.to('demo-tracking').emit('demoLocationUpdate', telemetryPayload);
+
+    // Sync directly to Firebase Firestore live_locations
+    syncToFirebaseLive(telemetryPayload);
   });
 }
 
@@ -334,6 +383,7 @@ function stopDemoSimulator() {
   DEMO_FLEET_CONFIG.forEach(b => {
     demoBuses.delete(b.id);
     io.emit('busOffline', b.id);
+    removeFirebaseLive(b.id);
   });
 
   io.to('demo-tracking').emit('demoStopped', { all: true });
@@ -373,6 +423,7 @@ io.on('connection', (socket) => {
       demoBuses.set(busId, payload);
       io.emit('locationUpdate', payload);
       io.to('demo-tracking').emit('demoLocationUpdate', payload);
+      syncToFirebaseLive(payload);
       return;
     }
 
@@ -380,6 +431,7 @@ io.on('connection', (socket) => {
     const livePayload = { ...data, id: busId, busId: busId };
     activeBuses.set(busId, livePayload);
     io.emit('locationUpdate', livePayload);
+    syncToFirebaseLive(livePayload);
   });
 
   // BUS OFFLINE
@@ -388,9 +440,11 @@ io.on('connection', (socket) => {
     if (String(busId).startsWith('demo-')) {
       demoBuses.delete(busId);
       io.emit('busOffline', busId);
+      removeFirebaseLive(busId);
     } else {
       activeBuses.delete(busId);
       io.emit('busOffline', busId);
+      removeFirebaseLive(busId);
     }
   });
 
@@ -483,6 +537,55 @@ app.post('/api/demo/delay', requireDemoAuth, (req, res) => {
   const { delayMinutes = 0 } = req.body || {};
   demoState.delayMinutes = delayMinutes;
   res.json({ success: true, delayMinutes: demoState.delayMinutes });
+});
+
+// =========================================================================
+// SUPER ADMIN FIREBASE CONTROL ENDPOINTS
+// =========================================================================
+app.get('/api/firebase/status', async (req, res) => {
+  try {
+    if (!fbDb) {
+      return res.status(500).json({ connected: false, message: 'Firebase Firestore is not initialized' });
+    }
+    const [busesSnap, routesSnap, liveSnap, usersSnap] = await Promise.all([
+      getDocs(collection(fbDb, 'buses')).catch(() => ({ size: 0 })),
+      getDocs(collection(fbDb, 'routes')).catch(() => ({ size: 0 })),
+      getDocs(collection(fbDb, 'live_locations')).catch(() => ({ size: 0 })),
+      getDocs(collection(fbDb, 'users')).catch(() => ({ size: 0 }))
+    ]);
+
+    res.json({
+      connected: true,
+      projectId: 'nagarst-2111f',
+      collections: {
+        buses: busesSnap.size || 0,
+        routes: routesSnap.size || 0,
+        live_locations: liveSnap.size || 0,
+        users: usersSnap.size || 0
+      },
+      simulatorRunning: demoState.isRunning,
+      activeBuses: demoState.activeBusCount,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ connected: false, error: err.message });
+  }
+});
+
+app.post('/api/firebase/clear-collection', async (req, res) => {
+  try {
+    const { collectionName } = req.body || {};
+    if (!collectionName || !fbDb) {
+      return res.status(400).json({ success: false, message: 'Invalid collection name or Firebase uninitialized' });
+    }
+    const snap = await getDocs(collection(fbDb, collectionName));
+    const deletePromises = [];
+    snap.forEach(d => deletePromises.push(deleteDoc(d.ref)));
+    await Promise.all(deletePromises);
+    res.json({ success: true, message: `Successfully cleared collection: ${collectionName}`, deletedCount: snap.size });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 const PORT = process.env.PORT || 3001;

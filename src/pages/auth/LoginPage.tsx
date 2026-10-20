@@ -67,6 +67,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
   // If user is already authenticated and visits public landing/login page, redirect to their role start route
   useEffect(() => {
     if (isAuthenticated && user) {
+      if (user.role === 'SUPER_ADMIN') {
+        navigate('/super-admin', { replace: true });
+        return;
+      }
       const startRoute = getRoleStartRoute(user.role);
       navigate(startRoute, { replace: true });
     }
@@ -91,6 +95,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
         }
       } else {
         const loggedUser = await login(selectedDemoRole, { email: emailOrPhone, password });
+        if (loggedUser.role === 'SUPER_ADMIN') {
+          navigate('/super-admin', { replace: true });
+          return;
+        }
         const targetRoute = from || ROLE_START_ROUTES[loggedUser.role] || getRoleStartRoute(loggedUser.role);
         navigate(targetRoute, { replace: true });
       }

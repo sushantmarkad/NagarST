@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm, useToast } from '../context/FeedbackContext';
-import { ShieldAlert, ShieldCheck, LogOut, Menu, X, ArrowLeft, KeyRound } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, LogOut, Menu, X, ArrowLeft, KeyRound, Server } from 'lucide-react';
 import { AdminRoleMgmt } from './admin/views/AdminRoleMgmt';
+import { SuperAdminBackendControl } from './admin/views/SuperAdminBackendControl';
 import { Button, Badge } from '../components/ui';
 import { Link } from 'react-router-dom';
 
@@ -11,6 +12,7 @@ export const SuperAdminDashboard: React.FC = () => {
   const confirm = useConfirm();
   const toast = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'roles' | 'backend'>('roles');
 
   const handleLogout = async () => {
     const ok = await confirm({
@@ -72,21 +74,46 @@ export const SuperAdminDashboard: React.FC = () => {
           </div>
 
           {/* Navigation Links */}
-          <nav className="space-y-1">
+          <nav className="space-y-1.5">
             <button
-              onClick={() => setMobileMenuOpen(false)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-bold text-xs bg-purple-50 text-[#7847CB] border border-purple-200"
+              onClick={() => {
+                setActiveTab('roles');
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-xs transition ${
+                activeTab === 'roles'
+                  ? 'bg-purple-50 text-[#7847CB] border border-purple-200 shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
             >
               <ShieldCheck className="w-4 h-4 shrink-0 text-[#7847CB]" />
               <span>Role & Access Control</span>
             </button>
-            <Link
-              to="/admin/dashboard"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-xs text-slate-600 hover:bg-slate-50 transition"
+
+            <button
+              onClick={() => {
+                setActiveTab('backend');
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-xs transition ${
+                activeTab === 'backend'
+                  ? 'bg-purple-50 text-[#7847CB] border border-purple-200 shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
             >
-              <ArrowLeft className="w-4 h-4 shrink-0" />
-              <span>Fleet Admin Console</span>
-            </Link>
+              <Server className="w-4 h-4 shrink-0 text-[#7847CB]" />
+              <span>Backend & Firebase</span>
+            </button>
+
+            <div className="pt-2">
+              <Link
+                to="/admin/dashboard"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs text-slate-600 hover:bg-slate-50 transition border border-transparent hover:border-slate-200"
+              >
+                <ArrowLeft className="w-4 h-4 shrink-0" />
+                <span>Fleet Admin Console</span>
+              </Link>
+            </div>
           </nav>
         </div>
 
@@ -125,7 +152,7 @@ export const SuperAdminDashboard: React.FC = () => {
         <header className="hidden md:flex h-16 bg-white border-b border-slate-200 px-6 items-center justify-between sticky top-0 z-30">
           <div className="flex items-center gap-3">
             <h2 className="text-base font-bold text-slate-900">
-              System Access & Role Management
+              {activeTab === 'roles' ? 'System Access & Role Management' : 'Backend Server & Firebase Operations'}
             </h2>
             <Badge variant="brand">MUNICIPAL ROOT</Badge>
             <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
@@ -149,7 +176,7 @@ export const SuperAdminDashboard: React.FC = () => {
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <AdminRoleMgmt />
+          {activeTab === 'roles' ? <AdminRoleMgmt /> : <SuperAdminBackendControl />}
         </main>
       </div>
     </div>
