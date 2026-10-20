@@ -334,6 +334,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (customBusesRaw) {
           const customBuses = JSON.parse(customBusesRaw);
           customBuses.forEach((cb: any) => {
+            if (cb.id?.startsWith('demo-')) return;
             const bNum = cb.busNumber || cb.bus_number;
             const pNum = cb.plateNumber || cb.plate_number;
             if (isDeleted(cb.id, bNum, pNum)) return;
@@ -351,6 +352,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
         }
       } catch (_) {}
+
+      // If no transit routes exist, aggressively purge stale demo bus caches from localStorage
+      if (combinedRoutes.length === 0) {
+        try {
+          localStorage.removeItem('nagarst_demo_buses');
+          localStorage.removeItem('nagarst_demo_assignments');
+          localStorage.removeItem('nagarst_custom_buses');
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && (k.startsWith('nagarst_live_bus_demo-') || k === 'nagarst_demo_bus')) {
+              localStorage.removeItem(k);
+            }
+          }
+        } catch (_) {}
+      }
 
       if (allBusesList.length > 0) {
         const mappedBuses = allBusesList.map((b: any) => {
@@ -431,21 +447,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setBuses(prev => prev.filter(b => b.id !== busId));
     };
 
-    // Load active demo buses if running in storage
-    try {
-      const demoBusesRaw = localStorage.getItem('nagarst_demo_buses');
-      if (demoBusesRaw) {
-        const parsedMap = JSON.parse(demoBusesRaw);
-        Object.values(parsedMap).forEach((b: any) => handleBusUpdate(b));
-      }
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('nagarst_live_bus_demo-')) {
-          const val = localStorage.getItem(k);
-          if (val) handleBusUpdate(JSON.parse(val));
-        }
-      }
-    } catch (_) {}
 
     // 1. Cross-Tab Fast Channel (Zero Latency)
     let broadcastChannel: BroadcastChannel | null = null;

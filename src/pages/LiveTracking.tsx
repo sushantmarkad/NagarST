@@ -348,46 +348,61 @@ export const LiveTracking: React.FC = () => {
 
     const byNumber = new Map<string, Bus>();
 
-    // 1. Authoritative fleet buses from Municipal Vehicle Fleet that have assigned routes
-    const validConfigured = buses.filter(b => b.routeId && !isDeleted(b));
-    if (validConfigured.length > 0) {
-      validConfigured.forEach(cb => {
-        const key = cb.busNumber.trim().toUpperCase().replace(/\s+/g, '');
-        // Check active live telemetry (coordinates, speed, next stop)
-        const live = Object.values(activeLiveBuses).find(
-          lb => (lb.busNumber || lb.id).trim().toUpperCase().replace(/\s+/g, '') === key
-        );
+    // 1. Authoritative fleet buses from Municipal Vehicle Fleet that have VALID assigned routes
+    const validConfigured = buses.filter(b => {
+      if (!b || !b.routeId || isDeleted(b)) return false;
+      // Demo buses cannot be counted as configured municipal fleet vehicles
+      if (b.id?.startsWith('demo-') || b.isDemo) return false;
+      // Must belong to an actual existing route in allRoutes
+      return allRoutes.some(
+        r => r.id === b.routeId || r.routeNumber === b.routeId || r.routeNumber === b.routeNumber
+      );
+    });
 
-        const targetRoute = allRoutes.find(
-          r => r.id === cb.routeId || r.routeNumber === cb.routeNumber || r.routeNumber === cb.routeId
-        );
+    validConfigured.forEach(cb => {
+      const key = cb.busNumber.trim().toUpperCase().replace(/\s+/g, '');
+      const live = Object.values(activeLiveBuses).find(
+        lb => (lb.busNumber || lb.id).trim().toUpperCase().replace(/\s+/g, '') === key
+      );
 
-        byNumber.set(key, {
-          ...cb,
-          ...(live || {}),
-          id: live?.id || cb.id,
-          busNumber: cb.busNumber,
-          plateNumber: cb.plateNumber,
-          routeId: targetRoute?.id || cb.routeId,
-          routeNumber: targetRoute?.routeNumber || cb.routeNumber || 'Route',
-          routeName: targetRoute?.name || cb.routeName || `${targetRoute?.origin || cb.origin} ➔ ${targetRoute?.destination || cb.destination}`,
-          origin: targetRoute?.origin || cb.origin,
-          destination: targetRoute?.destination || cb.destination,
-          isDemo: true
-        });
+      const targetRoute = allRoutes.find(
+        r => r.id === cb.routeId || r.routeNumber === cb.routeNumber || r.routeNumber === cb.routeId
+      );
+      if (!targetRoute) return;
+
+      byNumber.set(key, {
+        ...cb,
+        ...(live || {}),
+        id: live?.id || cb.id,
+        busNumber: cb.busNumber,
+        plateNumber: cb.plateNumber,
+        routeId: targetRoute.id,
+        routeNumber: targetRoute.routeNumber || cb.routeNumber || 'Route',
+        routeName: targetRoute.name || `${targetRoute.origin} ➔ ${targetRoute.destination}`,
+        origin: targetRoute.origin || cb.origin,
+        destination: targetRoute.destination || cb.destination,
+        isDemo: Boolean(live?.isDemo)
       });
-    } else {
-      // Fallback: ONLY include real live drivers or actively running demo buses
-      Object.values(activeLiveBuses).forEach((b) => {
-        if (!b || !b.id || isDeleted(b)) return;
-        if (b.isDemo) {
-          const runtime = simState?.buses?.[b.id];
-          if (!runtime || !runtime.isRunning) return;
-        }
-        const key = (b.busNumber || b.id).trim().toUpperCase().replace(/\s+/g, '');
-        byNumber.set(key, b);
-      });
-    }
+    });
+
+    // 2. Actively running demo buses or real live drivers (ONLY if they have a valid existing route)
+    Object.values(activeLiveBuses).forEach((b) => {
+      if (!b || !b.id || isDeleted(b)) return;
+      const key = (b.busNumber || b.id).trim().toUpperCase().replace(/\s+/g, '');
+      if (byNumber.has(key)) return;
+
+      if (b.isDemo || b.id.startsWith('demo-')) {
+        // Only include demo bus if the simulator is ACTIVELY running this bus
+        const runtime = simState?.buses?.[b.id];
+        if (!runtime || !runtime.isRunning) return;
+        // AND the demo bus route must exist in allRoutes
+        const hasValidRoute = allRoutes.some(
+          r => r.id === b.routeId || r.routeNumber === b.routeId || r.routeNumber === b.routeNumber
+        );
+        if (!hasValidRoute) return;
+      }
+      byNumber.set(key, b);
+    });
 
     return Array.from(byNumber.values());
   }, [activeLiveBuses, buses, allRoutes, simState]);

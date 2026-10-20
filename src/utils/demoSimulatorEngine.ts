@@ -192,11 +192,32 @@ export interface DemoSimulatorState {
 // In-memory runtime instances for each bus
 const runtimeStore: Record<string, BusSimRuntime> = {};
 
-// Purge any previously deleted demo buses from DEMO_BUS_DEFINITIONS
+// Purge any previously deleted or orphaned demo buses from storage and runtime
 try {
+  if (typeof window !== 'undefined') {
+    const legacyKeys = [
+      'nagarst_live_bus_demo-bus-1515',
+      'nagarst_live_bus_demo-bus-1516',
+      'nagarst_live_bus_demo-bus-1519',
+      'nagarst_live_bus_MH-16 BT-1515',
+      'nagarst_live_bus_MH-16 BT-1516',
+      'nagarst_live_bus_MH-16 BT-1519'
+    ];
+    legacyKeys.forEach(k => localStorage.removeItem(k));
+
+    // Clear legacy assignments and custom buses if no configured routes exist
+    const confRoutesRaw = localStorage.getItem('nagarst_configured_routes');
+    const hasRoutes = confRoutesRaw && JSON.parse(confRoutesRaw).length > 0;
+    if (!hasRoutes) {
+      localStorage.removeItem('nagarst_demo_buses');
+      localStorage.removeItem('nagarst_custom_buses');
+      localStorage.removeItem('nagarst_demo_assignments');
+    }
+  }
+
   const deletedIdsRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
   const deletedIds: string[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
-  ['demo-bus-1516', 'MH-16 BT-1516'].forEach(legacyId => {
+  ['demo-bus-1515', 'demo-bus-1516', 'demo-bus-1519', 'MH-16 BT-1515', 'MH-16 BT-1516', 'MH-16 BT-1519'].forEach(legacyId => {
     if (!deletedIds.includes(legacyId)) deletedIds.push(legacyId);
   });
   if (typeof window !== 'undefined') {
@@ -204,12 +225,17 @@ try {
     const demoRaw = localStorage.getItem('nagarst_demo_buses');
     if (demoRaw) {
       const demoBuses = JSON.parse(demoRaw);
+      delete demoBuses['demo-bus-1515'];
       delete demoBuses['demo-bus-1516'];
+      delete demoBuses['demo-bus-1519'];
+      delete demoBuses['MH-16 BT-1515'];
       delete demoBuses['MH-16 BT-1516'];
-      if (demoBuses['demo-bus-1515'] && demoBuses['demo-bus-1515'].routeNumber === 'Route 1-B') {
-        delete demoBuses['demo-bus-1515'];
+      delete demoBuses['MH-16 BT-1519'];
+      if (Object.keys(demoBuses).length === 0) {
+        localStorage.removeItem('nagarst_demo_buses');
+      } else {
+        localStorage.setItem('nagarst_demo_buses', JSON.stringify(demoBuses));
       }
-      localStorage.setItem('nagarst_demo_buses', JSON.stringify(demoBuses));
     }
   }
 
@@ -347,18 +373,22 @@ DEMO_BUS_DEFINITIONS.forEach(def => {
   };
 });
 
-// Ensure initial demo fleet aggregate is populated in localStorage immediately on load, strictly purged of deleted buses
+// Ensure initial demo fleet aggregate in localStorage strictly reflects running buses
 try {
   const deletedIdsRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
   const deletedIds: string[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
   const initAggregate: Record<string, Bus> = {};
   Object.values(runtimeStore).forEach(r => {
-    if (deletedIds.includes(r.id) || deletedIds.includes(r.def.busNumber)) return;
+    if (!r.isRunning || deletedIds.includes(r.id) || deletedIds.includes(r.def.busNumber)) return;
     const b = r.currentBus || buildBusTelemetry(r);
     if (b) initAggregate[r.id] = b;
   });
   if (typeof window !== 'undefined') {
-    localStorage.setItem('nagarst_demo_buses', JSON.stringify(initAggregate));
+    if (Object.keys(initAggregate).length === 0) {
+      localStorage.removeItem('nagarst_demo_buses');
+    } else {
+      localStorage.setItem('nagarst_demo_buses', JSON.stringify(initAggregate));
+    }
   }
 } catch (_) {}
 
