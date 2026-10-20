@@ -10,6 +10,7 @@ import {
   subscribeToDemoState,
   addStopToBusRoute,
   syncSimulatorFleetWithAdminConfig,
+  buildBusTelemetry,
   type DemoBusDefinition,
   type DemoSimulatorState
 } from '../../../utils/demoSimulatorEngine';
@@ -49,8 +50,6 @@ export const AdminDemoSimulator: React.FC = () => {
 
   const currentRuntime = simState.buses[selectedBusId];
   const selectedDef = currentRuntime?.def || DEMO_BUS_DEFINITIONS.find(d => d.id === selectedBusId) || DEMO_BUS_DEFINITIONS[0] || null;
-  const selectedBus = buses.find(b => b.id === selectedBusId);
-  const activeDemoBuses = buses.filter(b => b.isDemo || b.id?.startsWith('demo-'));
 
   // Handle clicks directly on the Leaflet map in interactive mode
   const handleMapClick = async (coords: { lat: number; lng: number }) => {
@@ -84,6 +83,24 @@ export const AdminDemoSimulator: React.FC = () => {
     setInteractiveMode('view');
   };
 
+  // Merge live simulator buses with app buses so that the demo buses render directly on LiveMap
+  const displayBuses = React.useMemo(() => {
+    const map = new Map<string, any>();
+    buses.forEach(b => map.set(b.id, b));
+    Object.values(simState.buses).forEach(runtime => {
+      if (runtime) {
+        const activeBus = runtime.currentBus || buildBusTelemetry(runtime);
+        if (activeBus) {
+          map.set(activeBus.id, activeBus);
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [buses, simState.buses]);
+
+  const selectedBus = displayBuses.find(b => b.id === selectedBusId);
+  const activeDemoBuses = displayBuses.filter(b => b.isDemo || b.id?.startsWith('demo-'));
+
   // Only display routes configured in Route Corridors tab or an actively assigned bus corridor with real road waypoints
   const allRoutes = React.useMemo(() => {
     // 1. Configured routes from Route Corridors tab with valid road paths
@@ -92,33 +109,33 @@ export const AdminDemoSimulator: React.FC = () => {
     // 2. Active demo bus route if it has road waypoints assigned
     const activeCorridors: any[] = [];
     Object.values(simState.buses).forEach((b) => {
-      if (b.def.routeId && b.def.waypoints && b.def.waypoints.length > 2) {
+      if (b && b.def && b.def.routeId && b.def.waypoints && b.def.waypoints.length > 2) {
         if (!configured.some((cr) => cr.id === b.def.routeId)) {
           activeCorridors.push({
             id: b.def.routeId,
-            routeNumber: b.def.routeNumber,
-            name: b.def.routeName,
-            nameMarathi: b.def.routeName,
-            origin: b.def.origin,
-            destination: b.def.destination,
+            routeNumber: b.def.routeNumber || 'Route',
+            name: b.def.routeName || 'Corridor',
+            nameMarathi: b.def.routeName || 'Corridor',
+            origin: b.def.origin || '',
+            destination: b.def.destination || '',
             firstBus: '06:00 AM',
             lastBus: '10:00 PM',
             frequencyMinutes: 15,
             baseFare: 10,
             maxFare: 25,
-            totalStops: b.def.stops.length,
+            totalStops: b.def.stops ? b.def.stops.length : 0,
             durationMinutes: 30,
             color: b.def.color || '#7847CB',
             activeBusesCount: 1,
             status: 'normal' as const,
-            stops: b.def.stops.map((s, idx) => ({
+            stops: (b.def.stops || []).map((s, idx) => ({
               stopId: s.id,
               stopName: s.name,
               stopNameMarathi: s.name,
               sequence: idx + 1,
               fareFromOrigin: idx * 5,
               estimatedMinutesFromOrigin: idx * 5,
-              isMajorHub: idx === 0 || idx === b.def.stops.length - 1,
+              isMajorHub: idx === 0 || idx === (b.def.stops?.length || 1) - 1,
               lat: s.lat,
               lng: s.lng,
             })),
@@ -260,7 +277,7 @@ export const AdminDemoSimulator: React.FC = () => {
 
           <div className="flex-1 w-full h-full relative min-h-[440px]">
             <LiveMap
-              buses={buses}
+              buses={displayBuses}
               stops={stops}
               routes={allRoutes}
               selectedBusId={selectedBusId}

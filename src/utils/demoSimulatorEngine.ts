@@ -188,7 +188,7 @@ function getBroadcastChannel(): BroadcastChannel | null {
 /**
  * Builds realistic Bus telemetry for a specific bus runtime
  */
-function buildBusTelemetry(runtime: BusSimRuntime): Bus {
+export function buildBusTelemetry(runtime: BusSimRuntime): Bus {
   const { def, currentIndex, delayMinutes } = runtime;
   const waypoints = def.waypoints;
 
@@ -818,7 +818,7 @@ export function setDemoDelay(minutes: number) {
 }
 
 export function getDemoSimulatorState(): DemoSimulatorState {
-  const bus1 = runtimeStore[DEMO_BUS_ID];
+  const bus1 = runtimeStore[DEMO_BUS_ID] || Object.values(runtimeStore)[0];
   const anyRunning = Object.values(runtimeStore).some(r => r.isRunning);
   const activeCount = Object.values(runtimeStore).filter(r => r.isRunning).length;
 

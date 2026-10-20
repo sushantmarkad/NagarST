@@ -93,7 +93,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
 
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
   const [selectedBusId, setSelectedBusId] = useState<string>(
-    externalSelectedBusId || DEMO_BUS_DEFINITIONS[0].id
+    externalSelectedBusId || DEMO_BUS_DEFINITIONS[0]?.id || ''
   );
 
   // Dynamically compute corridors strictly from Route Corridors tab
@@ -191,17 +191,25 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
       waypoints: [],
     };
 
+  // Keep selectedBusId valid if buses change
+  useEffect(() => {
+    const availableBusIds = Object.keys(simState.buses);
+    if (availableBusIds.length > 0 && !simState.buses[selectedBusId]) {
+      setSelectedBusId(availableBusIds[0]);
+    }
+  }, [simState.buses, selectedBusId]);
+
   // Sync route preset ID and terminal pins when active bus changes or corridors change
   useEffect(() => {
-    if (activeBusRuntime?.def.routeId) {
+    if (activeBusRuntime?.def?.routeId) {
       setSelectedRoutePresetId(activeBusRuntime.def.routeId);
     } else if (availableCorridors.length > 0 && !selectedRoutePresetId) {
       setSelectedRoutePresetId(availableCorridors[0].id);
     }
-    if (activeBusRuntime?.def.stops && activeBusRuntime.def.stops.length > 0) {
+    if (activeBusRuntime?.def?.stops && activeBusRuntime.def.stops.length > 0) {
       setStartTerminalPinId(activeBusRuntime.def.stops[0].id);
       setEndTerminalPinId(activeBusRuntime.def.stops[activeBusRuntime.def.stops.length - 1].id);
-    } else if (activePreset.stops.length > 0) {
+    } else if (activePreset?.stops && activePreset.stops.length > 0) {
       setStartTerminalPinId(activePreset.stops[0].id);
       setEndTerminalPinId(activePreset.stops[activePreset.stops.length - 1].id);
     }
@@ -310,8 +318,8 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
 
   const handleApplyTerminalsToAllBuses = () => {
     setAllBusesAssignedRoute(selectedRoutePresetId, isReverseDirection, startTerminalPinId, endTerminalPinId);
-    const sName = activePreset.stops.find((s) => s.id === startTerminalPinId)?.name || activePreset.origin;
-    const eName = activePreset.stops.find((s) => s.id === endTerminalPinId)?.name || activePreset.destination;
+    const sName = activePreset?.stops?.find((s) => s.id === startTerminalPinId)?.name || activePreset?.origin || 'Start';
+    const eName = activePreset?.stops?.find((s) => s.id === endTerminalPinId)?.name || activePreset?.destination || 'End';
     toast.success(
       `All demo buses locked to ${activePreset.routeNumber} between ${sName} and ${eName}!`,
       'Fleet Synchronized'
@@ -328,16 +336,20 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
 
     if (customStartPin) {
       originCoords = { lat: customStartPin.lat, lng: customStartPin.lng, name: customStartPin.name || 'Custom Origin' };
-    } else {
+    } else if (activeBusRuntime?.def?.stops && activeBusRuntime.def.stops.length > 0) {
       const startStop = activeBusRuntime.def.stops[0];
       originCoords = { lat: startStop.lat, lng: startStop.lng, name: startStop.name };
+    } else {
+      originCoords = { lat: 19.0975, lng: 74.7420, name: 'Ahilyanagar Center' };
     }
 
     if (customEndPin) {
       destCoords = { lat: customEndPin.lat, lng: customEndPin.lng, name: customEndPin.name || 'Custom Destination' };
-    } else {
+    } else if (activeBusRuntime?.def?.stops && activeBusRuntime.def.stops.length > 0) {
       const endStop = activeBusRuntime.def.stops[activeBusRuntime.def.stops.length - 1];
       destCoords = { lat: endStop.lat, lng: endStop.lng, name: endStop.name };
+    } else {
+      destCoords = { lat: 19.1220, lng: 74.7350, name: 'Savedi Terminal' };
     }
 
     try {
@@ -1189,9 +1201,9 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
 
               <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-200 text-slate-700 space-y-1">
                 <div className="font-bold text-purple-900">Corridor Details</div>
-                <div>Origin: <b>{activeBusRuntime.def.origin}</b></div>
-                <div>Destination: <b>{activeBusRuntime.def.destination}</b></div>
-                <div>Total Stops: <b>{activeBusRuntime.def.stops.length} stops</b></div>
+                <div>Origin: <b>{activeBusRuntime.def?.origin || 'Origin'}</b></div>
+                <div>Destination: <b>{activeBusRuntime.def?.destination || 'Destination'}</b></div>
+                <div>Total Stops: <b>{activeBusRuntime.def?.stops?.length || 0} stops</b></div>
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
