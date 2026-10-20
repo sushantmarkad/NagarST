@@ -96,20 +96,139 @@ export const LiveTracking: React.FC = () => {
   // Only configured routes from Admin / Database — NO fake or hardcoded mock routes!
   const allRoutes = routes;
 
-  // Merged Fleet: Combines real live database fleet with all active & configured demo buses
-  const allFleetBuses = useMemo<Bus[]>(() => {
-    const map = new Map<string, Bus>();
-    buses.forEach((b) => map.set(b.id, b));
+  // 1. Live Real-Time Driver Telemetry from Driver Dashboard (Cross-tab broadcast channel & localStorage)
+  const [liveDriverBuses, setLiveDriverBuses] = useState<Record<string, Bus>>(() => {
+    const map: Record<string, Bus> = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('nagarst_live_bus_') && !k.startsWith('nagarst_live_bus_demo-')) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && !parsed.isDemo) {
+              const age = Date.now() - new Date(parsed.lastUpdated || 0).getTime();
+              if (age < 300000) { // Active within 5 minutes
+                map[parsed.id] = { ...parsed, isDemo: false, isLiveDriver: true };
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return map;
+  });
+
+  // Listen to cross-tab BroadcastChannel & storage events for live driver telemetry
+  useEffect(() => {
+    let ch: BroadcastChannel | null = null;
+    try {
+      ch = new BroadcastChannel('nagarst_bus_telemetry');
+      ch.onmessage = (event) => {
+        if (event.data?.type === 'locationUpdate' && event.data?.data) {
+          const bus = event.data.data as Bus;
+          if (!bus.isDemo) {
+            setLiveDriverBuses((prev) => ({
+              ...prev,
+              [bus.id]: { ...bus, isDemo: false, isLiveDriver: true }
+            }));
+          }
+        } else if (event.data?.type === 'busOffline' && event.data?.busId) {
+          setLiveDriverBuses((prev) => {
+            const next = { ...prev };
+            delete next[event.data.busId];
+            return next;
+          });
+        }
+      };
+    } catch (_) {}
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key?.startsWith('nagarst_live_bus_') && !e.key.startsWith('nagarst_live_bus_demo-')) {
+        if (e.newValue) {
+          try {
+            const b = JSON.parse(e.newValue);
+            if (b && !b.isDemo) {
+              setLiveDriverBuses((prev) => ({ ...prev, [b.id]: { ...b, isDemo: false, isLiveDriver: true } }));
+            }
+          } catch (_) {}
+        } else {
+          const id = e.key.replace('nagarst_live_bus_', '');
+          setLiveDriverBuses((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+        }
+      }
+    };
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      ch?.close();
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  // 2. Active Running Demo Buses from Simulator (Only include if actively running in simulator)
+  const activeRunningDemoBuses = useMemo<Bus[]>(() => {
+    const list: Bus[] = [];
+    const seen = new Set<string>();
+
+    // From local memory simState
     Object.values(simState.buses).forEach((runtime) => {
-      if (runtime) {
+      if (runtime && runtime.isRunning) {
         const activeBus = runtime.currentBus || buildBusTelemetry(runtime);
         if (activeBus) {
-          map.set(activeBus.id, activeBus);
+          list.push({ ...activeBus, isDemo: true });
+          seen.add(activeBus.id);
         }
       }
     });
+
+    // From cross-tab storage if simulator is running in another tab (City Admin GPS Simulator)
+    try {
+      const demoRaw = localStorage.getItem('nagarst_demo_buses');
+      if (demoRaw) {
+        const parsed = JSON.parse(demoRaw);
+        Object.values(parsed).forEach((b: any) => {
+          if (b && !seen.has(b.id)) {
+            list.push({ ...b, isDemo: true });
+            seen.add(b.id);
+          }
+        });
+      }
+    } catch (_) {}
+
+    return list;
+  }, [simState.buses]);
+
+  // Combined Active Fleet: Only buses actively running in Simulator OR Driver Live GPS!
+  const allFleetBuses = useMemo<Bus[]>(() => {
+    const map = new Map<string, Bus>();
+
+    // 1. Running Demo Simulator buses
+    activeRunningDemoBuses.forEach((b) => map.set(b.id, b));
+
+    // 2. Real Driver live GPS buses broadcasting from Driver Dashboard
+    Object.values(liveDriverBuses).forEach((b) => map.set(b.id, b));
+
+    // 3. Database buses that have a live active driver trip
+    buses.forEach((b) => {
+      if (map.has(b.id)) return;
+      try {
+        const rawLive = localStorage.getItem('nagarst_live_bus_' + b.id);
+        if (rawLive) {
+          const parsed = JSON.parse(rawLive);
+          if (parsed && !parsed.isDemo) {
+            map.set(b.id, { ...b, ...parsed, isDemo: false, isLiveDriver: true });
+          }
+        }
+      } catch (_) {}
+    });
+
     return Array.from(map.values());
-  }, [buses, simState.buses]);
+  }, [activeRunningDemoBuses, liveDriverBuses, buses]);
 
   const selectedBus = selectedBusId ? allFleetBuses.find((b) => b.id === selectedBusId) : null;
 
@@ -131,7 +250,6 @@ export const LiveTracking: React.FC = () => {
     if (!selectedBus) return null;
 
     // 1. Check if it's a simulated demo bus with active corridor & marked terminal pins
-    const simState = getDemoSimulatorState();
     const demoRuntime = simState.buses[selectedBus.id];
     if (demoRuntime && demoRuntime.def.stops && demoRuntime.def.stops.length > 0) {
       return {
@@ -520,9 +638,14 @@ export const LiveTracking: React.FC = () => {
                           >
                             {bus.busNumber}
                           </span>
-                          {isDemo && (
-                            <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
+                          {isDemo ? (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
                               DEMO
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              LIVE GPS
                             </span>
                           )}
                           <span className="text-xs font-bold text-slate-900 truncate">
@@ -559,8 +682,11 @@ export const LiveTracking: React.FC = () => {
                 })}
 
                 {nearbyBuses.length === 0 && (
-                  <div className="text-center py-12 text-slate-400 text-xs">
-                    No active buses currently in range.
+                  <div className="text-center py-10 px-4 text-slate-500 text-xs space-y-1">
+                    <p className="font-bold text-slate-700">No active buses approaching your stop.</p>
+                    <p className="text-[11px] text-slate-400">
+                      Start buses in City Admin GPS Simulator or broadcast from Driver Dashboard.
+                    </p>
                   </div>
                 )}
               </div>
@@ -592,9 +718,14 @@ export const LiveTracking: React.FC = () => {
                           >
                             {bus.busNumber}
                           </span>
-                          {isDemo && (
+                          {isDemo ? (
                             <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase tracking-wider shrink-0">
                               DEMO
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase tracking-wider shrink-0 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              LIVE GPS
                             </span>
                           )}
                           <span className="text-xs font-bold text-slate-900 truncate">
@@ -613,8 +744,11 @@ export const LiveTracking: React.FC = () => {
                 })}
 
                 {filteredBuses.length === 0 && (
-                  <div className="text-center py-12 text-slate-400 text-xs">
-                    {t('No buses match current filter', 'कोणतीही बस सापडली नाही')}
+                  <div className="text-center py-10 px-4 text-slate-500 text-xs space-y-1">
+                    <p className="font-bold text-slate-700">{t('No active buses online', 'कोणतीही बस सध्या सुरू नाही')}</p>
+                    <p className="text-[11px] text-slate-400">
+                      Run demo buses in City Admin GPS Simulator or broadcast from Driver Dashboard.
+                    </p>
                   </div>
                 )}
               </div>
@@ -636,7 +770,7 @@ export const LiveTracking: React.FC = () => {
             <div className="flex items-center gap-2 mt-0.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-[11px] text-slate-500 font-medium">
-                {buses.length} {t('buses online', 'बसेस सुरू आहेत')}
+                {allFleetBuses.length} {t('buses online', 'बसेस सुरू आहेत')}
               </span>
             </div>
           </div>
@@ -1275,9 +1409,14 @@ export const LiveTracking: React.FC = () => {
                       }`}>
                         {bus.busNumber}
                       </span>
-                      {Boolean(bus.isDemo || bus.id?.startsWith('demo-')) && (
-                        <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
+                      {Boolean(bus.isDemo || bus.id?.startsWith('demo-')) ? (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
                           DEMO
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          LIVE GPS
                         </span>
                       )}
                       <span className="font-bold text-xs text-slate-900">{bus.routeName}</span>

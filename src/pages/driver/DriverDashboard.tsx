@@ -253,13 +253,23 @@ export const DriverDashboard: React.FC = () => {
       }
       broadcastChannelRef.current?.postMessage({
         type: 'locationUpdate',
-        data: payload
+        data: payload,
+        bus: payload
       });
     } catch (_) {}
 
     // 2. Cross-tab localStorage
     try {
       localStorage.setItem('nagarst_live_bus_' + busDetails.id, JSON.stringify(payload));
+      const existingListStr = localStorage.getItem('nagarst_active_live_drivers');
+      let driverList: any[] = [];
+      if (existingListStr) {
+        try {
+          driverList = JSON.parse(existingListStr);
+        } catch (_) {}
+      }
+      const updatedList = [payload, ...driverList.filter((b: any) => b.id !== payload.id)];
+      localStorage.setItem('nagarst_active_live_drivers', JSON.stringify(updatedList));
     } catch (_) {}
 
     // 3. Socket.IO (when connected)

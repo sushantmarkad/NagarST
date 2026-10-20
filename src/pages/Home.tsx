@@ -53,19 +53,114 @@ export const Home: React.FC = () => {
     return () => unsub();
   }, []);
 
-  const displayBuses = useMemo<Bus[]>(() => {
-    const map = new Map<string, Bus>();
-    buses.forEach((b) => map.set(b.id, b));
+  // Listen for real-time driver transmissions
+  const [liveDriverBuses, setLiveDriverBuses] = useState<Bus[]>(() => {
+    try {
+      const stored = localStorage.getItem('nagarst_active_live_drivers');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (b: any) => Date.now() - new Date(b.updatedAt || 0).getTime() < 300000
+          );
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
+
+  useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel('nagarst_bus_telemetry');
+      channel.onmessage = (event) => {
+        const payload = event.data;
+        const busObj = payload?.bus || payload?.data;
+        if ((payload?.type === 'driver_location_update' || payload?.type === 'locationUpdate') && busObj && !busObj.isDemo) {
+          const incomingBus: Bus = {
+            ...busObj,
+            isDemo: false,
+            updatedAt: new Date().toISOString(),
+          };
+          setLiveDriverBuses((prev) => {
+            const next = [incomingBus, ...prev.filter((b) => b.id !== incomingBus.id)];
+            try {
+              localStorage.setItem('nagarst_active_live_drivers', JSON.stringify(next));
+            } catch (err) {}
+            return next;
+          });
+        }
+      };
+    } catch (e) {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'nagarst_active_live_drivers' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setLiveDriverBuses(parsed);
+          }
+        } catch (err) {}
+      } else if (e.key?.startsWith('nagarst_live_bus_') && !e.key.startsWith('nagarst_live_bus_demo-')) {
+        if (e.newValue) {
+          try {
+            const b = JSON.parse(e.newValue);
+            if (b && !b.isDemo) {
+              setLiveDriverBuses((prev) => [b, ...prev.filter((x) => x.id !== b.id)]);
+            }
+          } catch (_) {}
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      channel?.close();
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
+  // Filter only active running demo buses
+  const activeRunningDemoBuses = useMemo<Bus[]>(() => {
+    const list: Bus[] = [];
     Object.values(simState.buses).forEach((runtime) => {
-      if (runtime) {
-        const activeBus = runtime.currentBus || buildBusTelemetry(runtime);
-        if (activeBus) {
-          map.set(activeBus.id, activeBus);
+      if (runtime && runtime.isRunning) {
+        const telemetry = runtime.currentBus || buildBusTelemetry(runtime);
+        if (telemetry) {
+          list.push({ ...telemetry, isDemo: true });
         }
       }
     });
+
+    if (list.length === 0) {
+      try {
+        const stored = localStorage.getItem('nagarst_demo_buses');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((b: any) => {
+              if (b.isRunning) {
+                const telemetry = b.currentBus || buildBusTelemetry(b);
+                if (telemetry) {
+                  list.push({ ...telemetry, isDemo: true });
+                }
+              }
+            });
+          }
+        }
+      } catch (err) {}
+    }
+
+    return list;
+  }, [simState.buses]);
+
+  // Merge strictly active simulator and driver buses (no offline ghost buses)
+  const displayBuses = useMemo<Bus[]>(() => {
+    const map = new Map<string, Bus>();
+    activeRunningDemoBuses.forEach((b) => map.set(b.id, b));
+    liveDriverBuses.forEach((b) => map.set(b.id, { ...b, isDemo: false }));
     return Array.from(map.values());
-  }, [buses, simState.buses]);
+  }, [activeRunningDemoBuses, liveDriverBuses]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -373,9 +468,14 @@ export const Home: React.FC = () => {
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-700">
                           {bus.plateNumber}
                         </span>
-                        {bus.isDemo && (
+                        {bus.isDemo ? (
                           <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
                             DEMO
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            LIVE GPS
                           </span>
                         )}
                         {bus.speedKmh > 0 ? (
@@ -455,7 +555,7 @@ export const Home: React.FC = () => {
               className="w-full h-44 rounded-2xl overflow-hidden border border-slate-200 relative cursor-pointer group shadow-2xs"
             >
               <LiveMap
-                buses={buses}
+                buses={displayBuses}
                 stops={stops.slice(0, 8)}
                 height="100%"
                 showUserLocation={false}

@@ -29,17 +29,17 @@ export const createModernBusIcon = (
   const isMoving = speedKmh > 2;
   const isOffRoute = status === 'off_route';
   
-  // Theme styling based on vehicle state (Demo gets distinct vibrant amber/gold theme)
+  // Theme styling based on vehicle state (Demo gets distinct vibrant amber/gold theme; Live Driver gets vibrant emerald green)
   const podColor = isDemo
     ? '#F59E0B'
-    : (isOffRoute ? '#EF4444' : (isSelf ? '#059669' : (isSelected ? '#7847CB' : '#6366F1')));
+    : (isOffRoute ? '#EF4444' : (isSelected ? '#059669' : '#10B981'));
 
   const ringColor = isDemo
     ? 'rgba(245, 158, 11, 0.55)'
-    : (isOffRoute ? 'rgba(239, 68, 68, 0.45)' : (isSelf ? 'rgba(16, 185, 129, 0.45)' : 'rgba(120, 71, 203, 0.45)'));
+    : (isOffRoute ? 'rgba(239, 68, 68, 0.45)' : 'rgba(16, 185, 129, 0.55)');
 
   const html = `
-    <div class="modern-bus-beacon-wrapper ${isSelected ? 'is-selected' : ''} ${isDemo ? 'is-demo-bus' : ''}" style="--beacon-ring-color: ${ringColor}; --beacon-pod-color: ${podColor};">
+    <div class="modern-bus-beacon-wrapper ${isSelected ? 'is-selected' : ''} ${isDemo ? 'is-demo-bus' : 'is-live-driver-bus'}" style="--beacon-ring-color: ${ringColor}; --beacon-pod-color: ${podColor};">
       <!-- Dual Concentric Sonar Pulse Rings -->
       <div class="beacon-sonar-wave wave-1"></div>
       <div class="beacon-sonar-wave wave-2"></div>
@@ -68,7 +68,7 @@ export const createModernBusIcon = (
           <defs>
             <linearGradient id="busGradient-${busNumber.replace(/[^a-zA-Z0-9]/g, '')}" x1="3.5" y1="2.5" x2="20.5" y2="21.5" gradientUnits="userSpaceOnUse">
               <stop stop-color="${podColor}"/>
-              <stop offset="1" stop-color="${isSelected ? '#581C87' : '#312E81'}"/>
+              <stop offset="1" stop-color="${isDemo ? '#78350F' : '#064E3B'}"/>
             </linearGradient>
           </defs>
         </svg>
@@ -78,8 +78,8 @@ export const createModernBusIcon = (
       </div>
 
       <!-- Floating Glassmorphism Telemetry Pill -->
-      <div class="beacon-label-pill ${isDemo ? 'is-demo-pill' : ''}">
-        ${isDemo ? '<span class="beacon-demo-tag">DEMO</span>' : '<span class="beacon-live-dot"></span>'}
+      <div class="beacon-label-pill ${isDemo ? 'is-demo-pill' : 'is-live-driver-pill'}">
+        ${isDemo ? '<span class="beacon-demo-tag">DEMO</span>' : '<span class="beacon-live-gps-tag">LIVE GPS</span>'}
         <span class="beacon-bus-number">${busNumber}</span>
         ${speedKmh > 0 ? `<span class="beacon-speed-badge">${speedKmh}<small>km/h</small></span>` : ''}
       </div>

@@ -1,10 +1,10 @@
 import type { Bus, Route, RouteStop } from '../types';
 import { getDistance, getBearing } from './routing';
 
-export const DEMO_BUS_ID = 'demo-bus-sim-01';
-export const DEMO_BUS_NUMBER = 'MH-16-DEMO-1';
-export const DEMO_PLATE_NUMBER = 'MH-16-DM-101';
-export const DEMO_TRIP_ID = 'demo-trip-sim-001';
+export const DEMO_BUS_ID = 'demo-bus-1515';
+export const DEMO_BUS_NUMBER = 'MH-16 BT-1515';
+export const DEMO_PLATE_NUMBER = 'MH-16 BT-1515';
+export const DEMO_TRIP_ID = 'demo-trip-1515';
 
 export interface DemoStop {
   id: string;
@@ -66,48 +66,62 @@ export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [];
 // =========================================================================
 export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
   {
-    id: 'demo-bus-sim-01',
-    busNumber: 'MH-16-DEMO-1',
-    plateNumber: 'MH-16-DM-101',
-    tripId: 'demo-trip-sim-001',
-    routeId: '',
-    routeNumber: 'Unassigned',
-    routeName: 'Select Route from Corridors',
-    origin: '',
-    destination: '',
+    id: 'demo-bus-1515',
+    busNumber: 'MH-16 BT-1515',
+    plateNumber: 'MH-16 BT-1515',
+    tripId: 'demo-trip-1515',
+    routeId: 'route-maliwada-savedi',
+    routeNumber: 'Route 1-B',
+    routeName: 'Route 1-B: Maliwada Galli ↔ Savedi Depot',
+    origin: 'Maliwada Galli',
+    destination: 'Savedi Bus Depot',
     color: '#7847CB',
-    stops: [],
-    waypoints: [],
+    stops: [
+      { id: 'stop-mw', name: 'Maliwada Galli', lat: 19.0910, lng: 74.7290 },
+      { id: 'stop-swk', name: 'Swastik Chowk', lat: 19.0940, lng: 74.7350 },
+      { id: 'stop-cbs', name: 'Ahilyanagar CBS', lat: 19.0975, lng: 74.7420 },
+      { id: 'stop-dlg', name: 'Delhi Gate Transit', lat: 19.1025, lng: 74.7380 },
+      { id: 'stop-svd', name: 'Savedi Bus Depot', lat: 19.1235, lng: 74.7321 },
+    ],
+    waypoints: [
+      { lat: 19.0910, lng: 74.7290 },
+      { lat: 19.0925, lng: 74.7315 },
+      { lat: 19.0940, lng: 74.7350 },
+      { lat: 19.0955, lng: 74.7385 },
+      { lat: 19.0975, lng: 74.7420 },
+      { lat: 19.1000, lng: 74.7400 },
+      { lat: 19.1025, lng: 74.7380 },
+      { lat: 19.1120, lng: 74.7350 },
+      { lat: 19.1180, lng: 74.7335 },
+      { lat: 19.1235, lng: 74.7321 },
+    ],
     initialIndex: 0
   },
   {
-    id: 'demo-bus-sim-02',
-    busNumber: 'MH-16-DEMO-2',
-    plateNumber: 'MH-16-DM-102',
-    tripId: 'demo-trip-sim-002',
-    routeId: '',
-    routeNumber: 'Unassigned',
-    routeName: 'Select Route from Corridors',
-    origin: '',
-    destination: '',
+    id: 'demo-bus-1516',
+    busNumber: 'MH-16 BT-1516',
+    plateNumber: 'MH-16 BT-1516',
+    tripId: 'demo-trip-1516',
+    routeId: 'route-mg-station',
+    routeNumber: 'Route 2',
+    routeName: 'Route 2: Mahatma Gandhi Road ↔ Railway Station',
+    origin: 'Mahatma Gandhi Road',
+    destination: 'Railway Station Terminal',
     color: '#2563eb',
-    stops: [],
-    waypoints: [],
-    initialIndex: 0
-  },
-  {
-    id: 'demo-bus-sim-03',
-    busNumber: 'MH-16-DEMO-3',
-    plateNumber: 'MH-16-DM-103',
-    tripId: 'demo-trip-sim-003',
-    routeId: '',
-    routeNumber: 'Unassigned',
-    routeName: 'Select Route from Corridors',
-    origin: '',
-    destination: '',
-    color: '#059669',
-    stops: [],
-    waypoints: [],
+    stops: [
+      { id: 'stop-mg', name: 'Mahatma Gandhi Road', lat: 19.1025, lng: 74.7380 },
+      { id: 'stop-dlg2', name: 'Delhi Gate Terminal', lat: 19.0990, lng: 74.7400 },
+      { id: 'stop-mky', name: 'Market Yard', lat: 19.0880, lng: 74.7510 },
+      { id: 'stop-stn', name: 'Ahilyanagar Railway Station', lat: 19.0820, lng: 74.7590 },
+    ],
+    waypoints: [
+      { lat: 19.1025, lng: 74.7380 },
+      { lat: 19.0990, lng: 74.7400 },
+      { lat: 19.0945, lng: 74.7440 },
+      { lat: 19.0880, lng: 74.7510 },
+      { lat: 19.0850, lng: 74.7550 },
+      { lat: 19.0820, lng: 74.7590 },
+    ],
     initialIndex: 0
   }
 ];
