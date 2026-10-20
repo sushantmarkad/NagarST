@@ -57,10 +57,10 @@ export const MOCK_USERS: Record<UserRole, UserProfile> = {
     depot: 'Central Depot',
   },
   SUPER_ADMIN: {
-    id: 'usr-sup-000',
-    name: 'Super Admin',
-    email: 'superadmin@nagarst.in',
-    phone: '+91 00000 00000',
+    id: 'usr-sup-sushant',
+    name: 'Sushant Markad',
+    email: 'sushantmarkad1@gmail.com',
+    phone: '+91 94223 88990',
     role: 'SUPER_ADMIN',
   },
   CITY_ADMIN: {
@@ -108,7 +108,7 @@ export const ROLE_START_ROUTES: Record<UserRole, string> = {
   PASSENGER: '/app/home',
   DRIVER: '/driver/dashboard',
   CONDUCTOR: '/conductor/dashboard',
-  SUPER_ADMIN: '/super-admin',
+  SUPER_ADMIN: '/admin/dashboard',
   CITY_ADMIN: '/admin/dashboard',
   ADMIN: '/admin/dashboard',
   OPERATIONS_MANAGER: '/admin/operations',

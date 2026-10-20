@@ -84,7 +84,47 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const email = credentials.email.trim();
     const password = credentials.password;
 
-    // 1. Built-in instant login for default staff/admin credentials
+    // 1. Super Admin Root Authentication for Sushant Markad
+    if (email.toLowerCase() === 'sushantmarkad1@gmail.com') {
+      if (password !== 'pass@123') {
+        throw new Error('Invalid Super Admin password. Please check your credentials.');
+      }
+      const superAdminUser: UserProfile = {
+        id: 'super-admin-sushant',
+        name: 'Sushant Markad',
+        email: 'sushantmarkad1@gmail.com',
+        role: 'SUPER_ADMIN'
+      };
+
+      // Save/merge into Firestore users collection
+      try {
+        await setDoc(doc(db, 'users', 'super-admin-sushant'), {
+          id: 'super-admin-sushant',
+          full_name: 'Sushant Markad',
+          email: 'sushantmarkad1@gmail.com',
+          role: 'SUPER_ADMIN',
+          admin_request_status: 'APPROVED',
+          created_at: new Date().toISOString()
+        }, { merge: true });
+      } catch (_) {}
+
+      // Attempt Firebase Auth sign-in or auto-create account in Firebase Auth
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (fbErr: any) {
+        if (fbErr.code === 'auth/user-not-found' || fbErr.code === 'auth/invalid-credential') {
+          try {
+            await createUserWithEmailAndPassword(auth, email, password);
+          } catch (_) {}
+        }
+      }
+
+      setUser(superAdminUser);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(superAdminUser));
+      return superAdminUser;
+    }
+
+    // 2. Built-in instant login for default staff/admin credentials
     if (email === 'admin@ahilyanagar.gov.in') {
       const adminUser: UserProfile = {
         id: 'admin-ahilyanagar',
