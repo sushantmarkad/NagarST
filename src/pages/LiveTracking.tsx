@@ -103,25 +103,22 @@ export const LiveTracking: React.FC = () => {
   // 1. Real-time Active Buses (Live GPS Driver Telemetry)
   const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>({});
 
-  // Synchronize active live buses strictly with municipal fleet from AppContext
+  // Synchronize active live buses with fleet from AppContext and running demo state
   useEffect(() => {
-    if (!buses || buses.length === 0) {
-      setActiveLiveBuses({});
-    } else {
-      setActiveLiveBuses((prev) => {
-        const next: Record<string, Bus> = {};
-        const validKeys = new Set(buses.map(b => (b.id || '').trim().toUpperCase().replace(/\s+/g, '')));
-        const validNums = new Set(buses.map(b => (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '')));
-        Object.entries(prev).forEach(([k, b]) => {
-          const kNorm = k.trim().toUpperCase().replace(/\s+/g, '');
-          const bNum = (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '');
-          if (validKeys.has(kNorm) || validNums.has(bNum)) {
-            next[k] = b;
-          }
-        });
-        return next;
+    setActiveLiveBuses((prev) => {
+      const next: Record<string, Bus> = {};
+      const validKeys = new Set(buses.map(b => (b.id || '').trim().toUpperCase().replace(/\s+/g, '')));
+      const validNums = new Set(buses.map(b => (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '')));
+      Object.entries(prev).forEach(([k, b]) => {
+        const kNorm = k.trim().toUpperCase().replace(/\s+/g, '');
+        const bNum = (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '');
+        // Retain if it's a known database bus OR an active demo bus
+        if (validKeys.has(kNorm) || validNums.has(bNum) || b.isDemo) {
+          next[k] = b;
+        }
       });
-    }
+      return next;
+    });
   }, [buses]);
 
   // Listen to cross-tab BroadcastChannel & storage events for live bus telemetry
@@ -134,16 +131,16 @@ export const LiveTracking: React.FC = () => {
         if ((payload?.type === 'locationUpdate' || payload?.type === 'driver_location_update') && (payload?.data || payload?.bus)) {
           const incoming = (payload.data || payload.bus) as Bus;
           if (incoming && incoming.id) {
-            // STRICT VALIDATION: Only accept telemetry if the bus exists in the configured municipal fleet
+            const isDemo = Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
             const key = (incoming.busNumber || incoming.id).trim().toUpperCase().replace(/\s+/g, '');
             const isKnown = buses.some(b => 
               (b.id || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
               (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
               (b.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key
             );
-            if (!isKnown) return;
+            // Accept if it belongs to registered municipal fleet OR if it's an active simulator bus
+            if (!isKnown && !isDemo) return;
 
-            const isDemo = Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
             setActiveLiveBuses((prev) => ({
               ...prev,
               [incoming.id]: { ...incoming, isDemo, isLiveDriver: !isDemo }
@@ -175,17 +172,17 @@ export const LiveTracking: React.FC = () => {
           try {
             const b = JSON.parse(e.newValue);
             if (b && b.id) {
+              const isDemo = Boolean(b.isDemo || b.id.startsWith('demo-'));
               const key = (b.busNumber || b.id).trim().toUpperCase().replace(/\s+/g, '');
               const isKnown = buses.some(cb => 
                 (cb.id || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
                 (cb.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
                 (cb.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key
               );
-              if (!isKnown) {
+              if (!isKnown && !isDemo) {
                 try { localStorage.removeItem(e.key); } catch (_) {}
                 return;
               }
-              const isDemo = Boolean(b.isDemo || b.id.startsWith('demo-'));
               setActiveLiveBuses((prev) => ({
                 ...prev,
                 [b.id]: { ...b, isDemo, isLiveDriver: !isDemo }
@@ -217,13 +214,8 @@ export const LiveTracking: React.FC = () => {
     }
   }, [buses, routes]);
 
-  // Combined active fleet strictly reflecting configured municipal fleet + active real-time GPS telemetry
+  // Combined active fleet strictly reflecting configured municipal fleet + running demo simulator buses
   const allFleetBuses = useMemo<Bus[]>(() => {
-    // If no buses exist in the municipal fleet, fleet is strictly empty!
-    if (!buses || buses.length === 0) {
-      return [];
-    }
-
     const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
     const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
 
@@ -240,44 +232,88 @@ export const LiveTracking: React.FC = () => {
 
     const byNumber = new Map<string, Bus>();
 
-    // 1. Authoritative fleet buses from Municipal Vehicle Fleet that have VALID assigned routes
-    const validConfigured = buses.filter(b => {
-      if (!b || !b.routeId || isDeleted(b)) return false;
-      if (b.id?.startsWith('demo-') || b.isDemo) return false;
-      // Must belong to an actual existing route in allRoutes
-      return allRoutes.some(
-        r => r.id === b.routeId || r.routeNumber === b.routeId || r.routeNumber === b.routeNumber
-      );
-    });
-
-    validConfigured.forEach(cb => {
-      const key = cb.busNumber.trim().toUpperCase().replace(/\s+/g, '');
-      const live = Object.values(activeLiveBuses).find(
-        lb => (lb.busNumber || lb.id).trim().toUpperCase().replace(/\s+/g, '') === key
-      );
-
-      const targetRoute = allRoutes.find(
-        r => r.id === cb.routeId || r.routeNumber === cb.routeNumber || r.routeNumber === cb.routeId
-      );
-      if (!targetRoute) return;
-
-      byNumber.set(key, {
-        ...cb,
-        ...(live || {}),
-        id: cb.id,
-        busNumber: cb.busNumber,
-        plateNumber: cb.plateNumber,
-        routeId: targetRoute.id,
-        routeNumber: targetRoute.routeNumber || cb.routeNumber || 'Route',
-        routeName: targetRoute.name || `${targetRoute.origin} ➔ ${targetRoute.destination}`,
-        origin: targetRoute.origin || cb.origin,
-        destination: targetRoute.destination || cb.destination,
-        isDemo: false
+    // 1. Authoritative registered fleet buses from Database / AppContext
+    if (buses && buses.length > 0) {
+      const validConfigured = buses.filter(b => {
+        if (!b || isDeleted(b)) return false;
+        return true;
       });
+
+      validConfigured.forEach(cb => {
+        const key = cb.busNumber.trim().toUpperCase().replace(/\s+/g, '');
+        const live = Object.values(activeLiveBuses).find(
+          lb => (lb.busNumber || lb.id).trim().toUpperCase().replace(/\s+/g, '') === key
+        );
+
+        const targetRoute = allRoutes.find(
+          r => r.id === cb.routeId || r.routeNumber === cb.routeNumber || r.routeNumber === cb.routeId
+        );
+
+        byNumber.set(key, {
+          ...cb,
+          ...(live || {}),
+          id: cb.id,
+          busNumber: cb.busNumber,
+          plateNumber: cb.plateNumber,
+          routeId: targetRoute?.id || cb.routeId || '',
+          routeNumber: targetRoute?.routeNumber || cb.routeNumber || 'Route',
+          routeName: targetRoute?.name || `${cb.origin || ''} ➔ ${cb.destination || ''}`,
+          origin: targetRoute?.origin || cb.origin || '',
+          destination: targetRoute?.destination || cb.destination || '',
+          isDemo: false
+        });
+      });
+    }
+
+    // 2. Actively running simulator demo buses from simState
+    if (simState && simState.buses) {
+      Object.values(simState.buses).forEach(runtime => {
+        if (!runtime.isRunning) return;
+        const bNum = runtime.def.busNumber;
+        const pNum = runtime.def.plateNumber;
+        if (isDeleted({ id: runtime.id, busNumber: bNum, plateNumber: pNum })) return;
+
+        const liveBus = runtime.currentBus || buildBusTelemetry(runtime);
+        if (liveBus && liveBus.lat && liveBus.lng) {
+          const key = (liveBus.busNumber || liveBus.id).trim().toUpperCase().replace(/\s+/g, '');
+          const targetRoute = allRoutes.find(
+            r => r.id === liveBus.routeId || r.routeNumber === liveBus.routeNumber || r.routeNumber === runtime.def.routeNumber
+          );
+
+          byNumber.set(key, {
+            ...liveBus,
+            routeId: targetRoute?.id || liveBus.routeId || runtime.def.routeId,
+            routeNumber: targetRoute?.routeNumber || runtime.def.routeNumber || liveBus.routeNumber,
+            routeName: targetRoute?.name || runtime.def.routeName || liveBus.routeName,
+            origin: targetRoute?.origin || runtime.def.origin || liveBus.origin,
+            destination: targetRoute?.destination || runtime.def.destination || liveBus.destination,
+            isDemo: true
+          });
+        }
+      });
+    }
+
+    // 3. Actively running demo buses from live broadcast / localStorage
+    Object.values(activeLiveBuses).forEach(lb => {
+      if (!lb || !lb.isDemo || !lb.lat || !lb.lng) return;
+      if (isDeleted(lb)) return;
+      const key = (lb.busNumber || lb.id).trim().toUpperCase().replace(/\s+/g, '');
+      if (!byNumber.has(key)) {
+        const targetRoute = allRoutes.find(
+          r => r.id === lb.routeId || r.routeNumber === lb.routeNumber
+        );
+        byNumber.set(key, {
+          ...lb,
+          routeId: targetRoute?.id || lb.routeId,
+          routeNumber: targetRoute?.routeNumber || lb.routeNumber,
+          routeName: targetRoute?.name || lb.routeName,
+          isDemo: true
+        });
+      }
     });
 
     return Array.from(byNumber.values());
-  }, [activeLiveBuses, buses, allRoutes]);
+  }, [activeLiveBuses, buses, allRoutes, simState]);
 
   const selectedBus = useMemo(() => {
     if (!selectedBusId || allFleetBuses.length === 0) return null;
@@ -298,7 +334,12 @@ export const LiveTracking: React.FC = () => {
   // Filtered buses list
   const filteredBuses = useMemo(() => {
     return allFleetBuses.filter((b) => {
-      const matchesRoute = filterRoute === 'all' || b.routeId === filterRoute;
+      const matchesRoute =
+        filterRoute === 'all' ||
+        b.routeId === filterRoute ||
+        b.routeNumber === filterRoute ||
+        (Boolean(b.routeId) && b.routeId.toLowerCase() === filterRoute.toLowerCase()) ||
+        (Boolean(b.routeNumber) && b.routeNumber.toLowerCase() === filterRoute.toLowerCase());
       const matchesSearch =
         !searchQuery ||
         b.busNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
