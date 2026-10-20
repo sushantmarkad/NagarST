@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../utils/supabaseClient';
+import { getFirebaseBuses, getFirebaseRoutes } from '../../../utils/firebaseService';
 import { useApp } from '../../../context/AppContext';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { Button, Badge, Modal } from '../../../components/ui';
@@ -75,11 +76,25 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
   };
 
   const fetchBusesForDropdown = async () => {
+    try {
+      const fbBuses = await getFirebaseBuses();
+      if (fbBuses && fbBuses.length > 0) {
+        setAvailableBuses(fbBuses.map(b => ({ id: b.id, bus_number: b.busNumber || b.bus_number })));
+        return;
+      }
+    } catch (_) {}
     const { data } = await supabase.from('buses').select('id, bus_number');
     if (data) setAvailableBuses(data);
   };
 
   const fetchRoutesForDropdown = async () => {
+    try {
+      const fbRoutes = await getFirebaseRoutes();
+      if (fbRoutes && fbRoutes.length > 0) {
+        setAvailableRoutes(fbRoutes.map(r => ({ id: r.id, route_number: r.routeNumber || r.route_number })));
+        return;
+      }
+    } catch (_) {}
     const { data } = await supabase.from('routes').select('id, route_number');
     if (data) setAvailableRoutes(data);
   };

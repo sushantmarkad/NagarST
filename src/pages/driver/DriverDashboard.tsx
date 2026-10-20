@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast, useConfirm } from '../../context/FeedbackContext';
 import { supabase } from '../../utils/supabaseClient';
-import { updateFirebaseLiveLocation } from '../../utils/firebaseService';
+import { updateFirebaseLiveLocation, getFirebaseBuses, getFirebaseRoutes } from '../../utils/firebaseService';
 import {
   Navigation,
   AlertTriangle,
@@ -106,27 +106,22 @@ export const DriverDashboard: React.FC = () => {
   const lastDbWriteRef = useRef<number>(0);
 
   const fetchInitialData = useCallback(async () => {
-    let busId = user?.assignedBusId;
-    // Fallback: If not on user object, fetch directly from driver_credentials or first active bus
-    if (!busId && user?.id) {
-      const { data: cred } = await supabase.from('driver_credentials').select('assigned_bus_id').eq('id', user.id).single();
-      if (cred?.assigned_bus_id) busId = cred.assigned_bus_id;
-    }
-    if (busId) {
-      const { data: bus } = await supabase.from('buses').select('*').eq('id', busId).single();
-      if (bus) setBusDetails(bus);
-    } else {
-      const { data: bus } = await supabase.from('buses').select('*').limit(1).single();
-      if (bus) setBusDetails(bus);
-    }
+    try {
+      const fbBuses = await getFirebaseBuses();
+      if (fbBuses && fbBuses.length > 0) {
+        const myBus = fbBuses.find(b => b.id === user?.assignedBusId) || fbBuses[0];
+        setBusDetails(myBus);
+      }
+    } catch (_) {}
 
-    // 2. Fetch Routes for dropdown
-    const { data: routes } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
-    if (routes) {
-      setAvailableRoutes(routes);
-      if (routes.length > 0 && !selectedRouteId) setSelectedRouteId(routes[0].id);
-    }
-  }, [user?.assignedBusId, user?.id, selectedRouteId]);
+    try {
+      const fbRoutes = await getFirebaseRoutes();
+      if (fbRoutes && fbRoutes.length > 0) {
+        setAvailableRoutes(fbRoutes);
+        if (!selectedRouteId) setSelectedRouteId(fbRoutes[0].id);
+      }
+    } catch (_) {}
+  }, [user?.assignedBusId, selectedRouteId]);
 
   const fetchSchedules = useCallback(async () => {
     if (!user?.id) return;
