@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../utils/supabaseClient';
+import { getFirebaseBuses, saveFirebaseBus, deleteFirebaseBus } from '../../../utils/firebaseService';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { useApp } from '../../../context/AppContext';
 import {
@@ -79,14 +80,23 @@ export const AdminBuses: React.FC = () => {
         });
       };
 
-      const { data, error: err } = await supabase
-        .from('buses')
-        .select('*')
-        .order('created_at', { ascending: false });
-
       let list: BusRecord[] = [];
-      if (!err && data) {
-        list = data.filter(b => !isDeleted(b.id, b.bus_number, b.plate_number));
+      try {
+        const fbBuses = await getFirebaseBuses();
+        if (fbBuses && fbBuses.length > 0) {
+          list = fbBuses.filter(b => !isDeleted(b.id, b.bus_number, b.plate_number)) as any;
+        }
+      } catch (_) {}
+
+      if (list.length === 0) {
+        const { data, error: err } = await supabase
+          .from('buses')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!err && data) {
+          list = data.filter(b => !isDeleted(b.id, b.bus_number, b.plate_number));
+        }
       }
 
       // Merge local buses if any
@@ -201,6 +211,22 @@ export const AdminBuses: React.FC = () => {
         toast.success(`New bus ${busNumber} added to fleet!`);
       }
 
+      // Also persist to Firebase Firestore
+      try {
+        await saveFirebaseBus({
+          id: busId,
+          bus_number: busNumber,
+          plate_number: plateNumber,
+          capacity: Number(busForm.capacity),
+          type: busForm.type,
+          status: busForm.status,
+          route_id: busForm.route_id || undefined,
+          created_at: new Date().toISOString()
+        });
+      } catch (fbErr) {
+        console.warn('Firebase save bus notice:', fbErr);
+      }
+
       // Also persist to localStorage backup
       try {
         const raw = localStorage.getItem('nagarst_custom_buses');
@@ -262,6 +288,19 @@ export const AdminBuses: React.FC = () => {
         setBusAssignedRoute(busId, newRouteId);
       }
 
+      // Update in Firebase Firestore
+      try {
+        await saveFirebaseBus({
+          id: busId,
+          bus_number: busNumber,
+          plate_number: busObj?.plate_number || busNumber,
+          capacity: busObj?.capacity || 35,
+          type: busObj?.type || 'Standard City',
+          status: busObj?.status || 'Active',
+          route_id: newRouteId || undefined
+        });
+      } catch (_) {}
+
       setBuses(prev => prev.map(b => b.id === busId ? { ...b, route_id: newRouteId } : b));
       const targetRoute = routes.find(r => r.id === newRouteId);
       toast.success(`Bus ${busNumber} assigned to ${targetRoute?.routeNumber || 'selected route'}!`);
@@ -285,7 +324,15 @@ export const AdminBuses: React.FC = () => {
     const plateNumber = bus.plate_number?.trim() || '';
     const busId = bus.id;
 
-    // 1. Delete dependent foreign-key records from Supabase first
+    // 1. Delete from Firebase Firestore
+    try {
+      await deleteFirebaseBus(busId);
+      if (busNumber !== busId) await deleteFirebaseBus(busNumber);
+    } catch (fbErr) {
+      console.warn('Firebase delete bus notice:', fbErr);
+    }
+
+    // 2. Delete dependent foreign-key records from Supabase
     try {
       await supabase.from('live_locations').delete().eq('bus_id', busId);
       await supabase.from('trips').delete().eq('bus_id', busId);

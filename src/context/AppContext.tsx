@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { Bus, Route, BusStop, Ticket, BusPass, NotificationItem, FavoriteItem } from '../types';
 import { supabase } from '../utils/supabaseClient';
+import {
+  getFirebaseRoutes,
+  saveFirebaseRoute,
+  getFirebaseBuses,
+  saveFirebaseBus,
+  subscribeFirebaseLiveLocations
+} from '../utils/firebaseService';
 import { syncSimulatorFleetWithAdminConfig } from '../utils/demoSimulatorEngine';
 
 interface AppContextType {
@@ -203,84 +210,136 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setStops([]);
       }
 
-      // 2. Fetch all real Routes with route_stops from Supabase
-      const { data: dbRoutes } = await supabase
-        .from('routes')
-        .select(`
-          id,
-          route_number,
-          origin,
-          destination,
-          route_path,
-          route_stops (
-            id,
-            stop_order,
-            estimated_minutes_from_origin,
-            stops (
-              id,
-              stop_name,
-              lat,
-              lng
-            )
-          )
-        `);
-
+      // 2. Fetch routes: Check Firebase first, fallback to Supabase / local
       let combinedRoutes: any[] = [];
-      if (dbRoutes && dbRoutes.length > 0) {
-        combinedRoutes = dbRoutes.map((r: any) => ({
-          id: r.id,
-          routeNumber: r.route_number,
-          origin: r.origin,
-          destination: r.destination,
-          name: `${r.origin} ↔ ${r.destination}`,
-          nameMarathi: `${r.origin} ↔ ${r.destination}`,
-          firstBus: '06:00 AM',
-          lastBus: '10:00 PM',
-          frequencyMinutes: 15,
-          baseFare: 10,
-          maxFare: 30,
-          totalStops: r.route_stops?.length || 0,
-          durationMinutes: 30,
-          color: '#7847CB',
-          activeBusesCount: 1,
-          status: 'normal',
-          route_path: r.route_path,
-          stops: (() => {
-            const rawStops = r.route_stops
-              ? r.route_stops
-                  .sort((a: any, b: any) => a.stop_order - b.stop_order)
-                  .map((rs: any) => ({
-                    stopId: rs.stops?.id,
-                    stopName: rs.stops?.stop_name,
-                    stopNameMarathi: rs.stops?.stop_name,
-                    lat: rs.stops?.lat,
-                    lng: rs.stops?.lng,
-                    sequence: rs.stop_order,
-                    fareFromOrigin: rs.stop_order * 5,
-                    estimatedMinutesFromOrigin: rs.estimated_minutes_from_origin || rs.stop_order * 4,
-                    isMajorHub: rs.stop_order === 1
-                  }))
-              : [];
+      try {
+        const fbRoutes = await getFirebaseRoutes();
+        if (fbRoutes && fbRoutes.length > 0) {
+          combinedRoutes = fbRoutes.map(r => ({
+            id: r.id,
+            routeNumber: r.route_number || r.routeNumber,
+            origin: r.origin,
+            destination: r.destination,
+            name: r.name || `${r.origin} ↔ ${r.destination}`,
+            nameMarathi: r.name || `${r.origin} ↔ ${r.destination}`,
+            firstBus: '06:00 AM',
+            lastBus: '10:00 PM',
+            frequencyMinutes: 15,
+            baseFare: 10,
+            maxFare: 30,
+            totalStops: r.stops?.length || 0,
+            durationMinutes: 30,
+            color: r.color || '#7847CB',
+            activeBusesCount: 1,
+            status: 'normal',
+            route_path: r.route_path,
+            stops: (r.stops || []).map((s, idx) => ({
+              stopId: s.stopId || `stop-${idx}`,
+              stopName: s.stopName,
+              stopNameMarathi: s.stopName,
+              lat: s.lat,
+              lng: s.lng,
+              sequence: s.sequence || idx + 1,
+              fareFromOrigin: (idx + 1) * 5,
+              estimatedMinutesFromOrigin: s.estimatedMinutesFromOrigin || idx * 4,
+              isMajorHub: idx === 0
+            }))
+          }));
+        }
+      } catch (_) {}
 
-            if (r.destination && rawStops.length > 2) {
-              const destNorm = r.destination.trim().toLowerCase();
-              const lastStopName = (rawStops[rawStops.length - 1]?.stopName || '').trim().toLowerCase();
-              const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
-              if (!isMatch(lastStopName, destNorm)) {
-                const dIdx = rawStops.findIndex((s: any) => isMatch((s.stopName || '').trim().toLowerCase(), destNorm));
-                if (dIdx !== -1 && dIdx < rawStops.length - 1) {
-                  const destStop = rawStops.splice(dIdx, 1)[0];
-                  rawStops.push(destStop);
-                  rawStops.forEach((s: any, idx: number) => {
-                    s.sequence = idx + 1;
-                    s.estimatedMinutesFromOrigin = idx * 4;
-                  });
+      if (combinedRoutes.length === 0) {
+        const { data: dbRoutes } = await supabase
+          .from('routes')
+          .select(`
+            id,
+            route_number,
+            origin,
+            destination,
+            route_path,
+            route_stops (
+              id,
+              stop_order,
+              estimated_minutes_from_origin,
+              stops (
+                id,
+                stop_name,
+                lat,
+                lng
+              )
+            )
+          `);
+
+        if (dbRoutes && dbRoutes.length > 0) {
+          combinedRoutes = dbRoutes.map((r: any) => ({
+            id: r.id,
+            routeNumber: r.route_number,
+            origin: r.origin,
+            destination: r.destination,
+            name: `${r.origin} ↔ ${r.destination}`,
+            nameMarathi: `${r.origin} ↔ ${r.destination}`,
+            firstBus: '06:00 AM',
+            lastBus: '10:00 PM',
+            frequencyMinutes: 15,
+            baseFare: 10,
+            maxFare: 30,
+            totalStops: r.route_stops?.length || 0,
+            durationMinutes: 30,
+            color: '#7847CB',
+            activeBusesCount: 1,
+            status: 'normal',
+            route_path: r.route_path,
+            stops: (() => {
+              const rawStops = r.route_stops
+                ? r.route_stops
+                    .sort((a: any, b: any) => a.stop_order - b.stop_order)
+                    .map((rs: any) => ({
+                      stopId: rs.stops?.id,
+                      stopName: rs.stops?.stop_name,
+                      stopNameMarathi: rs.stops?.stop_name,
+                      lat: rs.stops?.lat,
+                      lng: rs.stops?.lng,
+                      sequence: rs.stop_order,
+                      fareFromOrigin: rs.stop_order * 5,
+                      estimatedMinutesFromOrigin: rs.estimated_minutes_from_origin || rs.stop_order * 4,
+                      isMajorHub: rs.stop_order === 1
+                    }))
+                : [];
+
+              if (r.destination && rawStops.length > 2) {
+                const destNorm = r.destination.trim().toLowerCase();
+                const lastStopName = (rawStops[rawStops.length - 1]?.stopName || '').trim().toLowerCase();
+                const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
+                if (!isMatch(lastStopName, destNorm)) {
+                  const dIdx = rawStops.findIndex((s: any) => isMatch((s.stopName || '').trim().toLowerCase(), destNorm));
+                  if (dIdx !== -1 && dIdx < rawStops.length - 1) {
+                    const destStop = rawStops.splice(dIdx, 1)[0];
+                    rawStops.push(destStop);
+                    rawStops.forEach((s: any, idx: number) => {
+                      s.sequence = idx + 1;
+                      s.estimatedMinutesFromOrigin = idx * 4;
+                    });
+                  }
                 }
               }
-            }
-            return rawStops;
-          })()
-        }));
+              return rawStops;
+            })()
+          }));
+
+          // Seed to Firebase Firestore
+          combinedRoutes.forEach(r => {
+            saveFirebaseRoute({
+              id: r.id,
+              route_number: r.routeNumber,
+              name: r.name,
+              origin: r.origin,
+              destination: r.destination,
+              color: r.color,
+              route_path: r.route_path,
+              stops: r.stops
+            }).catch(() => {});
+          });
+        }
       }
 
       // Check localStorage for offline / admin-configured routes
@@ -322,8 +381,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       setRoutes(combinedRoutes as unknown as Route[]);
 
-      // 3. Fetch all real Buses from 'buses' table and merge with 'live_locations'
-      const { data: dbBuses } = await supabase.from('buses').select('*');
+      // 3. Fetch all Buses: Check Firebase first, fallback to Supabase
+      let dbBuses: any[] = [];
+      try {
+        const fbBuses = await getFirebaseBuses();
+        if (fbBuses && fbBuses.length > 0) {
+          dbBuses = fbBuses;
+        }
+      } catch (_) {}
+
+      if (dbBuses.length === 0) {
+        const { data: supaBuses } = await supabase.from('buses').select('*');
+        if (supaBuses && supaBuses.length > 0) {
+          dbBuses = supaBuses;
+          // Seed to Firebase
+          supaBuses.forEach(b => saveFirebaseBus(b).catch(() => {}));
+        }
+      }
+
       const { data: liveLocs } = await supabase
         .from('live_locations')
         .select(`
@@ -548,63 +623,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     });
 
-    // 4. Supabase Realtime Channel on live_locations table
-    const dbChannel = supabase
-      .channel('realtime_live_locations')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_locations' }, (payload) => {
-        if (payload.new && (payload.new as any).bus_id) {
-          const loc = payload.new as any;
-          setBuses(prev => prev.map(bus => {
-            if (bus.id === loc.bus_id) {
-              return {
-                ...bus,
-                lat: loc.lat,
-                lng: loc.lng,
-                speedKmh: loc.speed_kmh || 0,
-                heading: loc.heading || 0,
-                lastUpdated: loc.updated_at || new Date().toISOString()
-              };
-            }
-            return bus;
-          }));
-        }
-      })
-      .subscribe();
-
-    // 5. Periodic polling fallback every 3.5 seconds
-    const pollTimer = setInterval(async () => {
-      try {
-        const { data: latestLocs } = await supabase.from('live_locations').select('*');
-        if (latestLocs && latestLocs.length > 0) {
-          setBuses(prev => {
-            let hasChanges = false;
-            const updated = prev.map(b => {
-              const match = latestLocs.find((l: any) => l.bus_id === b.id);
-              if (match && (match.lat !== b.lat || match.lng !== b.lng || match.speed_kmh !== b.speedKmh)) {
-                hasChanges = true;
-                return {
-                  ...b,
-                  lat: match.lat,
-                  lng: match.lng,
-                  speedKmh: match.speed_kmh || 0,
-                  heading: match.heading || 0,
-                  lastUpdated: match.updated_at || new Date().toISOString()
-                };
-              }
-              return b;
-            });
-            return hasChanges ? updated : prev;
-          });
-        }
-      } catch (_) {}
-    }, 3500);
+    // 4. Real-time Firebase Firestore Live Locations Subscription
+    const unsubscribeFirebase = subscribeFirebaseLiveLocations((locations) => {
+      if (!locations || locations.length === 0) return;
+      locations.forEach(loc => {
+        handleBusUpdate({
+          id: loc.bus_id,
+          lat: loc.lat,
+          lng: loc.lng,
+          speedKmh: loc.speed_kmh,
+          heading: loc.heading,
+          lastUpdated: loc.updated_at || new Date().toISOString()
+        });
+      });
+    });
 
     return () => {
       if (broadcastChannel) broadcastChannel.close();
       window.removeEventListener('storage', onStorage);
       if (socketInstance) socketInstance.disconnect();
-      supabase.removeChannel(dbChannel);
-      clearInterval(pollTimer);
+      unsubscribeFirebase();
     };
   }, []);
 

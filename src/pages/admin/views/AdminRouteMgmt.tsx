@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../utils/supabaseClient';
+import { getFirebaseRoutes, saveFirebaseRoute, deleteFirebaseRoute } from '../../../utils/firebaseService';
 import { useToast, useConfirm } from '../../../context/FeedbackContext';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Polyline, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -76,19 +77,24 @@ export const AdminRouteMgmt: React.FC = () => {
   const fetchRoutes = async () => {
     let list: any[] = [];
     try {
-      const { data, error } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) {
-        list = data;
-      } else {
-        const local = localStorage.getItem('nagarst_configured_routes');
-        if (local) {
-          list = JSON.parse(local);
-        }
+      const fbRoutes = await getFirebaseRoutes();
+      if (fbRoutes && fbRoutes.length > 0) {
+        list = fbRoutes;
       }
-    } catch {
-      const local = localStorage.getItem('nagarst_configured_routes');
-      if (local) {
-        list = JSON.parse(local);
+    } catch (_) {}
+
+    if (list.length === 0) {
+      try {
+        const { data, error } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
+        if (!error && data && data.length > 0) {
+          list = data;
+        } else {
+          const local = localStorage.getItem('nagarst_configured_routes');
+          if (local) list = JSON.parse(local);
+        }
+      } catch {
+        const local = localStorage.getItem('nagarst_configured_routes');
+        if (local) list = JSON.parse(local);
       }
     }
 
@@ -326,6 +332,13 @@ export const AdminRouteMgmt: React.FC = () => {
       ]
     };
 
+    // Save also to Firebase Firestore
+    try {
+      await saveFirebaseRoute(newRouteObj);
+    } catch (fbErr) {
+      console.warn('Firebase save route notice:', fbErr);
+    }
+
     const updatedRoutes = [newRouteObj, ...routes.filter(r => r.id !== finalRouteId && r.id !== routeId)];
     setRoutes(updatedRoutes);
     syncLocalBackup(updatedRoutes);
@@ -550,6 +563,13 @@ export const AdminRouteMgmt: React.FC = () => {
       }))
     };
 
+    // Save to Firebase Firestore
+    try {
+      await saveFirebaseRoute(updatedRouteObj);
+    } catch (fbErr) {
+      console.warn('Firebase save updated route stops notice:', fbErr);
+    }
+
     const updatedList = routes.map(r => r.id === selectedRoute.id ? updatedRouteObj : r);
     setRoutes(updatedList);
     setSelectedRoute(updatedRouteObj);
@@ -615,6 +635,11 @@ export const AdminRouteMgmt: React.FC = () => {
         estimatedMinutesFromOrigin: i * 4
       }))
     };
+
+    // Save to Firebase Firestore
+    try {
+      await saveFirebaseRoute(updatedRouteObj);
+    } catch (_) {}
 
     const updatedList = routes.map(r => r.id === selectedRoute.id ? updatedRouteObj : r);
     setRoutes(updatedList);
@@ -704,6 +729,11 @@ export const AdminRouteMgmt: React.FC = () => {
       }))
     };
 
+    // Save to Firebase Firestore
+    try {
+      await saveFirebaseRoute(updatedRouteObj);
+    } catch (_) {}
+
     const updatedList = routes.map(r => r.id === selectedRoute.id ? updatedRouteObj : r);
     setRoutes(updatedList);
     setSelectedRoute(updatedRouteObj);
@@ -724,6 +754,13 @@ export const AdminRouteMgmt: React.FC = () => {
     });
 
     if (!isConfirmed) return;
+
+    // Delete from Firebase Firestore
+    try {
+      await deleteFirebaseRoute(routeId);
+    } catch (fbErr) {
+      console.warn('Firebase delete route notice:', fbErr);
+    }
 
     try {
       // Find stops belonging to this route before deleting route_stops
