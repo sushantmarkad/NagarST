@@ -87,6 +87,14 @@ export interface Bus {
   busType: BusType;
   lastUpdated: string;
   isDemo?: boolean;
+  passengerCount?: number;
+  maxCapacity?: number;
+  availableSeats?: number;
+  distanceToNextMeters?: number;
+  batteryLevel?: number;
+  currentLocationName?: string;
+  isAc?: boolean;
+  temperature?: string;
 }
 
 export interface Ticket {

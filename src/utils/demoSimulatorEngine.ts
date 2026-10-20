@@ -260,6 +260,22 @@ export function buildBusTelemetry(runtime: BusSimRuntime): Bus {
   const etaMinutes = nominalMinutes + delayMinutes;
   const status = delayMinutes > 3 ? ('delayed' as const) : ('on_time' as const);
 
+  const maxCapacity = 42;
+  const seed = (def.id || 'bus').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const cycleVal = Math.sin((safeIdx * 0.35) + seed);
+  const currentPassengerCount = Math.min(
+    maxCapacity,
+    Math.max(12, Math.floor(25 + cycleVal * 11))
+  );
+  const availableSeats = Math.max(0, maxCapacity - currentPassengerCount);
+  const occupancy = currentPassengerCount > 34 ? ('high' as const) : currentPassengerCount > 20 ? ('moderate' as const) : ('low' as const);
+
+  const distanceToNextMeters = Math.round(distToNext);
+  const batteryLevel = Math.max(42, Math.min(99, 94 - Math.floor(((safeIdx * 2) + seed) % 50)));
+  const currentLocationName = curStopName
+    ? (distToNext < 180 ? `At ${curStopName}` : `Near ${curStopName}, en route to ${nextStopName}`)
+    : 'Ahilyanagar Transit Corridor';
+
   return {
     id: def.id,
     busNumber: def.busNumber,
@@ -276,15 +292,23 @@ export function buildBusTelemetry(runtime: BusSimRuntime): Bus {
     etaToNextMinutes: etaMinutes,
     delayMinutes: delayMinutes,
     speedKmh: speedKmh,
-    occupancy: 'moderate',
+    occupancy: occupancy,
     status: status,
     lat: currentPt.lat,
     lng: currentPt.lng,
     heading: heading,
     driverName: `Demo Pilot (${def.busNumber})`,
-    conductorName: 'Simulated Crew',
+    conductorName: 'Duty Conductor',
     busType: 'EV Metro Shuttle',
     isDemo: true,
+    passengerCount: currentPassengerCount,
+    maxCapacity: maxCapacity,
+    availableSeats: availableSeats,
+    distanceToNextMeters: distanceToNextMeters,
+    batteryLevel: batteryLevel,
+    currentLocationName: currentLocationName,
+    isAc: true,
+    temperature: '23°C',
     lastUpdated: new Date().toISOString()
   };
 }

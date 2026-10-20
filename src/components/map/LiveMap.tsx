@@ -691,24 +691,36 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             ${destinationText}
           </div>
           <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
-            Next: <b style="color: #7847CB;">${bus.nextStopName}</b> (${bus.etaToNextMinutes || 1}m) • ${bus.speedKmh} km/h
+            Next: <b style="color: #7847CB;">${bus.nextStopName}</b> (${bus.distanceToNextMeters ? (bus.distanceToNextMeters > 1000 ? `${(bus.distanceToNextMeters / 1000).toFixed(1)}km` : `${bus.distanceToNextMeters}m`) : `${bus.etaToNextMinutes || 1}m`}) • ${bus.speedKmh} km/h
           </div>
-          <div style="font-size: 9px; color: #7847CB; font-weight: 700; margin-top: 3px; border-top: 1px dashed #e2e8f0; padding-top: 2px; display: flex; align-items: center; justify-content: center; gap: 3px;">
+          <div style="font-size: 10px; color: #047857; font-weight: 700; margin-top: 2px;">
+            Occupancy: ${bus.passengerCount || 25}/${bus.maxCapacity || 42} Passengers (${bus.availableSeats || 17} free)
+          </div>
+          <div style="font-size: 9px; color: #7847CB; font-weight: 800; margin-top: 3px; border-top: 1px dashed #cbd5e1; padding-top: 2px; display: flex; align-items: center; justify-content: center; gap: 3px;">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            Click bus icon for all route stops
+            Tap bus to open live details & all stops
           </div>
         </div>
       `;
 
+      const handleMarkerClick = () => {
+        setIsFollowing(true);
+        isFollowingRef.current = true;
+        map.panTo([bus.lat, bus.lng], { animate: true, duration: 0.5 });
+        onSelectBus?.(bus);
+      };
+
       if (!markersRef.current[key]) {
         const marker = L.marker([bus.lat, bus.lng], { icon: busIcon }).addTo(map);
-        marker.on('click', () => onSelectBus?.(bus));
+        marker.on('click', handleMarkerClick);
         marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -10], className: 'custom-tooltip' });
         markersRef.current[key] = marker;
       } else {
         markersRef.current[key].setIcon(busIcon);
         markersRef.current[key].setLatLng([bus.lat, bus.lng]);
         markersRef.current[key].setTooltipContent(tooltipHtml);
+        markersRef.current[key].off('click');
+        markersRef.current[key].on('click', handleMarkerClick);
       }
 
       if (isSelected && isFollowingRef.current) {

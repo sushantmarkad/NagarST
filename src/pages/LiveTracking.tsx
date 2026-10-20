@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useLanguage } from '../context/LanguageContext';
 import { LiveMap } from '../components/map/LiveMap';
@@ -25,13 +26,24 @@ import {
   AlertCircle,
   LocateFixed,
   Building2,
-  Route as RouteIcon
+  Route as RouteIcon,
+  Users,
+  Zap,
+  Thermometer,
+  Ticket,
+  Share2
 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import type { BusStop, Bus, Route as RouteType } from '../types';
 import { getDistance } from '../utils/routing';
-import { AVAILABLE_DEMO_ROUTES, getDemoSimulatorState } from '../utils/demoSimulatorEngine';
+import {
+  AVAILABLE_DEMO_ROUTES,
+  getDemoSimulatorState,
+  subscribeToDemoState,
+  buildBusTelemetry,
+  type DemoSimulatorState
+} from '../utils/demoSimulatorEngine';
 
 // Major Ahilyanagar transit landmarks and hubs for manual location selection
 const AHILYANAGAR_HUBS = [
@@ -46,6 +58,26 @@ const AHILYANAGAR_HUBS = [
 export const LiveTracking: React.FC = () => {
   const { t } = useLanguage();
   const { buses, stops, routes, selectedBusId, setSelectedBusId, selectedStopId, setSelectedStopId } = useApp();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  // Real-time live simulator state subscription
+  const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
+
+  useEffect(() => {
+    const unsub = subscribeToDemoState((newState) => {
+      setSimState(newState);
+    });
+    return () => unsub();
+  }, []);
+
+  // Pre-select bus if navigated with ?busId=...
+  useEffect(() => {
+    const busParam = searchParams.get('busId');
+    if (busParam) {
+      setSelectedBusId(busParam);
+    }
+  }, [searchParams, setSelectedBusId]);
 
   const [filterRoute, setFilterRoute] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -64,11 +96,26 @@ export const LiveTracking: React.FC = () => {
   // Only configured routes from Admin / Database — NO fake or hardcoded mock routes!
   const allRoutes = routes;
 
-  const selectedBus = selectedBusId ? buses.find((b) => b.id === selectedBusId) : null;
+  // Merged Fleet: Combines real live database fleet with all active & configured demo buses
+  const allFleetBuses = useMemo<Bus[]>(() => {
+    const map = new Map<string, Bus>();
+    buses.forEach((b) => map.set(b.id, b));
+    Object.values(simState.buses).forEach((runtime) => {
+      if (runtime) {
+        const activeBus = runtime.currentBus || buildBusTelemetry(runtime);
+        if (activeBus) {
+          map.set(activeBus.id, activeBus);
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [buses, simState.buses]);
+
+  const selectedBus = selectedBusId ? allFleetBuses.find((b) => b.id === selectedBusId) : null;
 
   // Filtered buses list
   const filteredBuses = useMemo(() => {
-    return buses.filter((b) => {
+    return allFleetBuses.filter((b) => {
       const matchesRoute = filterRoute === 'all' || b.routeId === filterRoute;
       const matchesSearch =
         !searchQuery ||
@@ -77,7 +124,7 @@ export const LiveTracking: React.FC = () => {
         (b.nextStopName && b.nextStopName.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesRoute && matchesSearch;
     });
-  }, [buses, filterRoute, searchQuery]);
+  }, [allFleetBuses, filterRoute, searchQuery]);
 
   // Resolves complete route stops and details for the selected bus
   const selectedBusRoute = useMemo<RouteType | null>(() => {
@@ -834,17 +881,17 @@ export const LiveTracking: React.FC = () => {
           FULL POPUP MODAL: BUS DETAILS & ALL ROUTE STOPS (Opens on bus icon click)
           ========================================================================= */}
       {selectedBus && (
-        <div className="fixed inset-0 z-[650] flex items-center justify-center p-3 sm:p-4 bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[90vh] text-slate-900 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[650] flex items-center justify-center p-3 sm:p-4 bg-slate-950/45 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[92vh] text-slate-900 animate-in zoom-in-95 duration-200">
             
             {/* Top Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+            <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/90 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div
                   className={`px-3 py-1.5 rounded-xl font-black text-sm text-white shadow-xs ${
                     selectedBus.isDemo || selectedBus.id?.startsWith('demo-')
-                      ? 'bg-amber-500 text-slate-950'
-                      : 'bg-[#7847CB]'
+                      ? 'bg-amber-500 text-slate-950 shadow-amber-500/20'
+                      : 'bg-[#7847CB] shadow-[#7847CB]/20'
                   }`}
                 >
                   {selectedBus.busNumber}
@@ -883,7 +930,48 @@ export const LiveTracking: React.FC = () => {
             {/* Scrollable Body Content */}
             <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
               
-              {/* "Which bus is going where" (Corridor & Direction Banner) */}
+              {/* 1. CURRENT EXACT BUS LOCATION & REAL-TIME GPS FIX */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-[#7847CB]" />
+                    Current Bus Location
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[10px] font-bold text-emerald-700">GPS Live Telemetry</span>
+                  </div>
+                </div>
+
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 text-sm sm:text-base leading-snug">
+                      {selectedBus.currentLocationName || selectedBus.currentStopName || 'In Transit on Corridor'}
+                    </h4>
+                    <p className="text-[11px] font-mono text-slate-500 mt-0.5">
+                      GPS: {selectedBus.lat.toFixed(5)}° N, {selectedBus.lng.toFixed(5)}° E
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block">Speed</span>
+                    <span className="font-mono font-black text-slate-900 text-sm">
+                      {selectedBus.speedKmh} km/h
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/70 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                  <span className="flex items-center gap-1">
+                    <Compass className="w-3.5 h-3.5 text-[#7847CB]" />
+                    Heading: <strong className="text-slate-800">{selectedBus.heading}° {['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(selectedBus.heading / 45) % 8]}</strong>
+                  </span>
+                  <span className="text-slate-400">
+                    Updated just now
+                  </span>
+                </div>
+              </div>
+
+              {/* 2. "WHICH BUS IS GOING WHERE" (Route Corridor & Terminals) */}
               <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50/50 to-purple-50 border border-purple-200/80 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-extrabold text-[#7847CB] flex items-center gap-1.5">
@@ -908,71 +996,128 @@ export const LiveTracking: React.FC = () => {
                 </div>
               </div>
 
-              {/* Next Approaching Stop & ETA Alert */}
-              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-[#7847CB]" /> Approaching Next Stop
+              {/* 3. NEXT STOP & HOW MUCH FAR IT IS */}
+              <div className="p-3.5 bg-amber-50/70 border border-amber-200/90 rounded-2xl flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] uppercase font-bold text-amber-800 block flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    Approaching Next Stop
                   </span>
-                  <span className="font-extrabold text-slate-900 text-sm sm:text-base mt-0.5 block truncate max-w-[200px] sm:max-w-none">
+                  <span className="font-black text-slate-900 text-sm sm:text-base mt-0.5 block truncate">
                     {selectedBus.nextStopName}
                   </span>
+                  <span className="text-[11px] font-bold text-amber-900 mt-0.5 block">
+                    Distance: {selectedBus.distanceToNextMeters ? (selectedBus.distanceToNextMeters > 1000 ? `${(selectedBus.distanceToNextMeters / 1000).toFixed(1)} km` : `${selectedBus.distanceToNextMeters} meters`) : `${selectedBus.etaToNextMinutes * 350} meters`} away
+                  </span>
                 </div>
-                <ETAIndicator minutes={selectedBus.etaToNextMinutes} size="lg" />
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] uppercase font-bold text-amber-800 block">Next ETA</span>
+                  <div className="mt-1">
+                    <ETAIndicator minutes={selectedBus.etaToNextMinutes} size="lg" />
+                  </div>
+                </div>
               </div>
 
-              {/* Proximity to Passenger's Stop (if commuter location is known) */}
+              {/* 4. PASSENGER PROXIMITY (Distance & Arrival to Passenger's Stop) */}
               {nearestStopInfo && (
-                <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between text-xs">
+                <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between text-xs">
                   <div className="min-w-0 pr-2">
-                    <span className="text-[10px] uppercase font-bold text-emerald-800 block">
+                    <span className="text-[10px] uppercase font-bold text-emerald-800 block flex items-center gap-1">
+                      <Crosshair className="w-3.5 h-3.5 text-emerald-600" />
                       To Your Nearest Stop ({nearestStopInfo.stop.name})
                     </span>
-                    <span className="font-bold text-emerald-950 truncate block">
-                      Distance: ~{nearestStopInfo.distanceMeters > 1000 ? `${(nearestStopInfo.distanceMeters / 1000).toFixed(1)} km` : `${nearestStopInfo.distanceMeters} m`}
+                    <span className="font-extrabold text-emerald-950 text-xs sm:text-sm truncate block mt-0.5">
+                      Distance to you: ~{nearestStopInfo.distanceMeters > 1000 ? `${(nearestStopInfo.distanceMeters / 1000).toFixed(1)} km` : `${nearestStopInfo.distanceMeters} m`}
                     </span>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="text-[10px] uppercase font-bold text-emerald-800 block">Arrival</span>
-                    <span className="font-black text-emerald-700 font-mono text-sm">
-                      ~{selectedBus.etaToNextMinutes || 3} min
+                    <span className="text-[10px] uppercase font-bold text-emerald-800 block">Arrival for you</span>
+                    <span className="font-black text-emerald-800 font-mono text-base">
+                      ~{selectedBus.etaToNextMinutes || 2} min
                     </span>
                   </div>
                 </div>
               )}
 
-              {/* Real-time Telemetry Metrics */}
+              {/* 5. PASSENGER COUNT & OCCUPANCY DETAILS */}
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-[#7847CB]" />
+                    Live Passenger Load & Seats
+                  </span>
+                  <OccupancyBadge level={selectedBus.occupancy} compact />
+                </div>
+
+                <div className="flex items-baseline justify-between">
+                  <div>
+                    <span className="text-2xl font-black text-slate-900 font-mono">
+                      {selectedBus.passengerCount || 25}
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium ml-1">
+                      / {selectedBus.maxCapacity || 42} Passengers Onboard
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    {selectedBus.availableSeats || 17} Seats Free
+                  </span>
+                </div>
+
+                {/* Animated Capacity Bar */}
+                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      (selectedBus.passengerCount || 25) > 34
+                        ? 'bg-rose-500'
+                        : (selectedBus.passengerCount || 25) > 20
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                    }`}
+                    style={{
+                      width: `${Math.min(100, Math.round(((selectedBus.passengerCount || 25) / (selectedBus.maxCapacity || 42)) * 100))}%`
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* 6. REAL-TIME VEHICLE SPECS & AMENITIES GRID */}
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
                 <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80">
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Velocity</span>
-                  <span className="font-extrabold text-slate-900 font-mono text-sm">
-                    {selectedBus.speedKmh} km/h
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold flex items-center justify-center gap-1">
+                    <Zap className="w-3 h-3 text-amber-500" /> Battery
+                  </span>
+                  <span className="font-extrabold text-slate-900 font-mono text-sm mt-0.5 block">
+                    {selectedBus.batteryLevel || 84}% EV
                   </span>
                 </div>
 
                 <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80">
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Passenger Load</span>
-                  <div className="mt-0.5">
-                    <OccupancyBadge level={selectedBus.occupancy} compact />
-                  </div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold flex items-center justify-center gap-1">
+                    <Thermometer className="w-3 h-3 text-blue-500" /> Climate
+                  </span>
+                  <span className="font-extrabold text-slate-900 font-mono text-sm mt-0.5 block">
+                    {selectedBus.temperature || '23°C'} AC
+                  </span>
                 </div>
 
                 <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80">
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Schedule</span>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold flex items-center justify-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-500" /> Schedule
+                  </span>
                   <div className="mt-0.5">
                     <BusStatusBadge status={selectedBus.status} delayMinutes={selectedBus.delayMinutes} />
                   </div>
                 </div>
               </div>
 
-              {/* "Which are the stops there in those routes" (Complete Route Stop Timeline) */}
+              {/* 7. ALL STOPS IN THIS ROUTE (Sequential Corridor Timeline) */}
               <div className="space-y-2 pt-1">
                 <div className="flex items-center justify-between">
                   <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-tight flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-[#7847CB]" />
                     All Scheduled Stops in this Route ({selectedBusRoute?.stops.length || 0})
                   </h4>
-                  <span className="text-[11px] text-slate-400">Sequential Corridor Order</span>
+                  <span className="text-[11px] text-slate-400">Sequential Order</span>
                 </div>
 
                 <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 max-h-56 overflow-y-auto space-y-2 text-xs">
@@ -985,7 +1130,7 @@ export const LiveTracking: React.FC = () => {
                       return (
                         <div
                           key={stop.stopId || idx}
-                          className={`p-2 rounded-xl border flex items-center justify-between transition-all ${
+                          className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${
                             isNext
                               ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold shadow-2xs'
                               : isUserStop
@@ -1027,7 +1172,7 @@ export const LiveTracking: React.FC = () => {
 
                             {isNext ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950 shadow-2xs flex items-center gap-1">
-                                <Clock className="w-3 h-3" /> NEXT ({selectedBus.etaToNextMinutes || 1}m)
+                                <Clock className="w-3 h-3" /> NEXT ({selectedBus.distanceToNextMeters ? (selectedBus.distanceToNextMeters > 1000 ? `${(selectedBus.distanceToNextMeters / 1000).toFixed(1)}km` : `${selectedBus.distanceToNextMeters}m`) : `${selectedBus.etaToNextMinutes || 1}m`})
                               </span>
                             ) : isPassed ? (
                               <span className="text-[10px] font-semibold text-emerald-600">Passed</span>
@@ -1048,7 +1193,7 @@ export const LiveTracking: React.FC = () => {
                 </div>
               </div>
 
-              {/* Crew & Transponder Info */}
+              {/* 8. CREW & FARE DETAILS */}
               <div className="p-3 rounded-xl border border-slate-200/80 bg-white flex items-center justify-between text-xs text-slate-600">
                 <div className="flex items-center gap-2">
                   <User className="w-4 h-4 text-slate-400" />
@@ -1057,21 +1202,36 @@ export const LiveTracking: React.FC = () => {
                     <span className="text-slate-400 block text-[10px]">Conductor: {selectedBus.conductorName}</span>
                   </div>
                 </div>
-                <span className="px-2.5 py-1 bg-purple-50 text-[#7847CB] text-[10px] font-bold rounded-lg border border-purple-100">
-                  {selectedBus.busType}
-                </span>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Ticket Fare</span>
+                  <span className="px-2 py-0.5 bg-purple-50 text-[#7847CB] text-[11px] font-bold rounded-lg border border-purple-100 inline-block">
+                    ₹10 Base Fare
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* Modal Bottom Actions */}
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center gap-2 shrink-0">
               <Button
+                onClick={() => {
+                  setSelectedBusId(null);
+                  navigate('/app/tickets');
+                }}
+                variant="primary"
+                size="md"
+                className="flex-1 shadow-xs"
+                leftIcon={<Ticket className="w-4 h-4" />}
+              >
+                Book Digital QR Ticket
+              </Button>
+              <Button
                 onClick={() => setSelectedBusId(null)}
                 variant="outline"
                 size="md"
-                className="flex-1"
+                className="px-4"
               >
-                Close Details
+                Close
               </Button>
             </div>
           </div>

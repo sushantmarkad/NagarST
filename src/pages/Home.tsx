@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MapPin,
@@ -30,12 +30,42 @@ import { LiveMap } from '../components/map/LiveMap';
 import { ETAIndicator } from '../components/common/ETAIndicator';
 import { OccupancyBadge, BusStatusBadge } from '../components/common/StatusBadge';
 import type { Bus } from '../types';
+import {
+  getDemoSimulatorState,
+  subscribeToDemoState,
+  buildBusTelemetry,
+  type DemoSimulatorState
+} from '../utils/demoSimulatorEngine';
 
 export const Home: React.FC = () => {
   const { buses, routes, stops, notifications, setSelectedBusId } = useApp();
   const { t, language } = useLanguage();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Subscribe to live demo simulator state updates
+  const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
+
+  useEffect(() => {
+    const unsub = subscribeToDemoState((newState) => {
+      setSimState(newState);
+    });
+    return () => unsub();
+  }, []);
+
+  const displayBuses = useMemo<Bus[]>(() => {
+    const map = new Map<string, Bus>();
+    buses.forEach((b) => map.set(b.id, b));
+    Object.values(simState.buses).forEach((runtime) => {
+      if (runtime) {
+        const activeBus = runtime.currentBus || buildBusTelemetry(runtime);
+        if (activeBus) {
+          map.set(activeBus.id, activeBus);
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [buses, simState.buses]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,7 +116,7 @@ export const Home: React.FC = () => {
             <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>
-                {buses.length} {t('buses online live', 'बसेस थेट जीपीएसवर')}
+                {displayBuses.length} {t('buses online live', 'बसेस थेट जीपीएसवर')}
               </span>
             </div>
           </div>
@@ -308,7 +338,7 @@ export const Home: React.FC = () => {
                 <h3 className="text-sm font-extrabold text-slate-900">
                   {t('Live Buses in Service', 'सध्या कार्यरत बसेस')}
                 </h3>
-                <span className="text-xs text-slate-400 font-medium">({buses.length})</span>
+                <span className="text-xs text-slate-400 font-medium">({displayBuses.length})</span>
               </div>
               <button
                 type="button"
@@ -322,7 +352,7 @@ export const Home: React.FC = () => {
 
             {/* Active Bus Cards List */}
             <div className="space-y-3">
-              {buses.slice(0, 5).map((bus) => (
+              {displayBuses.slice(0, 5).map((bus: Bus) => (
                 <div
                   key={bus.id}
                   onClick={() => handleSelectBus(bus)}
@@ -343,6 +373,11 @@ export const Home: React.FC = () => {
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-700">
                           {bus.plateNumber}
                         </span>
+                        {bus.isDemo && (
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                            DEMO
+                          </span>
+                        )}
                         {bus.speedKmh > 0 ? (
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
                             {bus.speedKmh} km/h
@@ -368,7 +403,7 @@ export const Home: React.FC = () => {
                 </div>
               ))}
 
-              {buses.length === 0 && (
+              {displayBuses.length === 0 && (
                 <div className="text-center py-10 bg-slate-50/60 rounded-2xl border border-dashed border-slate-200 text-slate-500 text-xs space-y-2">
                   <div className="w-10 h-10 rounded-full bg-purple-100 text-[#7847CB] flex items-center justify-center mx-auto">
                     <BusIcon className="w-5 h-5 animate-pulse" />
