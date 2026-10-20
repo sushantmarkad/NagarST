@@ -345,10 +345,30 @@ export const AdminBuses: React.FC = () => {
       }
     } catch (_) {}
 
-    // 4. Remove cached live bus state
+    // 4. Remove cached live bus state and active telemetry
     try {
       localStorage.removeItem('nagarst_live_bus_' + busId);
       localStorage.removeItem('nagarst_live_bus_' + busNumber);
+      if (plateNumber) localStorage.removeItem('nagarst_live_bus_' + plateNumber);
+
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('nagarst_live_bus_')) {
+          if (k.includes(busId) || k.includes(busNumber) || (plateNumber && k.includes(plateNumber))) {
+            localStorage.removeItem(k);
+          }
+        }
+      }
+
+      const activeDriversRaw = localStorage.getItem('nagarst_active_live_drivers');
+      if (activeDriversRaw) {
+        try {
+          const list = JSON.parse(activeDriversRaw);
+          const filtered = list.filter((b: any) => b.id !== busId && b.busNumber !== busNumber && (!plateNumber || b.plateNumber !== plateNumber));
+          localStorage.setItem('nagarst_active_live_drivers', JSON.stringify(filtered));
+        } catch (_) {}
+      }
+
       const assignmentsRaw = localStorage.getItem('nagarst_demo_assignments');
       if (assignmentsRaw) {
         const assignments = JSON.parse(assignmentsRaw);
@@ -358,7 +378,15 @@ export const AdminBuses: React.FC = () => {
       }
     } catch (_) {}
 
-    // 5. Delete from demo simulator engine and broadcast offline
+    // 5. Broadcast offline across BroadcastChannel
+    try {
+      const ch = new BroadcastChannel('nagarst_bus_telemetry');
+      ch.postMessage({ type: 'busOffline', busId });
+      ch.postMessage({ type: 'busOffline', busId: busNumber });
+      ch.close();
+    } catch (_) {}
+
+    // 6. Delete from demo simulator engine and broadcast offline
     deleteDemoBus(busId);
     deleteDemoBus(busNumber);
 

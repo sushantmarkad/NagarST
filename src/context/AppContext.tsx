@@ -281,6 +281,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.warn('Firebase buses fetch error:', err);
       }
 
+      // Purge any stale localStorage bus keys that don't match active Firestore buses
+      try {
+        const validIds = new Set(dbBuses.map((b: any) => (b.id || '').trim().toUpperCase().replace(/\s+/g, '')));
+        const validNumbers = new Set(dbBuses.map((b: any) => (b.bus_number || b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '')));
+        const validPlates = new Set(dbBuses.map((b: any) => (b.plate_number || b.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '')));
+
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (!k) continue;
+          if (k.startsWith('nagarst_live_bus_')) {
+            const raw = localStorage.getItem(k);
+            let keep = false;
+            if (raw && dbBuses.length > 0) {
+              try {
+                const parsed = JSON.parse(raw);
+                const idNorm = (parsed.id || '').trim().toUpperCase().replace(/\s+/g, '');
+                const numNorm = (parsed.busNumber || '').trim().toUpperCase().replace(/\s+/g, '');
+                const plateNorm = (parsed.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '');
+                if (validIds.has(idNorm) || validNumbers.has(numNorm) || validPlates.has(plateNorm)) {
+                  keep = true;
+                }
+              } catch (_) {}
+            }
+            if (!keep) {
+              localStorage.removeItem(k);
+            }
+          }
+        }
+
+        if (dbBuses.length === 0) {
+          localStorage.removeItem('nagarst_demo_buses');
+          localStorage.removeItem('nagarst_custom_buses');
+          localStorage.removeItem('nagarst_active_live_drivers');
+          localStorage.removeItem('nagarst_demo_assignments');
+        }
+      } catch (_) {}
+
       if (dbBuses.length > 0) {
         const mappedBuses = dbBuses.map((b: any) => {
           const targetRouteId = b.route_id || b.routeId || '';
@@ -328,6 +365,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.error('Failed to load database records:', err);
     }
   };
+
+  // Reset selectedBusId if the bus no longer exists in configured buses
+  useEffect(() => {
+    if (selectedBusId) {
+      if (buses.length === 0) {
+        setSelectedBusId(null);
+      } else {
+        const norm = selectedBusId.trim().toUpperCase().replace(/\s+/g, '');
+        const exists = buses.some(b => 
+          (b.id || '').trim().toUpperCase().replace(/\s+/g, '') === norm ||
+          (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === norm
+        );
+        if (!exists) {
+          setSelectedBusId(null);
+        }
+      }
+    }
+  }, [buses, selectedBusId]);
 
   useEffect(() => {
     refreshData();

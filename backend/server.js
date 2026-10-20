@@ -381,7 +381,7 @@ io.on('connection', (socket) => {
     syncToFirebaseLive(livePayload);
   });
 
-  // BUS OFFLINE
+  // BUS OFFLINE OR DELETED
   socket.on('stopTrip', (busId) => {
     if (!busId) return;
     if (String(busId).startsWith('demo-')) {
@@ -393,6 +393,14 @@ io.on('connection', (socket) => {
       io.emit('busOffline', busId);
       removeFirebaseLive(busId);
     }
+  });
+
+  socket.on('deleteBus', (busId) => {
+    if (!busId) return;
+    activeBuses.delete(busId);
+    demoBuses.delete(busId);
+    io.emit('busOffline', busId);
+    removeFirebaseLive(busId);
   });
 
   // DEMO CONTROLS (Socket-based)

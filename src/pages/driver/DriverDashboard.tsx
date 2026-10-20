@@ -111,8 +111,12 @@ export const DriverDashboard: React.FC = () => {
       if (fbBuses && fbBuses.length > 0) {
         const myBus = fbBuses.find(b => b.id === user?.assignedBusId) || fbBuses[0];
         setBusDetails(myBus);
+      } else {
+        setBusDetails(null);
       }
-    } catch (_) {}
+    } catch (_) {
+      setBusDetails(null);
+    }
 
     try {
       const fbRoutes = await getFirebaseRoutes();
@@ -211,7 +215,7 @@ export const DriverDashboard: React.FC = () => {
     speedKmh: number,
     statusOverride?: string
   ) => {
-    if (!busDetails) return;
+    if (!busDetails || !busDetails.id) return;
 
     let currentStatus = statusOverride || 'on_time';
     const routePathCoords = selectedRouteDetails?.route_path || [];
@@ -309,7 +313,7 @@ export const DriverDashboard: React.FC = () => {
   // Standby GPS watcher so driver location is tracked as soon as GPS is turned on
   useEffect(() => {
     let standbyWatchId: number | null = null;
-    if ('geolocation' in navigator && !isTripActive && !isNavigatingToOrigin) {
+    if ('geolocation' in navigator && !isTripActive && !isNavigatingToOrigin && busDetails && busDetails.id) {
       standbyWatchId = navigator.geolocation.watchPosition(
         (pos) => {
           const lat = pos.coords.latitude;
@@ -317,7 +321,7 @@ export const DriverDashboard: React.FC = () => {
           const spd = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
           setDriverPos({ lat, lng });
           setCurrentSpeedKmh(spd);
-          if (busDetails) {
+          if (busDetails && busDetails.id) {
             sendLiveTelemetry(lat, lng, spd, 'standby');
           }
         },
