@@ -137,6 +137,20 @@ export interface DemoSimulatorState {
 
 // In-memory runtime instances for each bus
 const runtimeStore: Record<string, BusSimRuntime> = {};
+
+// Purge any previously deleted demo buses from DEMO_BUS_DEFINITIONS
+try {
+  const deletedIdsRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
+  if (deletedIdsRaw) {
+    const deletedIds: string[] = JSON.parse(deletedIdsRaw);
+    for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
+      if (deletedIds.includes(DEMO_BUS_DEFINITIONS[i].id)) {
+        DEMO_BUS_DEFINITIONS.splice(i, 1);
+      }
+    }
+  }
+} catch (_) {}
+
 DEMO_BUS_DEFINITIONS.forEach(def => {
   runtimeStore[def.id] = {
     id: def.id,
@@ -708,6 +722,45 @@ export function addNewCustomBus(busData: {
 }
 
 /**
+ * Delete a demo bus completely from the simulator fleet
+ */
+export function deleteDemoBus(busId: string): boolean {
+  // 1. Terminate runtime & broadcast offline
+  const runtime = runtimeStore[busId];
+  if (runtime) {
+    runtime.isRunning = false;
+    runtime.currentBus = null;
+    broadcastBusOffline(busId);
+  }
+
+  // 2. Remove from runtimeStore
+  delete runtimeStore[busId];
+
+  // 3. Remove from DEMO_BUS_DEFINITIONS
+  const defIdx = DEMO_BUS_DEFINITIONS.findIndex(d => d.id === busId);
+  if (defIdx !== -1) {
+    DEMO_BUS_DEFINITIONS.splice(defIdx, 1);
+  }
+
+  // 4. Update localStorage
+  try {
+    const customBuses = DEMO_BUS_DEFINITIONS.filter((b) => b.id.startsWith('demo-bus-custom-'));
+    localStorage.setItem('nagarst_custom_buses', JSON.stringify(customBuses));
+
+    const deletedIdsRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+    const deletedIds: string[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
+    if (!deletedIds.includes(busId)) {
+      deletedIds.push(busId);
+      localStorage.setItem('nagarst_deleted_demo_buses', JSON.stringify(deletedIds));
+    }
+  } catch (_) {}
+
+  // 5. Notify all components
+  notifyListeners();
+  return true;
+}
+
+/**
  * Dynamically register a new custom route into the system
  */
 export function addNewCustomRoute(routeData: {
@@ -823,8 +876,16 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
   });
 
   // 2. Add or update registered buses into DEMO_BUS_DEFINITIONS and runtimeStore
+  let deletedBusIds: string[] = [];
+  try {
+    const raw = localStorage.getItem('nagarst_deleted_demo_buses');
+    if (raw) deletedBusIds = JSON.parse(raw);
+  } catch (_) {}
+
   buses.forEach((b) => {
     if (!b.routeId) return;
+    if (deletedBusIds.includes(b.id) || (b.busNumber && deletedBusIds.includes(b.busNumber))) return;
+
     const assignedRoute = AVAILABLE_DEMO_ROUTES.find(r => r.id === b.routeId);
     if (!assignedRoute || assignedRoute.waypoints.length < 2) return;
 
@@ -872,6 +933,29 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
       runtimeStore[existingDef.id].def = existingDef;
     }
   });
+
+  // 3. Auto-assign any demo buses that are currently unassigned to available configured corridors
+  if (AVAILABLE_DEMO_ROUTES.length > 0) {
+    DEMO_BUS_DEFINITIONS.forEach((def, idx) => {
+      if (!def.routeId || def.routeNumber === 'Unassigned') {
+        const assigned = AVAILABLE_DEMO_ROUTES[idx % AVAILABLE_DEMO_ROUTES.length];
+        if (assigned) {
+          def.routeId = assigned.id;
+          def.routeNumber = assigned.routeNumber;
+          def.routeName = assigned.routeName;
+          def.origin = assigned.origin;
+          def.destination = assigned.destination;
+          def.color = assigned.color || def.color;
+          def.stops = [...assigned.stops];
+          def.waypoints = [...assigned.waypoints];
+
+          if (runtimeStore[def.id]) {
+            runtimeStore[def.id].def = def;
+          }
+        }
+      }
+    });
+  }
 
   notifyListeners();
 }

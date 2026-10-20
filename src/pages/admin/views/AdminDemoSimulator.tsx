@@ -19,13 +19,21 @@ import { Route, Layers, ShieldCheck, Bus as BusIcon, MapPin, Clock, Flag, Target
 export const AdminDemoSimulator: React.FC = () => {
   const { buses, stops, routes } = useApp();
   const toast = useToast();
-  const [selectedBusId, setSelectedBusId] = useState<string>(DEMO_BUS_DEFINITIONS[0].id);
+  const [selectedBusId, setSelectedBusId] = useState<string>(DEMO_BUS_DEFINITIONS[0]?.id || '');
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
 
   // Sync simulator whenever admin configures routes or registers fleet vehicles
   React.useEffect(() => {
     syncSimulatorFleetWithAdminConfig(buses, routes);
   }, [buses, routes]);
+
+  // Keep selectedBusId valid when buses are deleted
+  React.useEffect(() => {
+    const availableBusIds = Object.keys(simState.buses);
+    if (availableBusIds.length > 0 && !simState.buses[selectedBusId]) {
+      setSelectedBusId(availableBusIds[0]);
+    }
+  }, [simState.buses, selectedBusId]);
 
   // Interactive Pin & Stop Placement Mode
   const [interactiveMode, setInteractiveMode] = useState<'view' | 'mark_start_pin' | 'mark_end_pin' | 'add_stop'>('view');
@@ -40,7 +48,7 @@ export const AdminDemoSimulator: React.FC = () => {
   }, []);
 
   const currentRuntime = simState.buses[selectedBusId];
-  const selectedDef = currentRuntime?.def || DEMO_BUS_DEFINITIONS.find(d => d.id === selectedBusId) || DEMO_BUS_DEFINITIONS[0];
+  const selectedDef = currentRuntime?.def || DEMO_BUS_DEFINITIONS.find(d => d.id === selectedBusId) || DEMO_BUS_DEFINITIONS[0] || null;
   const selectedBus = buses.find(b => b.id === selectedBusId);
   const activeDemoBuses = buses.filter(b => b.isDemo || b.id?.startsWith('demo-'));
 
@@ -169,64 +177,66 @@ export const AdminDemoSimulator: React.FC = () => {
           />
 
           {/* Planned Corridor Stops Summary for Selected Bus */}
-          <div className="p-5 rounded-3xl bg-white border border-slate-200/90 shadow-sm space-y-3.5">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
-                <Route className="w-4 h-4 text-[#7847CB]" />
-                {selectedDef.routeName}
-              </span>
-              <span className="text-[11px] text-slate-500 font-mono font-medium">
-                {selectedDef.stops.length} Scheduled Stops
-              </span>
-            </div>
+          {selectedDef && (
+            <div className="p-5 rounded-3xl bg-white border border-slate-200/90 shadow-sm space-y-3.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Route className="w-4 h-4 text-[#7847CB]" />
+                  {selectedDef.routeName}
+                </span>
+                <span className="text-[11px] text-slate-500 font-mono font-medium">
+                  {selectedDef.stops.length} Scheduled Stops
+                </span>
+              </div>
 
-            <div className="space-y-2">
-              {selectedDef.stops.map((st, i) => {
-                const isNext = selectedBus?.nextStopId === st.id;
-                const isCurrent = selectedBus?.currentStopId === st.id;
+              <div className="space-y-2">
+                {selectedDef.stops.map((st, i) => {
+                  const isNext = selectedBus?.nextStopId === st.id;
+                  const isCurrent = selectedBus?.currentStopId === st.id;
 
-                return (
-                  <div
-                    key={st.id}
-                    className={`p-2.5 rounded-2xl border flex items-center justify-between text-xs transition-all ${
-                      isNext
-                        ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-2xs font-bold'
-                        : isCurrent
-                        ? 'bg-purple-50/70 border-purple-200 text-purple-900 font-semibold'
-                        : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className={`w-6 h-6 rounded-xl flex items-center justify-center font-mono text-[11px] font-black shrink-0 ${
-                          isNext
-                            ? 'bg-amber-500 text-slate-950 shadow-xs'
-                            : isCurrent
-                            ? 'bg-[#7847CB] text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {i + 1}
+                  return (
+                    <div
+                      key={st.id}
+                      className={`p-2.5 rounded-2xl border flex items-center justify-between text-xs transition-all ${
+                        isNext
+                          ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-2xs font-bold'
+                          : isCurrent
+                          ? 'bg-purple-50/70 border-purple-200 text-purple-900 font-semibold'
+                          : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-6 h-6 rounded-xl flex items-center justify-center font-mono text-[11px] font-black shrink-0 ${
+                            isNext
+                              ? 'bg-amber-500 text-slate-950 shadow-xs'
+                              : isCurrent
+                              ? 'bg-[#7847CB] text-white shadow-xs'
+                              : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {i + 1}
+                        </div>
+                        <span className="truncate">{st.name}</span>
                       </div>
-                      <span className="truncate">{st.name}</span>
+
+                      {isNext && (
+                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-amber-500 text-slate-950 shadow-2xs shrink-0 flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> NEXT ({selectedBus?.etaToNextMinutes || 1}m)
+                        </span>
+                      )}
+
+                      {!isNext && isCurrent && (
+                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
+                          AT STOP
+                        </span>
+                      )}
                     </div>
-
-                    {isNext && (
-                      <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-amber-500 text-slate-950 shadow-2xs shrink-0 flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> NEXT ({selectedBus?.etaToNextMinutes || 1}m)
-                      </span>
-                    )}
-
-                    {!isNext && isCurrent && (
-                      <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
-                        AT STOP
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Right Column: Live Map Canvas */}

@@ -30,7 +30,8 @@ import {
   Loader2,
   X,
   Crosshair,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
@@ -47,6 +48,7 @@ import {
   subscribeToDemoState,
   getDemoSimulatorState,
   addNewCustomBus,
+  deleteDemoBus,
   addNewCustomRoute,
   setBusCustomCorridor,
   DEMO_BUS_DEFINITIONS,
@@ -274,6 +276,25 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     if (!activeBusRuntime) return;
     setBusAssignedRoute(activeBusRuntime.id, selectedRoutePresetId, nextReverse, prevEnd, prevStart);
     toast.info(`Reversed route direction for ${activeBusRuntime.def.busNumber}.`);
+  };
+
+  const handleDeleteBus = (busId: string, busNumber: string) => {
+    if (!isAuthorized) {
+      toast.error('Unauthorized: Multi-bus simulator requires Administrator authorization.');
+      return;
+    }
+    const confirmed = window.confirm(`Are you sure you want to delete demo bus "${busNumber}" from the fleet?`);
+    if (!confirmed) return;
+
+    deleteDemoBus(busId);
+    toast.success(`Demo bus "${busNumber}" deleted from fleet.`, 'Bus Deleted');
+
+    // Switch selection to remaining bus if any
+    const remaining = Object.keys(simState.buses).filter(id => id !== busId);
+    if (remaining.length > 0) {
+      setSelectedBusId(remaining[0]);
+      onSelectBusOnMap?.(remaining[0]);
+    }
   };
 
   const handleResetTerminals = () => {
@@ -583,7 +604,20 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                     >
                       {def.busNumber}
                     </span>
-                    <span className={`w-2.5 h-2.5 rounded-full ${isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-2.5 h-2.5 rounded-full ${isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteBus(def.id, def.busNumber);
+                        }}
+                        title={`Delete ${def.busNumber} from fleet`}
+                        className="p-1 -mr-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <h4 className="font-bold text-xs text-slate-900 truncate">
                     {runtime?.def.routeNumber || def.routeNumber}
@@ -600,19 +634,30 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
         {/* 2. ROUTE CORRIDOR SELECTION & FLIP */}
         {activeBusRuntime && (
           <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-200/80 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
                 <Route className="w-3.5 h-3.5 text-[#7847CB]" /> 2. Assign Route to {activeBusRuntime.def.busNumber}
               </span>
-              <button
-                type="button"
-                onClick={handleToggleDirection}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white text-slate-700 hover:text-purple-700 border border-slate-200 text-[11px] font-bold shadow-2xs transition-colors"
-                title="Reverse Start and End terminals"
-              >
-                <ArrowLeftRight className="w-3 h-3 text-[#7847CB]" />
-                <span>Flip Direction</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleDirection}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white text-slate-700 hover:text-purple-700 border border-slate-200 text-[11px] font-bold shadow-2xs transition-colors"
+                  title="Reverse Start and End terminals"
+                >
+                  <ArrowLeftRight className="w-3 h-3 text-[#7847CB]" />
+                  <span>Flip Direction</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteBus(activeBusRuntime.id, activeBusRuntime.def.busNumber)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-[11px] font-bold shadow-2xs transition-colors"
+                  title={`Delete ${activeBusRuntime.def.busNumber} from simulator`}
+                >
+                  <Trash2 className="w-3 h-3 text-rose-600" />
+                  <span>Delete Bus</span>
+                </button>
+              </div>
             </div>
 
             {/* Route Dropdown */}
