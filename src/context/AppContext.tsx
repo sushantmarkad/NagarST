@@ -245,21 +245,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           activeBusesCount: 1,
           status: 'normal',
           route_path: r.route_path,
-          stops: r.route_stops
-            ? r.route_stops
-                .sort((a: any, b: any) => a.stop_order - b.stop_order)
-                .map((rs: any) => ({
-                  stopId: rs.stops?.id,
-                  stopName: rs.stops?.stop_name,
-                  stopNameMarathi: rs.stops?.stop_name,
-                  lat: rs.stops?.lat,
-                  lng: rs.stops?.lng,
-                  sequence: rs.stop_order,
-                  fareFromOrigin: rs.stop_order * 5,
-                  estimatedMinutesFromOrigin: rs.estimated_minutes_from_origin || rs.stop_order * 4,
-                  isMajorHub: rs.stop_order === 1
-                }))
-            : []
+          stops: (() => {
+            const rawStops = r.route_stops
+              ? r.route_stops
+                  .sort((a: any, b: any) => a.stop_order - b.stop_order)
+                  .map((rs: any) => ({
+                    stopId: rs.stops?.id,
+                    stopName: rs.stops?.stop_name,
+                    stopNameMarathi: rs.stops?.stop_name,
+                    lat: rs.stops?.lat,
+                    lng: rs.stops?.lng,
+                    sequence: rs.stop_order,
+                    fareFromOrigin: rs.stop_order * 5,
+                    estimatedMinutesFromOrigin: rs.estimated_minutes_from_origin || rs.stop_order * 4,
+                    isMajorHub: rs.stop_order === 1
+                  }))
+              : [];
+
+            if (r.destination && rawStops.length > 2) {
+              const destNorm = r.destination.trim().toLowerCase();
+              const lastStopName = (rawStops[rawStops.length - 1]?.stopName || '').trim().toLowerCase();
+              const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
+              if (!isMatch(lastStopName, destNorm)) {
+                const dIdx = rawStops.findIndex((s: any) => isMatch((s.stopName || '').trim().toLowerCase(), destNorm));
+                if (dIdx !== -1 && dIdx < rawStops.length - 1) {
+                  const destStop = rawStops.splice(dIdx, 1)[0];
+                  rawStops.push(destStop);
+                  rawStops.forEach((s: any, idx: number) => {
+                    s.sequence = idx + 1;
+                    s.estimatedMinutesFromOrigin = idx * 4;
+                  });
+                }
+              }
+            }
+            return rawStops;
+          })()
         }));
       }
 
@@ -269,6 +289,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (localRoutesRaw) {
           const localRoutes = JSON.parse(localRoutesRaw);
           localRoutes.forEach((lr: any) => {
+            if (lr.destination && lr.stops && lr.stops.length > 2) {
+              const destNorm = lr.destination.trim().toLowerCase();
+              const lastStopName = (lr.stops[lr.stops.length - 1]?.stopName || lr.stops[lr.stops.length - 1]?.name || '').trim().toLowerCase();
+              const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
+              if (!isMatch(lastStopName, destNorm)) {
+                const dIdx = lr.stops.findIndex((s: any) => isMatch((s.stopName || s.name || '').trim().toLowerCase(), destNorm));
+                if (dIdx !== -1 && dIdx < lr.stops.length - 1) {
+                  const destStop = lr.stops.splice(dIdx, 1)[0];
+                  lr.stops.push(destStop);
+                  lr.stops.forEach((s: any, idx: number) => {
+                    s.sequence = idx + 1;
+                    s.estimatedMinutesFromOrigin = idx * 4;
+                  });
+                }
+              }
+            }
             const isDairy = (lr.destination || '').toLowerCase().includes('dairy') || (lr.name || '').toLowerCase().includes('dairy');
             if (isDairy && lr.stops && lr.stops.length > 0) {
               const lastStop = lr.stops[lr.stops.length - 1];

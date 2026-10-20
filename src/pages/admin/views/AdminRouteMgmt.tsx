@@ -74,26 +74,35 @@ export const AdminRouteMgmt: React.FC = () => {
   };
 
   const fetchRoutes = async () => {
+    let list: any[] = [];
     try {
       const { data, error } = await supabase.from('routes').select('*').order('created_at', { ascending: false });
       if (!error && data && data.length > 0) {
-        setRoutes(data);
-        syncLocalBackup(data);
+        list = data;
       } else {
-        // Fallback to local configured routes if any
         const local = localStorage.getItem('nagarst_configured_routes');
         if (local) {
-          const parsed = JSON.parse(local);
-          setRoutes(parsed);
-        } else {
-          setRoutes([]);
+          list = JSON.parse(local);
         }
       }
     } catch {
       const local = localStorage.getItem('nagarst_configured_routes');
       if (local) {
-        setRoutes(JSON.parse(local));
+        list = JSON.parse(local);
       }
+    }
+
+    setRoutes(list);
+    syncLocalBackup(list);
+
+    if (list.length > 0) {
+      setSelectedRoute((current: any) => {
+        const match = current ? (list.find((r: any) => r.id === current.id) || list[0]) : list[0];
+        if (match) {
+          handleSelectRoute(match);
+        }
+        return match;
+      });
     }
   };
 
@@ -120,11 +129,12 @@ export const AdminRouteMgmt: React.FC = () => {
         .eq('route_id', route.id)
         .order('stop_order', { ascending: true });
       
+      let resolvedStops: any[] = [];
       if (data && data.length > 0) {
-        setStops(data);
+        resolvedStops = [...data];
       } else if (route.stops && route.stops.length > 0) {
         // Format from route object
-        setStops(route.stops.map((s: any, idx: number) => ({
+        resolvedStops = route.stops.map((s: any, idx: number) => ({
           id: s.id || `stop-${idx}`,
           stop_order: s.sequence || idx + 1,
           estimated_minutes_from_origin: s.estimatedMinutesFromOrigin || idx * 5,
@@ -134,13 +144,59 @@ export const AdminRouteMgmt: React.FC = () => {
             lat: s.lat,
             lng: s.lng
           }
-        })));
-      } else {
-        setStops([]);
+        }));
       }
+
+      // If destination terminal was accidentally displaced before the last stop by an earlier stop addition,
+      // re-anchor the destination stop strictly to the end!
+      if (route.destination && resolvedStops.length > 2) {
+        const destNorm = route.destination.trim().toLowerCase();
+        const lastStopName = (resolvedStops[resolvedStops.length - 1]?.stops?.stop_name || '').trim().toLowerCase();
+        const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
+        if (!isMatch(lastStopName, destNorm)) {
+          const destIdx = resolvedStops.findIndex(s => isMatch((s.stops?.stop_name || '').trim().toLowerCase(), destNorm));
+          if (destIdx !== -1 && destIdx < resolvedStops.length - 1) {
+            const destStop = resolvedStops.splice(destIdx, 1)[0];
+            resolvedStops.push(destStop);
+            resolvedStops.forEach((s, idx) => {
+              s.stop_order = idx + 1;
+              s.estimated_minutes_from_origin = idx * 4;
+            });
+
+            // Persist the corrected stop order into route_stops and re-calculate route_path
+            try {
+              for (const st of resolvedStops) {
+                if (st.id) {
+                  await supabase.from('route_stops').update({
+                    stop_order: st.stop_order,
+                    estimated_minutes_from_origin: st.estimated_minutes_from_origin
+                  }).eq('id', st.id);
+                }
+              }
+              const correctedPath = await fetchOSRMRoute(resolvedStops.map(s => ({ lat: s.stops.lat, lng: s.stops.lng })));
+              if (correctedPath.length >= 2) {
+                await supabase.from('routes').update({ route_path: correctedPath }).eq('id', route.id);
+                route.route_path = correctedPath;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      route.stops = resolvedStops.map((s, idx) => ({
+        stopId: s.stops?.id || s.id,
+        stopName: s.stops?.stop_name,
+        lat: s.stops?.lat,
+        lng: s.stops?.lng,
+        sequence: idx + 1,
+        estimatedMinutesFromOrigin: idx * 4
+      }));
+
+      setSelectedRoute({ ...route });
+      setStops(resolvedStops);
     } catch {
       if (route.stops) {
-        setStops(route.stops.map((s: any, idx: number) => ({
+        const fallbackStops = route.stops.map((s: any, idx: number) => ({
           id: s.id || `stop-${idx}`,
           stop_order: s.sequence || idx + 1,
           estimated_minutes_from_origin: s.estimatedMinutesFromOrigin || idx * 5,
@@ -150,7 +206,34 @@ export const AdminRouteMgmt: React.FC = () => {
             lat: s.lat,
             lng: s.lng
           }
-        })));
+        }));
+
+        if (route.destination && fallbackStops.length > 2) {
+          const destNorm = route.destination.trim().toLowerCase();
+          const lastStopName = (fallbackStops[fallbackStops.length - 1]?.stops?.stop_name || '').trim().toLowerCase();
+          const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
+          if (!isMatch(lastStopName, destNorm)) {
+            const destIdx = fallbackStops.findIndex((s: any) => isMatch((s.stops?.stop_name || '').trim().toLowerCase(), destNorm));
+            if (destIdx !== -1 && destIdx < fallbackStops.length - 1) {
+              const destStop = fallbackStops.splice(destIdx, 1)[0];
+              fallbackStops.push(destStop);
+              fallbackStops.forEach((s: any, idx: number) => {
+                s.stop_order = idx + 1;
+                s.estimated_minutes_from_origin = idx * 4;
+              });
+            }
+          }
+        }
+        route.stops = fallbackStops.map((s: any, idx: number) => ({
+          stopId: s.stops?.id || s.id,
+          stopName: s.stops?.stop_name,
+          lat: s.stops?.lat,
+          lng: s.stops?.lng,
+          sequence: idx + 1,
+          estimatedMinutesFromOrigin: idx * 4
+        }));
+        setSelectedRoute({ ...route });
+        setStops(fallbackStops);
       }
     }
   };
@@ -190,10 +273,11 @@ export const AdminRouteMgmt: React.FC = () => {
       ];
     }
 
-    // Insert into Supabase
+    let finalRouteId = routeId;
+
+    // Insert into Supabase (omit id to let Supabase generate a valid UUID)
     try {
       const { data: routeData, error } = await supabase.from('routes').insert([{
-        id: routeId,
         route_number: routeNum,
         origin: originName,
         destination: destName,
@@ -201,6 +285,7 @@ export const AdminRouteMgmt: React.FC = () => {
       }]).select().single();
 
       if (!error && routeData) {
+        finalRouteId = routeData.id;
         // Insert origin and dest stops
         const { data: oStop } = await supabase.from('stops').insert([{
           stop_name: originName,
@@ -219,15 +304,15 @@ export const AdminRouteMgmt: React.FC = () => {
         if (dStop) destStopId = dStop.id;
 
         await supabase.from('route_stops').insert([
-          { route_id: routeData.id, stop_id: originStopId, stop_order: 1, estimated_minutes_from_origin: 0 },
-          { route_id: routeData.id, stop_id: destStopId, stop_order: 2, estimated_minutes_from_origin: 25 }
+          { route_id: finalRouteId, stop_id: originStopId, stop_order: 1, estimated_minutes_from_origin: 0 },
+          { route_id: finalRouteId, stop_id: destStopId, stop_order: 2, estimated_minutes_from_origin: 25 }
         ]);
       }
     } catch (_) {}
 
     // Save also into local configured routes
     const newRouteObj = {
-      id: routeId,
+      id: finalRouteId,
       routeNumber: routeNum,
       route_number: routeNum,
       name: routeTitle,
@@ -241,7 +326,7 @@ export const AdminRouteMgmt: React.FC = () => {
       ]
     };
 
-    const updatedRoutes = [newRouteObj, ...routes.filter(r => r.id !== routeId)];
+    const updatedRoutes = [newRouteObj, ...routes.filter(r => r.id !== finalRouteId && r.id !== routeId)];
     setRoutes(updatedRoutes);
     syncLocalBackup(updatedRoutes);
     setSelectedRoute(newRouteObj);
@@ -328,8 +413,8 @@ export const AdminRouteMgmt: React.FC = () => {
     const stopId = `stop-${Date.now()}`;
     const newStopItem = {
       id: `rs-${Date.now()}`,
-      stop_order: stops.length + 1,
-      estimated_minutes_from_origin: (stops.length + 1) * 4,
+      stop_order: 1,
+      estimated_minutes_from_origin: 0,
       stops: {
         id: stopId,
         stop_name: newStopName.trim(),
@@ -338,7 +423,68 @@ export const AdminRouteMgmt: React.FC = () => {
       }
     };
 
-    const updatedStops = [...stops, newStopItem];
+    // Calculate optimal intermediate insertion index:
+    // Stops should be inserted between Start Terminal (index 0) and End Terminal (index stops.length - 1)
+    let insertIndex = 1;
+    if (stops.length <= 1) {
+      insertIndex = stops.length;
+    } else {
+      // Find the segment [i, i+1] that minimizes the detour distance
+      let minDetour = Infinity;
+      const getDist = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * (Math.PI / 180);
+        const dLon = (lon2 - lon1) * (Math.PI / 180);
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      };
+
+      for (let i = 0; i < stops.length - 1; i++) {
+        const s1 = stops[i]?.stops;
+        const s2 = stops[i + 1]?.stops;
+        if (!s1 || !s2) continue;
+        const dist1 = getDist(s1.lat, s1.lng, addingStopLoc.lat, addingStopLoc.lng);
+        const dist2 = getDist(addingStopLoc.lat, addingStopLoc.lng, s2.lat, s2.lng);
+        const direct = getDist(s1.lat, s1.lng, s2.lat, s2.lng);
+        const detour = dist1 + dist2 - direct;
+        if (detour < minDetour) {
+          minDetour = detour;
+          insertIndex = i + 1;
+        }
+      }
+
+      // Safeguard: Never replace Start Terminal (index 0) or push past End Terminal (index stops.length - 1)
+      insertIndex = Math.max(1, Math.min(insertIndex, stops.length - 1));
+    }
+
+    const updatedStops = [
+      ...stops.slice(0, insertIndex),
+      newStopItem,
+      ...stops.slice(insertIndex)
+    ];
+
+    // Ensure Destination Terminal remains strictly at the last index
+    if (selectedRoute.destination && updatedStops.length > 2) {
+      const destNorm = selectedRoute.destination.trim().toLowerCase();
+      const lastStopName = (updatedStops[updatedStops.length - 1]?.stops?.stop_name || '').trim().toLowerCase();
+      const isMatch = (a: string, b: string) => a === b || a.includes(b) || b.includes(a);
+      if (!isMatch(lastStopName, destNorm)) {
+        const dIdx = updatedStops.findIndex(s => isMatch((s.stops?.stop_name || '').trim().toLowerCase(), destNorm));
+        if (dIdx !== -1 && dIdx < updatedStops.length - 1) {
+          const destStop = updatedStops.splice(dIdx, 1)[0];
+          updatedStops.push(destStop);
+        }
+      }
+    }
+
+    // Re-index all stop_order and estimated_minutes_from_origin
+    updatedStops.forEach((s, idx) => {
+      s.stop_order = idx + 1;
+      s.estimated_minutes_from_origin = idx * 4;
+    });
 
     // Compute updated OSRM road path through all stops in sequence
     let path: { lat: number; lng: number }[] = [];
@@ -353,24 +499,43 @@ export const AdminRouteMgmt: React.FC = () => {
     try {
       // 1. Create stop in DB
       const { data: stopData } = await supabase.from('stops').insert([{
-        id: stopId,
         stop_name: newStopName.trim(),
         lat: addingStopLoc.lat,
         lng: addingStopLoc.lng,
         location: `POINT(${addingStopLoc.lng} ${addingStopLoc.lat})`
       }]).select().single();
 
-      // 2. Link to route_stops
-      await supabase.from('route_stops').insert([{
-        route_id: selectedRoute.id,
-        stop_id: stopData?.id || stopId,
-        stop_order: updatedStops.length,
-        estimated_minutes_from_origin: updatedStops.length * 4
-      }]);
+      const createdStopId = stopData?.id || stopId;
+      newStopItem.stops.id = createdStopId;
 
-      // 3. Update route_path
+      // 2. Link to route_stops at computed intermediate stop_order
+      const { data: rsRow } = await supabase.from('route_stops').insert([{
+        route_id: selectedRoute.id,
+        stop_id: createdStopId,
+        stop_order: insertIndex + 1,
+        estimated_minutes_from_origin: insertIndex * 4
+      }]).select().single();
+
+      if (rsRow?.id) {
+        newStopItem.id = rsRow.id;
+      }
+
+      // 3. Update stop_order for all subsequent stops in route_stops
+      for (let i = 0; i < updatedStops.length; i++) {
+        const st = updatedStops[i];
+        if (st.id && st.id !== newStopItem.id) {
+          await supabase.from('route_stops').update({
+            stop_order: st.stop_order,
+            estimated_minutes_from_origin: st.estimated_minutes_from_origin
+          }).eq('id', st.id);
+        }
+      }
+
+      // 4. Update route_path in routes table
       await supabase.from('routes').update({ route_path: path }).eq('id', selectedRoute.id);
-    } catch (_) {}
+    } catch (err) {
+      console.warn('DB update error in saveNewStop:', err);
+    }
 
     const updatedRouteObj = {
       ...selectedRoute,
@@ -394,7 +559,7 @@ export const AdminRouteMgmt: React.FC = () => {
     setAddingStopLoc(null);
     setNewStopName('');
     setIsCalculatingPath(false);
-    toast.success(`Stop "${newStopName}" added and snapped along actual road route!`);
+    toast.success(`Stop "${newStopName}" added between terminals and snapped along road!`);
     await refreshData();
   };
 
@@ -402,7 +567,8 @@ export const AdminRouteMgmt: React.FC = () => {
   const handleMoveStop = async (index: number, direction: 'up' | 'down') => {
     if (!selectedRoute) return;
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= stops.length) return;
+    // Disallow swapping into terminal positions 0 or stops.length - 1
+    if (targetIndex < 1 || targetIndex >= stops.length - 1) return;
 
     setIsCalculatingPath(true);
     const reordered = [...stops];
@@ -488,6 +654,14 @@ export const AdminRouteMgmt: React.FC = () => {
   };
 
   const removeStop = async (routeStopId: string, stopName: string) => {
+    if (!selectedRoute) return;
+
+    const stopIndex = stops.findIndex(s => s.id === routeStopId);
+    if (stopIndex === 0 || stopIndex === stops.length - 1) {
+      toast.error('Corridor origin and destination terminals cannot be deleted.');
+      return;
+    }
+
     const isConfirmed = await confirm({
       title: `Remove stop ${stopName}?`,
       message: `Are you sure you want to remove this stop from Route ${selectedRoute?.route_number}?`,
@@ -1030,19 +1204,19 @@ export const AdminRouteMgmt: React.FC = () => {
                       <div className="flex items-center gap-0.5 shrink-0">
                         <button
                           type="button"
-                          disabled={isFirst}
+                          disabled={i <= 1 || isLast}
                           onClick={() => handleMoveStop(i, 'up')}
-                          className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent"
-                          title="Move stop up"
+                          className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-20 disabled:hover:bg-transparent"
+                          title={i <= 1 ? 'Cannot move above Start Terminal' : 'Move stop up'}
                         >
                           <ArrowUp className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
-                          disabled={isLast}
+                          disabled={i >= stops.length - 2 || isFirst}
                           onClick={() => handleMoveStop(i, 'down')}
-                          className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent"
-                          title="Move stop down"
+                          className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-20 disabled:hover:bg-transparent"
+                          title={i >= stops.length - 2 ? 'Cannot move below End Terminal' : 'Move stop down'}
                         >
                           <ArrowDown className="w-3.5 h-3.5" />
                         </button>
@@ -1060,9 +1234,10 @@ export const AdminRouteMgmt: React.FC = () => {
                         </button>
                         <button
                           type="button"
+                          disabled={isFirst || isLast}
                           onClick={() => removeStop(routeStop.id, routeStop.stops.stop_name)}
-                          className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
-                          title="Remove stop"
+                          className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors disabled:opacity-20 disabled:hover:text-slate-400"
+                          title={isFirst || isLast ? 'Cannot remove corridor terminal' : 'Remove stop'}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
