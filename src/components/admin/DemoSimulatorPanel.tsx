@@ -307,7 +307,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     const confirmed = window.confirm(`Are you sure you want to delete demo bus "${busNumber}" from the fleet?`);
     if (!confirmed) return;
 
-    deleteDemoBus(busId);
+    deleteDemoBus(busId, busNumber);
     toast.success(`Demo bus "${busNumber}" deleted from fleet.`, 'Bus Deleted');
 
     // Switch selection to remaining bus if any

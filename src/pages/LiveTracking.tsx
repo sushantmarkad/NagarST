@@ -158,6 +158,41 @@ export const LiveTracking: React.FC = () => {
         if ((payload?.type === 'locationUpdate' || payload?.type === 'driver_location_update') && (payload?.data || payload?.bus)) {
           const incoming = (payload.data || payload.bus) as Bus;
           if (incoming && incoming.id) {
+            // Check if bus is deleted
+            try {
+              const deletedRaw = localStorage.getItem('nagarst_deleted_demo_buses');
+              if (deletedRaw) {
+                const deletedList: string[] = JSON.parse(deletedRaw);
+                const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
+                const bId = norm(incoming.id);
+                const bNum = norm(incoming.busNumber);
+                const bPlate = norm(incoming.plateNumber);
+                const isDel = deletedList.some(d => {
+                  const cd = norm(d);
+                  return cd && (cd === bId || cd === bNum || cd === bPlate);
+                });
+                if (isDel) {
+                  setActiveLiveBuses((prev) => {
+                    const next = { ...prev };
+                    delete next[incoming.id];
+                    Object.keys(next).forEach(k => {
+                      const b = next[k];
+                      if (
+                        isSameBusKey(k, incoming.id) ||
+                        isSameBusKey(b?.id, incoming.id) ||
+                        isSameBusKey(b?.busNumber, incoming.busNumber) ||
+                        isSameBusKey(b?.plateNumber, incoming.plateNumber)
+                      ) {
+                        delete next[k];
+                      }
+                    });
+                    return next;
+                  });
+                  return;
+                }
+              }
+            } catch (_) {}
+
             const isDemo = Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
             const isKnown = buses.some(b => 
               isSameBusKey(b.id, incoming.id) ||
@@ -187,7 +222,12 @@ export const LiveTracking: React.FC = () => {
             delete next[offId];
             Object.keys(next).forEach((k) => {
               const b = next[k];
-              if (isSameBusKey(k, offId) || isSameBusKey(b?.busNumber, offId) || isSameBusKey(b?.id, offId)) {
+              if (
+                isSameBusKey(k, offId) ||
+                isSameBusKey(b?.busNumber, offId) ||
+                isSameBusKey(b?.id, offId) ||
+                isSameBusKey(b?.plateNumber, offId)
+              ) {
                 delete next[k];
               }
             });
@@ -264,12 +304,55 @@ export const LiveTracking: React.FC = () => {
         socket.emit('joinDemoRoom');
       });
 
+      const isBusDeleted = (busObj: any) => {
+        if (!busObj) return false;
+        if (busObj.offline || busObj.isDeleted) return true;
+        try {
+          const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
+          if (!deletedRaw) return false;
+          const deletedList: string[] = JSON.parse(deletedRaw);
+          const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
+          const bId = norm(busObj.id);
+          const bNum = norm(busObj.busNumber);
+          const bPlate = norm(busObj.plateNumber);
+          return deletedList.some(d => {
+            const cd = norm(d);
+            return cd && (cd === bId || cd === bNum || cd === bPlate);
+          });
+        } catch (_) {
+          return false;
+        }
+      };
+
+      const purgeFromActive = (busObjOrId: any) => {
+        const targetId = typeof busObjOrId === 'string' ? busObjOrId : busObjOrId?.id;
+        const targetNum = typeof busObjOrId === 'object' ? busObjOrId?.busNumber : undefined;
+        const targetPlate = typeof busObjOrId === 'object' ? busObjOrId?.plateNumber : undefined;
+        setActiveLiveBuses((prev) => {
+          const next = { ...prev };
+          if (targetId) delete next[targetId];
+          Object.keys(next).forEach(k => {
+            const b = next[k];
+            if (
+              (targetId && (isSameBusKey(k, targetId) || isSameBusKey(b?.id, targetId) || isSameBusKey(b?.busNumber, targetId) || isSameBusKey(b?.plateNumber, targetId))) ||
+              (targetNum && (isSameBusKey(k, targetNum) || isSameBusKey(b?.busNumber, targetNum) || isSameBusKey(b?.id, targetNum))) ||
+              (targetPlate && (isSameBusKey(k, targetPlate) || isSameBusKey(b?.plateNumber, targetPlate)))
+            ) {
+              delete next[k];
+            }
+          });
+          return next;
+        });
+      };
+
       socket.on('initialDemoBuses', (demoFleet: Bus[]) => {
         if (Array.isArray(demoFleet) && demoFleet.length > 0) {
           setActiveLiveBuses((prev) => {
             const next = { ...prev };
             demoFleet.forEach(b => {
-              if (b && b.id) next[b.id] = { ...b, isDemo: true, isLiveDriver: false };
+              if (b && b.id && !isBusDeleted(b)) {
+                next[b.id] = { ...b, isDemo: true, isLiveDriver: false };
+              }
             });
             return next;
           });
@@ -278,12 +361,8 @@ export const LiveTracking: React.FC = () => {
 
       socket.on('demoLocationUpdate', (bus: Bus) => {
         if (!bus || !bus.id) return;
-        if ((bus as any).offline) {
-          setActiveLiveBuses((prev) => {
-            const next = { ...prev };
-            delete next[bus.id];
-            return next;
-          });
+        if (isBusDeleted(bus)) {
+          purgeFromActive(bus);
           return;
         }
         setActiveLiveBuses((prev) => ({
@@ -294,6 +373,10 @@ export const LiveTracking: React.FC = () => {
 
       socket.on('locationUpdate', (bus: Bus) => {
         if (!bus || !bus.id) return;
+        if (isBusDeleted(bus)) {
+          purgeFromActive(bus);
+          return;
+        }
         const isDemo = Boolean(bus.isDemo || String(bus.id).startsWith('demo-') || (bus.routeName || '').includes('[DEMO]'));
         setActiveLiveBuses((prev) => ({
           ...prev,
@@ -302,14 +385,7 @@ export const LiveTracking: React.FC = () => {
       });
 
       socket.on('busOffline', (busId: string) => {
-        setActiveLiveBuses((prev) => {
-          const next = { ...prev };
-          delete next[busId];
-          Object.keys(next).forEach(k => {
-            if (isSameBusKey(k, busId) || isSameBusKey(next[k]?.busNumber, busId)) delete next[k];
-          });
-          return next;
-        });
+        purgeFromActive(busId);
       });
     } catch (_) {}
 

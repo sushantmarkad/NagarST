@@ -338,11 +338,12 @@ io.on('connection', (socket) => {
     demoBuses.forEach(bus => socket.emit('demoLocationUpdate', bus));
   });
 
-  // Admin sends fleet config before starting demo
+  // Admin sends fleet config before starting demo or when fleet changes
   socket.on('configureDemo', (data) => {
     if (!data || !Array.isArray(data.buses)) return;
+    const wasRunning = demoState.isRunning;
     if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
-    demoState.isRunning = false;
+
     DEMO_FLEET_CONFIG = data.buses
       .filter(b => b && b.id && Array.isArray(b.waypoints) && b.waypoints.length >= 2)
       .map(b => ({
@@ -360,12 +361,39 @@ io.on('connection', (socket) => {
         direction: 1,
         speedMultiplier: b.speedMultiplier || 1
       }));
+
+    // Purge any buses in demoBuses that are no longer part of DEMO_FLEET_CONFIG
+    const validIds = new Set();
+    const norm = (s) => String(s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
+    DEMO_FLEET_CONFIG.forEach(b => {
+      validIds.add(norm(b.id));
+      validIds.add(norm(b.busNumber));
+      validIds.add(norm(b.plateNumber));
+    });
+
+    for (const [key, val] of demoBuses.entries()) {
+      const match = validIds.has(norm(key)) || validIds.has(norm(val?.id)) || validIds.has(norm(val?.busNumber)) || validIds.has(norm(val?.plateNumber));
+      if (!match) {
+        demoBuses.delete(key);
+        io.emit('busOffline', key);
+        io.emit('demoLocationUpdate', { id: key, busId: key, offline: true, isDeleted: true });
+        io.emit('locationUpdate', { id: key, busId: key, offline: true, isDeleted: true });
+      }
+    }
+
+    demoState.activeBusCount = DEMO_FLEET_CONFIG.length;
     console.log(`✅ configureDemo: ${DEMO_FLEET_CONFIG.length} buses configured`);
     socket.emit('demoConfigured', {
       success: true, busCount: DEMO_FLEET_CONFIG.length,
       buses: DEMO_FLEET_CONFIG.map(b => ({ id: b.id, busNumber: b.busNumber, routeNumber: b.routeNumber }))
     });
-    io.emit('demoStatus', { isRunning: false, ...demoState, activeBusCount: DEMO_FLEET_CONFIG.length });
+
+    if (wasRunning && DEMO_FLEET_CONFIG.length > 0) {
+      startDemoSimulator({ speedMultiplier: demoState.speedMultiplier, delayMinutes: demoState.delayMinutes });
+    } else {
+      demoState.isRunning = false;
+      io.emit('demoStatus', { isRunning: false, ...demoState, activeBusCount: DEMO_FLEET_CONFIG.length });
+    }
   });
 
   socket.on('startDemo', (params) => {
@@ -413,19 +441,61 @@ io.on('connection', (socket) => {
     syncRealDriverToFirebase(livePayload); // Firebase for real drivers only
   });
 
-  socket.on('stopTrip', (busId) => {
+  const purgeBus = (busId) => {
     if (!busId) return;
-    if (String(busId).startsWith('demo-')) { demoBuses.delete(busId); }
-    else { activeLiveDrivers.delete(busId); removeRealDriverFromFirebase(busId); }
+    const norm = (s) => String(s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
+    const target = norm(busId);
+    if (!target) return;
+
+    // 1. Remove from DEMO_FLEET_CONFIG
+    DEMO_FLEET_CONFIG = DEMO_FLEET_CONFIG.filter(b => 
+      norm(b.id) !== target && 
+      norm(b.busNumber) !== target && 
+      norm(b.plateNumber) !== target
+    );
+    demoState.activeBusCount = DEMO_FLEET_CONFIG.length;
+
+    // 2. Remove from demoBuses Map
+    for (const [key, val] of demoBuses.entries()) {
+      if (
+        norm(key) === target || 
+        norm(val?.id) === target || 
+        norm(val?.busNumber) === target || 
+        norm(val?.plateNumber) === target
+      ) {
+        demoBuses.delete(key);
+      }
+    }
+
+    // 3. Remove from activeLiveDrivers Map
+    for (const [key, val] of activeLiveDrivers.entries()) {
+      if (
+        norm(key) === target || 
+        norm(val?.id) === target || 
+        norm(val?.busNumber) === target || 
+        norm(val?.plateNumber) === target
+      ) {
+        activeLiveDrivers.delete(key);
+      }
+    }
+
+    // 4. Emit offline and deleted payload across all channels to all connected dashboards
     io.emit('busOffline', busId);
+    io.emit('demoLocationUpdate', { id: busId, busId, offline: true, isDeleted: true });
+    io.emit('locationUpdate', { id: busId, busId, offline: true, isDeleted: true });
+    io.emit('demoStatus', { ...demoState, activeBusCount: DEMO_FLEET_CONFIG.length });
+
+    if (!String(busId).startsWith('demo-')) {
+      removeRealDriverFromFirebase(busId);
+    }
+  };
+
+  socket.on('stopTrip', (busId) => {
+    purgeBus(busId);
   });
 
   socket.on('deleteBus', (busId) => {
-    if (!busId) return;
-    activeLiveDrivers.delete(busId);
-    demoBuses.delete(busId);
-    io.emit('busOffline', busId);
-    if (!String(busId).startsWith('demo-')) removeRealDriverFromFirebase(busId);
+    purgeBus(busId);
   });
 
   socket.on('sendDispatchMessage', (data) => { io.emit('dispatchMessage', data); });

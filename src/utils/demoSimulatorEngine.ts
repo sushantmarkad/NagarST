@@ -724,9 +724,7 @@ export function syncDemoFleetToBackend() {
       speedMultiplier: r.speedMultiplier
     }));
 
-  if (payloadBuses.length > 0) {
-    s.emit('configureDemo', { buses: payloadBuses });
-  }
+  s.emit('configureDemo', { buses: payloadBuses });
 }
 
 export function persistSimRunningState() {
@@ -1502,12 +1500,14 @@ export function addNewCustomBus(busData: {
 /**
  * Delete a demo bus completely from the simulator fleet
  */
-export function deleteDemoBus(busId: string): boolean {
-  const runtime = runtimeStore[busId];
-  const busNumber = runtime?.def?.busNumber || DEMO_BUS_DEFINITIONS.find(d => d.id === busId)?.busNumber;
-  const plateNumber = runtime?.def?.plateNumber || DEMO_BUS_DEFINITIONS.find(d => d.id === busId)?.plateNumber;
+export function deleteDemoBus(busId: string, explicitBusNumber?: string, explicitPlateNumber?: string): boolean {
+  const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
+    r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
+  );
+  const busNumber = explicitBusNumber || runtime?.def?.busNumber || DEMO_BUS_DEFINITIONS.find(d => d.id === busId || d.busNumber === busId)?.busNumber;
+  const plateNumber = explicitPlateNumber || runtime?.def?.plateNumber || DEMO_BUS_DEFINITIONS.find(d => d.id === busId || d.plateNumber === busId)?.plateNumber;
 
-  // 1. Terminate runtime & broadcast offline for both ID and busNumber
+  // 1. Terminate runtime & broadcast offline
   if (runtime) {
     runtime.isRunning = false;
     runtime.currentBus = null;
@@ -1516,11 +1516,33 @@ export function deleteDemoBus(busId: string): boolean {
   if (busNumber && busNumber !== busId) {
     broadcastBusOffline(busNumber);
   }
+  if (plateNumber && plateNumber !== busId && plateNumber !== busNumber) {
+    broadcastBusOffline(plateNumber);
+  }
+
+  // Socket.IO server delete & stop notification
+  try {
+    const s = getSimSocket();
+    if (s) {
+      s.emit('deleteBus', busId);
+      if (busNumber) s.emit('deleteBus', busNumber);
+      if (plateNumber) s.emit('deleteBus', plateNumber);
+      s.emit('stopTrip', busId);
+      if (busNumber) s.emit('stopTrip', busNumber);
+    }
+  } catch (_) {}
 
   // 2. Remove from runtimeStore
   delete runtimeStore[busId];
   Object.keys(runtimeStore).forEach(k => {
-    if (runtimeStore[k]?.def?.busNumber === busNumber || runtimeStore[k]?.def?.busNumber === busId) {
+    const r = runtimeStore[k];
+    if (
+      isSameBusKey(k, busId) ||
+      isSameBusKey(r?.id, busId) ||
+      isSameBusKey(r?.def?.busNumber, busId) ||
+      (busNumber && (isSameBusKey(r?.def?.busNumber, busNumber) || isSameBusKey(k, busNumber))) ||
+      (plateNumber && (isSameBusKey(r?.def?.plateNumber, plateNumber) || isSameBusKey(k, plateNumber)))
+    ) {
       delete runtimeStore[k];
     }
   });
@@ -1528,12 +1550,17 @@ export function deleteDemoBus(busId: string): boolean {
   // 3. Remove from DEMO_BUS_DEFINITIONS
   for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
     const d = DEMO_BUS_DEFINITIONS[i];
-    if (d.id === busId || d.busNumber === busId || (busNumber && d.busNumber === busNumber)) {
+    if (
+      isSameBusKey(d.id, busId) ||
+      isSameBusKey(d.busNumber, busId) ||
+      (busNumber && isSameBusKey(d.busNumber, busNumber)) ||
+      (plateNumber && isSameBusKey(d.plateNumber, plateNumber))
+    ) {
       DEMO_BUS_DEFINITIONS.splice(i, 1);
     }
   }
 
-  // 4. Update localStorage
+  // 4. Update localStorage and nagarst_deleted_demo_buses
   try {
     const customBuses = DEMO_BUS_DEFINITIONS.filter((b) => b.id.startsWith('demo-bus-custom-') || b.id.startsWith('demo-bus-'));
     localStorage.setItem('nagarst_custom_buses', JSON.stringify(customBuses));
@@ -1542,8 +1569,10 @@ export function deleteDemoBus(busId: string): boolean {
     const deletedIds: string[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
     [busId, busNumber, plateNumber].filter(Boolean).forEach(id => {
       const clean = id!.trim();
+      const normVal = clean.toUpperCase().replace(/[\s-_]/g, '');
       if (!deletedIds.includes(clean)) deletedIds.push(clean);
       if (!deletedIds.includes(clean.toUpperCase())) deletedIds.push(clean.toUpperCase());
+      if (normVal && !deletedIds.includes(normVal)) deletedIds.push(normVal);
     });
     localStorage.setItem('nagarst_deleted_demo_buses', JSON.stringify(deletedIds));
 
@@ -1553,7 +1582,13 @@ export function deleteDemoBus(busId: string): boolean {
     delete demoBuses[busId];
     if (busNumber) delete demoBuses[busNumber];
     Object.keys(demoBuses).forEach(k => {
-      if (demoBuses[k]?.busNumber === busNumber || demoBuses[k]?.id === busId) {
+      const b = demoBuses[k];
+      if (
+        isSameBusKey(k, busId) ||
+        isSameBusKey(b?.id, busId) ||
+        (busNumber && isSameBusKey(b?.busNumber, busNumber)) ||
+        (plateNumber && isSameBusKey(b?.plateNumber, plateNumber))
+      ) {
         delete demoBuses[k];
       }
     });
@@ -1568,6 +1603,7 @@ export function deleteDemoBus(busId: string): boolean {
     // Remove individual live bus storage items
     localStorage.removeItem('nagarst_live_bus_' + busId);
     if (busNumber) localStorage.removeItem('nagarst_live_bus_' + busNumber);
+    if (plateNumber) localStorage.removeItem('nagarst_live_bus_' + plateNumber);
 
     const assignmentsRaw = localStorage.getItem('nagarst_demo_assignments');
     if (assignmentsRaw) {
@@ -1578,7 +1614,10 @@ export function deleteDemoBus(busId: string): boolean {
     }
   } catch (_) {}
 
-  // 5. Notify all components
+  // 5. Sync the updated fleet configuration directly to backend Node.js simulator
+  syncDemoFleetToBackend();
+
+  // 6. Notify all UI components
   notifyListeners();
   return true;
 }
