@@ -171,7 +171,8 @@ export const App: React.FC = () => {
                         <Routes>
                           <Route path="home" element={<Home />} />
                           <Route path="plan" element={<PlanJourney />} />
-                          <Route path="live" element={<LiveTracking />} />
+                          <Route path="live" element={<LiveTracking initialMode="live" />} />
+                          <Route path="simulator" element={<LiveTracking initialMode="simulator" />} />
                           <Route path="stops" element={<BusStopDetails />} />
                           <Route path="routes" element={<RouteDetails />} />
                           <Route path="tickets" element={<Tickets />} />

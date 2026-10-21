@@ -63,11 +63,29 @@ const AHILYANAGAR_HUBS = [
   { id: 'kotla', name: 'Kotla Bus Stand', lat: 19.0910, lng: 74.7290, hubCode: 'KTL' },
 ];
 
-export const LiveTracking: React.FC = () => {
+interface LiveTrackingProps {
+  initialMode?: 'simulator' | 'live' | 'all';
+}
+
+export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   const { t } = useLanguage();
   const { buses, stops, routes, selectedBusId, setSelectedBusId, selectedStopId, setSelectedStopId } = useApp();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+
+  const urlMode = (searchParams.get('mode') as 'simulator' | 'live' | 'all') || null;
+  const [trackingMode, setTrackingMode] = useState<'simulator' | 'live' | 'all'>(() => urlMode || initialMode || 'all');
+
+  const handleSetTrackingMode = (mode: 'simulator' | 'live' | 'all') => {
+    setTrackingMode(mode);
+    const newParams = new URLSearchParams(searchParams);
+    if (mode === 'all') {
+      newParams.delete('mode');
+    } else {
+      newParams.set('mode', mode);
+    }
+    setSearchParams(newParams, { replace: true });
+  };
 
   // Real-time live simulator state subscription
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
@@ -562,9 +580,16 @@ export const LiveTracking: React.FC = () => {
     }
   }, [selectedBusId, selectedBus, setSelectedBusId]);
 
-  // Filtered buses list
+  const liveCount = useMemo(() => allFleetBuses.filter(b => !b.isDemo && !b.id.startsWith('demo-') && !(b.routeName || '').includes('[DEMO]')).length, [allFleetBuses]);
+  const simCount = useMemo(() => allFleetBuses.filter(b => b.isDemo || b.id.startsWith('demo-') || (b.routeName || '').includes('[DEMO]')).length, [allFleetBuses]);
+
+  // Filtered buses list based on active tracking mode (Live GPS vs Demo Simulator vs All)
   const filteredBuses = useMemo(() => {
     return allFleetBuses.filter((b) => {
+      const isDemo = Boolean(b.isDemo || b.id.startsWith('demo-') || (b.routeName || '').includes('[DEMO]'));
+      if (trackingMode === 'live' && isDemo) return false;
+      if (trackingMode === 'simulator' && !isDemo) return false;
+
       const matchesRoute =
         filterRoute === 'all' ||
         b.routeId === filterRoute ||
@@ -578,7 +603,7 @@ export const LiveTracking: React.FC = () => {
         (b.nextStopName && b.nextStopName.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesRoute && matchesSearch;
     });
-  }, [allFleetBuses, filterRoute, searchQuery]);
+  }, [allFleetBuses, filterRoute, searchQuery, trackingMode]);
 
   // Resolves complete route stops and details for the selected bus
   const selectedBusRoute = useMemo<RouteType | null>(() => {
@@ -1143,22 +1168,80 @@ export const LiveTracking: React.FC = () => {
       </div>
 
       {/* 2. FLOATING TOP CONTROLS TOOLBAR */}
-      <div className="absolute top-3 left-3 right-3 md:static z-20 bg-white/95 backdrop-blur-md p-2.5 sm:p-3 md:p-3.5 rounded-2xl border border-slate-200/90 shadow-lg md:shadow-2xs flex flex-wrap items-center justify-between gap-2 shrink-0 pointer-events-auto md:order-first">
+      <div className="absolute top-3 left-3 right-3 md:static z-20 bg-white/95 backdrop-blur-md p-2.5 sm:p-3 md:p-3.5 rounded-2xl border border-slate-200/90 shadow-lg md:shadow-2xs flex flex-wrap items-center justify-between gap-3 shrink-0 pointer-events-auto md:order-first">
         <div className="flex items-center gap-2 sm:gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-[#7847CB] text-white flex items-center justify-center shrink-0 shadow-xs shadow-[#7847CB]/30">
             <Navigation className="w-4 h-4" />
           </div>
           <div>
             <h2 className="font-extrabold text-slate-900 text-xs md:text-sm leading-tight">
-              {t('Live Bus Telemetry & Tracking', 'थेट बस ट्रॅकिंग')}
+              {trackingMode === 'simulator'
+                ? t('Passenger Fleet Simulator', 'प्रवासी सिम्युलेटर')
+                : trackingMode === 'live'
+                ? t('Live Municipal GPS Fleet', 'थेट बस ट्रॅकिंग')
+                : t('Live Bus Telemetry & Tracking', 'सर्व बसेस व सिम्युलेटर')}
             </h2>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className={`w-2 h-2 rounded-full ${trackingMode === 'live' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500 animate-ping'}`} />
               <span className="text-[11px] text-slate-500 font-medium">
-                {allFleetBuses.length} {t('buses online', 'बसेस सुरू आहेत')}
+                {filteredBuses.length} {t('buses showing', 'बसेस दिसत आहेत')}
               </span>
             </div>
           </div>
+        </div>
+
+        {/* Dedicated Mode Switcher Tabs */}
+        <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200/90 text-xs font-bold shrink-0">
+          <button
+            type="button"
+            onClick={() => handleSetTrackingMode('all')}
+            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
+              trackingMode === 'all'
+                ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span>All Fleet</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-black">
+              {allFleetBuses.length}
+            </span>
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => handleSetTrackingMode('live')}
+            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
+              trackingMode === 'live'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${trackingMode === 'live' ? 'bg-white' : 'bg-emerald-500'} animate-pulse`} />
+            <span>Live GPS</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+              trackingMode === 'live' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+            }`}>
+              {liveCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSetTrackingMode('simulator')}
+            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
+              trackingMode === 'simulator'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Zap className={`w-3.5 h-3.5 ${trackingMode === 'simulator' ? 'text-slate-950 fill-current' : 'text-amber-500'}`} />
+            <span>Simulator</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+              trackingMode === 'simulator' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-800'
+            }`}>
+              {simCount}
+            </span>
+          </button>
         </div>
 
         {/* Nearest Stop Pill */}
@@ -1239,6 +1322,39 @@ export const LiveTracking: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Mode Status Informational Banners */}
+      {trackingMode === 'live' && liveCount === 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs px-3.5 py-2.5 rounded-2xl shadow-xs flex items-center justify-between gap-3 shrink-0 md:order-first animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <Radio className="w-4 h-4 text-emerald-600 shrink-0 animate-pulse" />
+            <span>
+              <strong>Real-Time Driver GPS Mode:</strong> No municipal bus drivers are transmitting GPS on the road right now. Tap <strong>Simulator</strong> to watch virtual transit buses gliding along their routes.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleSetTrackingMode('simulator')}
+            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs shrink-0 transition-colors shadow-xs"
+          >
+            Switch to Simulator
+          </button>
+        </div>
+      )}
+
+      {trackingMode === 'simulator' && (
+        <div className="bg-amber-50/90 border border-amber-200 text-amber-950 text-xs px-3.5 py-2 rounded-2xl shadow-xs flex items-center justify-between gap-3 shrink-0 md:order-first animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <Zap className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Passenger Simulator Active:</strong> Virtual fleet cruising smoothly at 50 km/h along Ahilyanagar road corridors with live stop distance and ETAs.
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded-lg border border-amber-300 font-bold shrink-0">
+            {simCount} Demo Buses Running
+          </span>
+        </div>
+      )}
 
       {/* Dismissible GPS/Location Alert Notice */}
       {locationErrorNotice && (

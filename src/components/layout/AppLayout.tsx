@@ -11,6 +11,7 @@ import {
   Bell,
   User,
   HelpCircle,
+  Zap,
 } from 'lucide-react';
 import { SharedLayout, type NavItem } from './SharedLayout';
 import { useLanguage } from '../../context/LanguageContext';
@@ -34,10 +35,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     },
     {
       id: 'live',
-      label: t('Live Tracking', 'थेट ट्रॅकिंग'),
+      label: t('Live GPS Tracking', 'थेट ट्रॅकिंग'),
       icon: MapPin,
       onClick: () => navigate('/app/live'),
-      isActive: location.pathname === '/app/live',
+      isActive: location.pathname === '/app/live' && !location.search.includes('mode=simulator'),
+    },
+    {
+      id: 'simulator',
+      label: t('Demo Simulator', 'डेमो सिम्युलेटर'),
+      icon: Zap,
+      onClick: () => navigate('/app/simulator'),
+      isActive: location.pathname === '/app/simulator' || location.search.includes('mode=simulator'),
     },
     {
       id: 'plan',

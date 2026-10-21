@@ -681,9 +681,14 @@ export function getSimSocket(): Socket | null {
       simSocket.on('connect', () => {
         console.log('📡 Connected to NagarST Bus Socket.IO server:', simSocket?.id);
         simSocket?.emit('joinDemoRoom');
+        // Stop local timer since server is the master simulation ticker
+        if (activeInterval) {
+          clearInterval(activeInterval);
+          activeInterval = null;
+        }
       });
 
-      // Synchronize with server-driven demo telemetry
+      // Synchronize with server-driven demo telemetry (single authoritative clock)
       simSocket.on('demoLocationUpdate', (telemetry: any) => {
         if (!telemetry || !telemetry.id) return;
         const target = runtimeStore[telemetry.id] || Object.values(runtimeStore).find(
@@ -694,6 +699,12 @@ export function getSimSocket(): Socket | null {
           if (telemetry.lat && telemetry.lng) {
             target.currentBus.lat = telemetry.lat;
             target.currentBus.lng = telemetry.lng;
+          }
+          if (telemetry.currentIndex !== undefined) {
+            target.currentIndex = telemetry.currentIndex;
+          }
+          if (telemetry.direction !== undefined) {
+            target.direction = telemetry.direction;
           }
           notifyListeners();
         }
@@ -847,13 +858,8 @@ function broadcastBusLocation(bus: Bus) {
     }
   } catch (_) {}
 
-  // Relay via Socket.IO for cross-device & network listeners (ZERO Firebase writes)
-  try {
-    const s = getSimSocket();
-    if (s && s.connected) {
-      s.emit('updateLocation', { ...bus, isDemo: true });
-    }
-  } catch (_) {}
+  // When Socket.IO is connected, server simulation is the sole master ticker.
+  // We do NOT emit client updateLocation for demo buses to avoid racing conflicts.
 }
 
 function broadcastBusOffline(busId: string) {
@@ -930,7 +936,8 @@ export function tickDemoSimulation() {
 }
 
 /**
- * Resets or maintains the unified timer based on running buses
+ * Resets or maintains the unified timer based on running buses.
+ * When connected to the Socket.IO server, the server is the sole master ticker.
  */
 export function ensureTimerRunning() {
   const anyRunning = Object.values(runtimeStore).some(r => r.isRunning);
@@ -942,7 +949,18 @@ export function ensureTimerRunning() {
     return;
   }
 
-  // High-frequency smooth tick rate: 4 updates per second (250ms), scaling with speed
+  // When Socket.IO is connected to backend, backend is the authoritative master ticker.
+  // Running a client-side timer at the same time causes racing position updates and rubber-banding.
+  const s = getSimSocket();
+  if (s && s.connected) {
+    if (activeInterval) {
+      clearInterval(activeInterval);
+      activeInterval = null;
+    }
+    return;
+  }
+
+  // Offline fallback tick rate (only active when server is disconnected): 4 updates per second (250ms)
   const maxSpeed = Math.max(1, ...Object.values(runtimeStore).filter(r => r.isRunning).map(r => r.speedMultiplier));
   const ms = Math.max(80, Math.round(250 / maxSpeed));
 

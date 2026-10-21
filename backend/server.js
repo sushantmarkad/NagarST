@@ -428,7 +428,8 @@ io.on('connection', (socket) => {
     const busId = data.busId || data.id;
     if (!busId) return;
     if (data.isDemo || String(busId).startsWith('demo-') || (data.routeName || '').includes('[DEMO]')) {
-      // Demo location from frontend engine — relay only via Socket.IO, no Firebase
+      // If server simulator is running, server is the sole master ticker. Ignore client simulated locations to prevent rubber-banding
+      if (demoState.isRunning) return;
       const payload = { ...data, id: busId, busId, isDemo: true };
       demoBuses.set(busId, payload);
       io.emit('demoLocationUpdate', payload);
