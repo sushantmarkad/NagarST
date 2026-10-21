@@ -124,7 +124,7 @@ export const SuperAdminBackendControl: React.FC = () => {
             <div>
               <h2 className="text-base font-bold text-slate-900">Backend Server & Firebase Operations</h2>
               <p className="text-xs text-slate-500">
-                Direct control over Node.js Express/Socket.IO backend (Port 3001) and Firebase Firestore (<span className="font-mono text-purple-700">nagarst-2111f</span>)
+                Direct control over Node.js Express/Socket.IO backend (Port 3001) and Firebase Firestore (<span className="font-mono text-purple-700">nagarst-16040</span>)
               </p>
             </div>
           </div>
@@ -267,7 +267,7 @@ export const SuperAdminBackendControl: React.FC = () => {
           </div>
 
           <p className="text-xs text-slate-500 leading-relaxed">
-            Quickly clear collections in your Firebase project (<span className="font-mono text-slate-700">nagarst-2111f</span>) whenever you want a completely fresh database state.
+            Quickly clear collections in your Firebase project (<span className="font-mono text-slate-700">nagarst-16040</span>) whenever you want a completely fresh database state.
           </p>
 
           <div className="grid grid-cols-3 gap-2.5 pt-2">
