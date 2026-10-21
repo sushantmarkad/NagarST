@@ -493,18 +493,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     });
 
-    // 4. Real-time Firebase Firestore Live Locations Subscription
+    // 4. Real-time Firebase Firestore Live Locations Subscription (real on-duty drivers only)
     const unsubscribeFirebase = subscribeFirebaseLiveLocations((locations) => {
       if (!locations || locations.length === 0) return;
       locations.forEach(loc => {
-        handleBusUpdate({
-          id: loc.bus_id,
-          lat: loc.lat,
-          lng: loc.lng,
-          speedKmh: loc.speed_kmh,
-          heading: loc.heading,
-          lastUpdated: loc.updated_at || new Date().toISOString()
-        });
+        if (loc.bus_id && !loc.bus_id.startsWith('demo-') && !loc.bus_id.toLowerCase().includes('demo')) {
+          handleBusUpdate({
+            id: loc.bus_id,
+            lat: loc.lat,
+            lng: loc.lng,
+            speedKmh: loc.speed_kmh,
+            heading: loc.heading,
+            lastUpdated: loc.updated_at || new Date().toISOString()
+          });
+        }
       });
     });
 

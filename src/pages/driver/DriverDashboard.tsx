@@ -311,9 +311,10 @@ export const DriverDashboard: React.FC = () => {
       socketRef.current.emit('updateLocation', payload);
     }
 
-    // 4. Firebase Firestore live_locations collection (debounced to 1.5s)
+    // 4. Firebase Firestore live_locations collection (debounced to 6s for real physical drivers only)
+    const isDemoBus = Boolean(busDetails.id?.startsWith('demo-') || (busDetails as any).isDemo);
     const now = Date.now();
-    if (now - lastDbWriteRef.current >= 1500 || lastDbWriteRef.current === 0) {
+    if (!isDemoBus && (now - lastDbWriteRef.current >= 6000 || lastDbWriteRef.current === 0)) {
       lastDbWriteRef.current = now;
       try {
         updateFirebaseLiveLocation({
@@ -326,7 +327,6 @@ export const DriverDashboard: React.FC = () => {
           updated_at: new Date().toISOString()
         }).catch(() => {});
       } catch (_) {}
-
     }
   }, [busDetails, selectedRouteId, selectedRouteDetails, tripStops, currentStopIndex, user?.name, currentTripId]);
 

@@ -1,6 +1,5 @@
 import type { Bus, Route, RouteStop } from '../types';
 import { getDistance, getBearing, fetchOSRMRoute } from './routing';
-import { updateFirebaseLiveLocation } from './firebaseService';
 
 export const DEMO_BUS_ID = 'demo-bus-1515';
 export const DEMO_BUS_NUMBER = 'MH-16 BT-1515';
@@ -685,23 +684,6 @@ function broadcastBusLocation(bus: Bus) {
     const s = getSimSocket();
     if (s && s.connected) {
       s.emit('updateLocation', bus);
-    }
-  } catch (_) {}
-
-  // Sync to Firebase (throttled to every 1.5s per bus)
-  try {
-    const now = Date.now();
-    if (!fbThrottleTimes[bus.id] || now - fbThrottleTimes[bus.id] >= 1500) {
-      fbThrottleTimes[bus.id] = now;
-      updateFirebaseLiveLocation({
-        bus_id: bus.id,
-        lat: bus.lat,
-        lng: bus.lng,
-        speed_kmh: bus.speedKmh,
-        heading: bus.heading,
-        route_id: bus.routeId,
-        updated_at: new Date().toISOString()
-      }).catch(() => {});
     }
   } catch (_) {}
 }
