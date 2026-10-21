@@ -1540,15 +1540,6 @@ export function setDemoReplaySpeed(multiplier: number) {
   setAllBusSpeed(multiplier);
 }
 
-export function setBusDelay(busId: string, minutes: number) {
-  const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
-    r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
-  );
-  if (!runtime) return;
-  runtime.delayMinutes = Math.max(0, minutes);
-  notifyListeners();
-}
-
 export function setDemoDelay(minutes: number) {
   try {
     const s = getSimSocket();
