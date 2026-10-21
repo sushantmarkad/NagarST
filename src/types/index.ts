@@ -95,6 +95,14 @@ export interface Bus {
   currentLocationName?: string;
   isAc?: boolean;
   temperature?: string;
+  stopsSchedule?: Array<{
+    stopId: string;
+    stopName: string;
+    distanceMeters: number;
+    etaMinutes: number;
+    isPassed: boolean;
+    isNext: boolean;
+  }>;
 }
 
 export interface Ticket {

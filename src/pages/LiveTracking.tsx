@@ -788,6 +788,45 @@ export const LiveTracking: React.FC = () => {
     return nextIdx !== -1 ? nextIdx : 0;
   }, [selectedBus, selectedBusRoute]);
 
+  // Stop schedule map calculating real distance and ETA at 50 km/h transit speed for every stop
+  const stopScheduleMap = useMemo(() => {
+    const map = new Map<string, { distanceMeters: number; etaMinutes: number; isPassed: boolean; isNext: boolean }>();
+    if (!selectedBus) return map;
+
+    if (selectedBus.stopsSchedule && selectedBus.stopsSchedule.length > 0) {
+      selectedBus.stopsSchedule.forEach((item) => {
+        if (item.stopId) map.set(item.stopId, item);
+        if (item.stopName) map.set(item.stopName, item);
+      });
+      return map;
+    }
+
+    if (selectedBusRoute?.stops && selectedBus.lat && selectedBus.lng) {
+      const busPos = { lat: selectedBus.lat, lng: selectedBus.lng };
+      const spd = selectedBus.speedKmh || 50;
+      const nextIdx = currentStopProgressIndex >= 0 ? currentStopProgressIndex : 0;
+
+      selectedBusRoute.stops.forEach((s, i) => {
+        const isPassed = i < nextIdx;
+        const isNext = i === nextIdx;
+        let dMeters = 0;
+        if (isNext && selectedBus.distanceToNextMeters !== undefined) {
+          dMeters = selectedBus.distanceToNextMeters;
+        } else if (!isPassed) {
+          dMeters = Math.round(getDistance(busPos, { lat: s.lat, lng: s.lng }));
+        }
+        const nominalMin = (dMeters / 1000) / (spd / 60);
+        const eta = dMeters < 80 ? 0 : Math.max(1, Math.round(nominalMin)) + (selectedBus.delayMinutes || 0);
+
+        const record = { distanceMeters: dMeters, etaMinutes: eta, isPassed, isNext };
+        if (s.stopId) map.set(s.stopId, record);
+        if (s.stopName) map.set(s.stopName, record);
+      });
+    }
+
+    return map;
+  }, [selectedBus, selectedBusRoute, currentStopProgressIndex]);
+
   return (
     <div className="relative flex-1 w-full h-full overflow-hidden flex flex-col md:p-4 md:gap-3 bg-[#f8f9fc]">
       
@@ -1410,8 +1449,10 @@ export const LiveTracking: React.FC = () => {
                   <span className="font-black text-slate-900 text-sm sm:text-base mt-0.5 block truncate">
                     {selectedBus.nextStopName}
                   </span>
-                  <span className="text-[11px] font-bold text-amber-900 mt-0.5 block">
-                    Distance: {selectedBus.distanceToNextMeters ? (selectedBus.distanceToNextMeters > 1000 ? `${(selectedBus.distanceToNextMeters / 1000).toFixed(1)} km` : `${selectedBus.distanceToNextMeters} meters`) : `${selectedBus.etaToNextMinutes * 350} meters`} away
+                  <span className="text-[11px] font-bold text-amber-900 mt-0.5 block flex items-center gap-1.5 flex-wrap">
+                    <span>Distance remaining: <strong className="font-mono">{selectedBus.distanceToNextMeters !== undefined ? (selectedBus.distanceToNextMeters > 1000 ? `${(selectedBus.distanceToNextMeters / 1000).toFixed(1)} km` : `${selectedBus.distanceToNextMeters} meters`) : 'Calculating...'}</strong></span>
+                    <span>•</span>
+                    <span>Speed: <strong className="font-mono">{selectedBus.speedKmh || 50} km/h</strong></span>
                   </span>
                 </div>
                 <div className="text-right shrink-0">
@@ -1527,9 +1568,16 @@ export const LiveTracking: React.FC = () => {
                 <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 max-h-56 overflow-y-auto space-y-2 text-xs">
                   {selectedBusRoute?.stops && selectedBusRoute.stops.length > 0 ? (
                     selectedBusRoute.stops.map((stop, idx) => {
-                      const isNext = stop.stopName === selectedBus.nextStopName;
-                      const isPassed = idx < currentStopProgressIndex;
+                      const sched = stopScheduleMap.get(stop.stopId) || stopScheduleMap.get(stop.stopName);
+                      const isPassed = sched ? sched.isPassed : idx < currentStopProgressIndex;
+                      const isNext = sched ? sched.isNext : (stop.stopName === selectedBus.nextStopName);
                       const isUserStop = nearestStopInfo?.stop.name === stop.stopName;
+                      const distM = sched?.distanceMeters ?? (isNext ? selectedBus.distanceToNextMeters : 0);
+                      const etaM = sched?.etaMinutes ?? (isNext ? selectedBus.etaToNextMinutes : 0);
+                      const distFormatted = distM !== undefined && distM > 0
+                        ? (distM > 1000 ? `${(distM / 1000).toFixed(1)} km` : `${distM}m`)
+                        : '';
+                      const isArriving = isNext && distM !== undefined && distM < 80;
 
                       return (
                         <div
@@ -1574,15 +1622,21 @@ export const LiveTracking: React.FC = () => {
                               </span>
                             )}
 
-                            {isNext ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950 shadow-2xs flex items-center gap-1">
-                                <Clock className="w-3 h-3" /> NEXT ({selectedBus.distanceToNextMeters ? (selectedBus.distanceToNextMeters > 1000 ? `${(selectedBus.distanceToNextMeters / 1000).toFixed(1)}km` : `${selectedBus.distanceToNextMeters}m`) : `${selectedBus.etaToNextMinutes || 1}m`})
+                            {isArriving ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500 text-white shadow-2xs animate-pulse">
+                                ARRIVING NOW
+                              </span>
+                            ) : isNext ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950 shadow-2xs flex items-center gap-1 font-mono">
+                                <Clock className="w-3 h-3" /> NEXT {distFormatted ? `(${distFormatted} • ~${etaM || 1}m)` : `(~${etaM || 1}m)`}
                               </span>
                             ) : isPassed ? (
-                              <span className="text-[10px] font-semibold text-emerald-600">Passed</span>
+                              <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-500" /> Passed
+                              </span>
                             ) : (
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                +{Math.max(1, (idx - currentStopProgressIndex) * 4)}m
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 font-mono flex items-center gap-1">
+                                {distFormatted ? `${distFormatted} • ~${etaM}m` : `~${etaM}m`}
                               </span>
                             )}
                           </div>

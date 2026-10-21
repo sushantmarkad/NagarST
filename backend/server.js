@@ -136,20 +136,107 @@ let DEMO_FLEET_CONFIG = [];
 let demoInterval = null;
 const demoState = { isRunning: false, speedMultiplier: 1, delayMinutes: 0, activeBusCount: 0 };
 
+function calcPathDistance(wpList, fromIdx, toIdx) {
+  const start = Math.min(fromIdx, toIdx);
+  const end = Math.max(fromIdx, toIdx);
+  let total = 0;
+  for (let i = start; i < end && i < wpList.length - 1; i++) {
+    total += haversineMeters(wpList[i].lat, wpList[i].lng, wpList[i + 1].lat, wpList[i + 1].lng);
+  }
+  return total;
+}
+
+function findClosestWp(pt, wpList) {
+  let minD = Infinity, best = 0;
+  for (let i = 0; i < wpList.length; i++) {
+    const d = haversineMeters(pt.lat, pt.lng, wpList[i].lat, wpList[i].lng);
+    if (d < minD) { minD = d; best = i; }
+  }
+  return best;
+}
+
 function buildDemoTelemetry(busConfig) {
   const wp = busConfig.waypoints;
   if (!wp || wp.length < 2) return null;
-  const curPt = wp[busConfig.currentIndex] || wp[0];
-  const nextPt = wp[Math.min(busConfig.currentIndex + 1, wp.length - 1)] || wp[0];
+  const curIdx = busConfig.currentIndex;
+  const curPt = wp[curIdx] || wp[0];
+  const nextPt = wp[Math.min(curIdx + 1, wp.length - 1)] || wp[0];
   const heading = Math.round(compassBearing(curPt.lat, curPt.lng, nextPt.lat, nextPt.lng));
-  const speedKmh = Math.max(18, 26 + Math.floor(Math.sin(busConfig.currentIndex * 0.3) * 6));
-  const prog = wp.length > 1 ? busConfig.currentIndex / (wp.length - 1) : 0;
+  // Cruising transit speed centered at 50 km/h
+  const speedKmh = Math.max(40, 48 + Math.floor(Math.sin(curIdx * 0.4) * 4));
+
   const stops = busConfig.stops || [];
-  const si = Math.min(stops.length - 2, Math.max(0, Math.floor(prog * (stops.length - 1))));
-  const curStop = stops[si] || { id: 'stop-0', name: 'Terminal', lat: curPt.lat, lng: curPt.lng };
-  const nextStop = stops[si + 1] || stops[stops.length - 1] || curStop;
-  const distToNext = haversineMeters(curPt.lat, curPt.lng, nextStop.lat || curPt.lat, nextStop.lng || curPt.lng);
-  const eta = Math.max(1, Math.round((distToNext / 1000) / (speedKmh / 60))) + (demoState.delayMinutes || 0);
+  let curStop = { id: 'origin-stop', name: busConfig.origin || 'Terminal' };
+  let nextStop = { id: 'dest-stop', name: busConfig.destination || 'Destination' };
+  let distToNext = 500;
+  let stopsSchedule = [];
+
+  if (stops.length >= 2) {
+    const mappedStops = stops.map((s, idx) => ({
+      stop: s,
+      idx,
+      wpIdx: findClosestWp(s, wp)
+    }));
+
+    if (busConfig.direction === 1) {
+      let upcoming = mappedStops.find(m => m.wpIdx > curIdx || (m.wpIdx === curIdx && haversineMeters(curPt.lat, curPt.lng, m.stop.lat, m.stop.lng) > 35));
+      if (!upcoming) upcoming = mappedStops[mappedStops.length - 1];
+
+      const upcomingIdx = upcoming.idx;
+      const prevIdx = Math.max(0, upcomingIdx - 1);
+      curStop = stops[prevIdx] || stops[0];
+      nextStop = upcoming.stop;
+
+      distToNext = calcPathDistance(wp, curIdx, upcoming.wpIdx);
+
+      stopsSchedule = mappedStops.map(m => {
+        const isPassed = m.wpIdx < curIdx && haversineMeters(curPt.lat, curPt.lng, m.stop.lat, m.stop.lng) > 60;
+        const isNext = m.idx === upcomingIdx;
+        const dMeters = isPassed ? 0 : calcPathDistance(wp, curIdx, m.wpIdx);
+        // Time at 50 km/h: time in minutes = (dMeters / 1000) / (speedKmh / 60)
+        const nominalMin = (dMeters / 1000) / (speedKmh / 60);
+        const etaMin = dMeters < 80 ? 0 : Math.max(1, Math.round(nominalMin)) + (demoState.delayMinutes || 0);
+        return {
+          stopId: m.stop.id || `stop-${m.idx}`,
+          stopName: m.stop.name || m.stop.stopName,
+          distanceMeters: Math.round(dMeters),
+          etaMinutes: etaMin,
+          isPassed,
+          isNext
+        };
+      });
+    } else {
+      let upcoming = [...mappedStops].reverse().find(m => m.wpIdx < curIdx || (m.wpIdx === curIdx && haversineMeters(curPt.lat, curPt.lng, m.stop.lat, m.stop.lng) > 35));
+      if (!upcoming) upcoming = mappedStops[0];
+
+      const upcomingIdx = upcoming.idx;
+      const prevIdx = Math.min(mappedStops.length - 1, upcomingIdx + 1);
+      curStop = stops[prevIdx] || stops[stops.length - 1];
+      nextStop = upcoming.stop;
+
+      distToNext = calcPathDistance(wp, upcoming.wpIdx, curIdx);
+
+      stopsSchedule = mappedStops.map(m => {
+        const isPassed = m.wpIdx > curIdx && haversineMeters(curPt.lat, curPt.lng, m.stop.lat, m.stop.lng) > 60;
+        const isNext = m.idx === upcomingIdx;
+        const dMeters = isPassed ? 0 : calcPathDistance(wp, m.wpIdx, curIdx);
+        const nominalMin = (dMeters / 1000) / (speedKmh / 60);
+        const etaMin = dMeters < 80 ? 0 : Math.max(1, Math.round(nominalMin)) + (demoState.delayMinutes || 0);
+        return {
+          stopId: m.stop.id || `stop-${m.idx}`,
+          stopName: m.stop.name || m.stop.stopName,
+          distanceMeters: Math.round(dMeters),
+          etaMinutes: etaMin,
+          isPassed,
+          isNext
+        };
+      });
+    }
+  }
+
+  const nominalMinutes = (distToNext / 1000) / (speedKmh / 60);
+  const eta = distToNext < 80 ? 0 : Math.max(1, Math.round(nominalMinutes)) + (demoState.delayMinutes || 0);
+
   return {
     id: busConfig.id, busId: busConfig.id,
     busNumber: busConfig.busNumber,
@@ -159,20 +246,28 @@ function buildDemoTelemetry(busConfig) {
     routeName: `${busConfig.routeName || 'Demo Route'} [DEMO]`,
     origin: busConfig.origin || 'Origin',
     destination: busConfig.destination || 'Destination',
-    currentStopId: curStop.id, currentStopName: curStop.name,
-    nextStopId: nextStop.id, nextStopName: nextStop.name,
-    etaToNextMinutes: eta, delayMinutes: demoState.delayMinutes || 0,
-    speedKmh, occupancy: 'moderate',
-    passengerCount: Math.min(42, Math.max(8, Math.floor(20 + Math.sin(busConfig.currentIndex * 0.2) * 10))),
-    maxCapacity: 42, availableSeats: 20,
+    currentStopId: curStop.id || 'stop-0',
+    currentStopName: curStop.name || curStop.stopName || 'Terminal',
+    nextStopId: nextStop.id || 'stop-1',
+    nextStopName: nextStop.name || nextStop.stopName || 'Next Stop',
+    etaToNextMinutes: eta,
+    delayMinutes: demoState.delayMinutes || 0,
+    speedKmh,
+    occupancy: 'moderate',
+    passengerCount: Math.min(42, Math.max(8, Math.floor(20 + Math.sin(curIdx * 0.2) * 10))),
+    maxCapacity: 42,
+    availableSeats: 20,
     distanceToNextMeters: Math.round(distToNext),
     status: (demoState.delayMinutes || 0) > 3 ? 'delayed' : 'on_time',
     lat: curPt.lat, lng: curPt.lng, heading,
     driverName: `Demo Pilot (${busConfig.busNumber})`,
-    conductorName: 'Simulated Crew', busType: 'EV Metro Shuttle',
+    conductorName: 'Simulated Crew',
+    busType: 'EV Metro Shuttle',
     isDemo: true,
-    batteryLevel: Math.max(42, Math.min(99, 94 - (busConfig.currentIndex % 50))),
-    isAc: true, temperature: '23°C',
+    batteryLevel: Math.max(42, Math.min(99, 94 - (curIdx % 50))),
+    isAc: true,
+    temperature: '23°C',
+    stopsSchedule,
     lastUpdated: new Date().toISOString()
   };
 }

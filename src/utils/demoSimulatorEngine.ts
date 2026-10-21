@@ -484,34 +484,129 @@ export function buildBusTelemetry(runtime: BusSimRuntime): Bus {
   const nextPt = waypoints[nextIdx];
   
   const heading = Math.round(getBearing(currentPt, nextPt));
-  const baseSpeed = 28 + Math.floor(Math.sin(safeIdx) * 8);
-  const speedKmh = Math.max(16, baseSpeed);
+  // Cruising transit speed centered at 50 km/h
+  const baseSpeed = 48 + Math.floor(Math.sin(safeIdx * 0.4) * 4);
+  const speedKmh = Math.max(40, baseSpeed);
 
-  // Dynamic next-stop and ETA calculation
-  const progressRatio = waypoints.length > 1 ? safeIdx / (waypoints.length - 1) : 0;
-  
+  // Helper: Find closest waypoint index along the route for a given stop
+  const findClosestWp = (stopPt: { lat: number; lng: number }): number => {
+    let minD = Infinity;
+    let best = 0;
+    for (let i = 0; i < waypoints.length; i++) {
+      const d = getDistance(stopPt, waypoints[i]);
+      if (d < minD) {
+        minD = d;
+        best = i;
+      }
+    }
+    return best;
+  };
+
+  // Helper: Sum real road path distance along waypoints between two indices
+  const calcRouteDistance = (fromIdx: number, toIdx: number): number => {
+    const s = Math.min(fromIdx, toIdx);
+    const e = Math.max(fromIdx, toIdx);
+    let total = 0;
+    for (let i = s; i < e && i < waypoints.length - 1; i++) {
+      total += getDistance(waypoints[i], waypoints[i + 1]);
+    }
+    return total;
+  };
+
+  const stops = def.stops || [];
   let curStopName = def.origin || 'Origin Terminal';
   let nextStopName = def.destination || 'Destination Terminal';
   let curStopId = 'origin-stop';
   let nextStopId = 'dest-stop';
-  let distToNext = 1000;
+  let distToNext = 500;
 
-  if (def.stops && def.stops.length >= 2) {
-    const stopIndex = Math.min(
-      def.stops.length - 2,
-      Math.max(0, Math.floor(progressRatio * (def.stops.length - 1)))
-    );
-    const curStop = def.stops[stopIndex];
-    const nextStop = def.stops[stopIndex + 1] || def.stops[def.stops.length - 1];
-    curStopId = curStop.id;
-    curStopName = curStop.name;
-    nextStopId = nextStop.id;
-    nextStopName = nextStop.name;
-    distToNext = getDistance(currentPt, nextStop);
+  let stopsSchedule: Array<{
+    stopId: string;
+    stopName: string;
+    distanceMeters: number;
+    etaMinutes: number;
+    isPassed: boolean;
+    isNext: boolean;
+  }> = [];
+
+  if (stops.length >= 2) {
+    const mappedStops = stops.map((s, idx) => ({
+      stop: s,
+      idx,
+      wpIdx: findClosestWp(s)
+    }));
+
+    if (runtime.direction === 1) {
+      let upcoming = mappedStops.find(m => m.wpIdx > safeIdx || (m.wpIdx === safeIdx && getDistance(currentPt, m.stop) > 35));
+      if (!upcoming) upcoming = mappedStops[mappedStops.length - 1];
+
+      const upcomingIdx = upcoming.idx;
+      const prevIdx = Math.max(0, upcomingIdx - 1);
+      const curStop = stops[prevIdx] || stops[0];
+      const nextStop = upcoming.stop;
+
+      curStopId = curStop.id;
+      curStopName = curStop.name;
+      nextStopId = nextStop.id;
+      nextStopName = nextStop.name;
+
+      // Real road distance from current bus waypoint to the upcoming stop
+      distToNext = calcRouteDistance(safeIdx, upcoming.wpIdx);
+
+      // Compute exact real road distance and 50 km/h ETA for EVERY stop along the route
+      stopsSchedule = mappedStops.map(m => {
+        const isPassed = m.wpIdx < safeIdx && getDistance(currentPt, m.stop) > 60;
+        const isNext = m.idx === upcomingIdx;
+        const dMeters = isPassed ? 0 : calcRouteDistance(safeIdx, m.wpIdx);
+        // Time at 50 km/h: time in minutes = (dMeters / 1000) / (speedKmh / 60)
+        const nominalMin = (dMeters / 1000) / (speedKmh / 60);
+        const etaMin = dMeters < 80 ? 0 : Math.max(1, Math.round(nominalMin)) + delayMinutes;
+        return {
+          stopId: m.stop.id,
+          stopName: m.stop.name,
+          distanceMeters: Math.round(dMeters),
+          etaMinutes: etaMin,
+          isPassed,
+          isNext
+        };
+      });
+    } else {
+      let upcoming = [...mappedStops].reverse().find(m => m.wpIdx < safeIdx || (m.wpIdx === safeIdx && getDistance(currentPt, m.stop) > 35));
+      if (!upcoming) upcoming = mappedStops[0];
+
+      const upcomingIdx = upcoming.idx;
+      const prevIdx = Math.min(mappedStops.length - 1, upcomingIdx + 1);
+      const curStop = stops[prevIdx] || stops[stops.length - 1];
+      const nextStop = upcoming.stop;
+
+      curStopId = curStop.id;
+      curStopName = curStop.name;
+      nextStopId = nextStop.id;
+      nextStopName = nextStop.name;
+
+      distToNext = calcRouteDistance(upcoming.wpIdx, safeIdx);
+
+      stopsSchedule = mappedStops.map(m => {
+        const isPassed = m.wpIdx > safeIdx && getDistance(currentPt, m.stop) > 60;
+        const isNext = m.idx === upcomingIdx;
+        const dMeters = isPassed ? 0 : calcRouteDistance(m.wpIdx, safeIdx);
+        const nominalMin = (dMeters / 1000) / (speedKmh / 60);
+        const etaMin = dMeters < 80 ? 0 : Math.max(1, Math.round(nominalMin)) + delayMinutes;
+        return {
+          stopId: m.stop.id,
+          stopName: m.stop.name,
+          distanceMeters: Math.round(dMeters),
+          etaMinutes: etaMin,
+          isPassed,
+          isNext
+        };
+      });
+    }
   }
 
-  const nominalMinutes = Math.max(1, Math.round((distToNext / 1000) / (speedKmh / 60)));
-  const etaMinutes = nominalMinutes + delayMinutes;
+  // Exact real ETA in minutes at current transit speed (50 km/h)
+  const nominalMinutes = (distToNext / 1000) / (speedKmh / 60);
+  const etaMinutes = distToNext < 80 ? 0 : Math.max(1, Math.round(nominalMinutes)) + delayMinutes;
   const status = delayMinutes > 3 ? ('delayed' as const) : ('on_time' as const);
 
   const maxCapacity = 42;
@@ -563,6 +658,7 @@ export function buildBusTelemetry(runtime: BusSimRuntime): Bus {
     currentLocationName: currentLocationName,
     isAc: true,
     temperature: '23°C',
+    stopsSchedule,
     lastUpdated: new Date().toISOString()
   };
 }
