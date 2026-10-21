@@ -183,7 +183,9 @@
   background: transparent !important;
   border: none !important;
   overflow: visible !important;
-  transition: transform 0.28s linear !important;
+  /* Smooth gliding: transition duration slightly exceeds 250ms server tick
+     so each position update seamlessly bridges to the next with zero jitter */
+  transition: transform 280ms linear !important;
   will-change: transform;
 }
 

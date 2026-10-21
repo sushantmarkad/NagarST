@@ -128,13 +128,70 @@ function densifyPath(path, targetPoints = 150) {
   return result;
 }
 
+const DEFAULT_DEMO_FLEET = [
+  {
+    id: 'demo-bus-1515',
+    busNumber: 'MH-16 BT-1515',
+    plateNumber: 'MH-16 BT-1515',
+    routeId: 'R-01',
+    routeNumber: 'R-01',
+    routeName: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
+    origin: 'माळीवाडा गल्ली',
+    destination: 'Dairy Chowk',
+    stops: [
+      { id: 'stop-mw', name: 'माळीवाडा गल्ली', lat: 19.0910, lng: 74.7290 },
+      { id: 'stop-swk', name: 'Swastik Chowk', lat: 19.0940, lng: 74.7350 },
+      { id: 'stop-cbs', name: 'Ahilyanagar CBS', lat: 19.0975, lng: 74.7420 },
+      { id: 'stop-dairy', name: 'Dairy Chowk', lat: 19.0830, lng: 74.7460 },
+    ],
+    waypoints: densifyPath([
+      { lat: 19.0910, lng: 74.7290 },
+      { lat: 19.0925, lng: 74.7315 },
+      { lat: 19.0940, lng: 74.7350 },
+      { lat: 19.0975, lng: 74.7420 },
+      { lat: 19.0900, lng: 74.7440 },
+      { lat: 19.0830, lng: 74.7460 },
+    ], 150),
+    currentIndex: 0,
+    direction: 1,
+    speedMultiplier: 1
+  },
+  {
+    id: 'demo-bus-1519',
+    busNumber: 'MH-16 BT-1519',
+    plateNumber: 'MH-16 BT-1519',
+    routeId: 'R-02',
+    routeNumber: 'R-02',
+    routeName: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
+    origin: 'Mahatma Gandhi Road',
+    destination: 'Chhatrapati Sambhaji Nagar',
+    stops: [
+      { id: 'stop-mg', name: 'Mahatma Gandhi Road', lat: 19.1025, lng: 74.7380 },
+      { id: 'stop-gandhi-chk', name: 'Gandhi Chowk', lat: 19.1090, lng: 74.7395 },
+      { id: 'stop-delhi-gate', name: 'Delhi Gate Transit', lat: 19.1150, lng: 74.7430 },
+      { id: 'stop-sambhaji', name: 'Chhatrapati Sambhaji Nagar', lat: 19.1320, lng: 74.7550 },
+    ],
+    waypoints: densifyPath([
+      { lat: 19.1025, lng: 74.7380 },
+      { lat: 19.1060, lng: 74.7385 },
+      { lat: 19.1090, lng: 74.7395 },
+      { lat: 19.1150, lng: 74.7430 },
+      { lat: 19.1235, lng: 74.7490 },
+      { lat: 19.1320, lng: 74.7550 },
+    ], 150),
+    currentIndex: 0,
+    direction: 1,
+    speedMultiplier: 1
+  }
+];
+
 // =========================================================================
 // DEMO SIMULATOR ENGINE — Server-Side, Zero Firebase
 // Fleet config provided by Admin via Socket.IO 'configureDemo' event
 // =========================================================================
-let DEMO_FLEET_CONFIG = [];
+let DEMO_FLEET_CONFIG = [...DEFAULT_DEMO_FLEET];
 let demoInterval = null;
-const demoState = { isRunning: false, speedMultiplier: 1, delayMinutes: 0, activeBusCount: 0 };
+const demoState = { isRunning: false, speedMultiplier: 1, delayMinutes: 0, activeBusCount: 2 };
 
 function calcPathDistance(wpList, fromIdx, toIdx) {
   const start = Math.min(fromIdx, toIdx);

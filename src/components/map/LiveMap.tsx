@@ -54,6 +54,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const polylinesRef = useRef<L.Polyline[]>([]);
+  // Cache icon state per bus to avoid recreating DOM elements on every tick
+  const busIconStateRef = useRef<{ [key: string]: string }>({});
+  // Throttle panTo calls for following selected bus
+  const lastPanTimeRef = useRef<number>(0);
   const userCircleRef = useRef<L.Circle | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const onMapClickRef = useRef(onMapClick);
@@ -676,7 +680,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     });
   }, [routes, customStartPin, customEndPin]);
 
-  // Update Live Bus Markers
+  // Update Live Bus Markers — optimized to avoid DOM destruction on every tick
+  // Only recreate icon when visual state changes; use CSS transitions for smooth gliding
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -684,16 +689,18 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     buses.forEach((bus) => {
       const isSelected = selectedBusId === bus.id;
       const isDemo = Boolean(bus.isDemo || bus.id?.startsWith('demo-'));
-
-      const busIcon = createModernBusIcon(bus.busNumber, {
-        isSelected,
-        speedKmh: bus.speedKmh,
-        status: bus.status,
-        heading: bus.heading,
-        isDemo
-      });
-
       const key = `bus-${bus.id}`;
+
+      // Build a cache key from properties that actually change the icon appearance
+      // This avoids destroying/recreating the DOM element on every position tick
+      const iconStateKey = `${bus.busNumber}|${isSelected}|${bus.status}|${isDemo}|${bus.speedKmh > 2 ? 1 : 0}`;
+      const prevIconState = busIconStateRef.current[key];
+      const needsIconUpdate = prevIconState !== iconStateKey;
+
+      const lat = Number(bus.lat);
+      const lng = Number(bus.lng);
+      if (isNaN(lat) || isNaN(lng)) return;
+
       const destinationText = (bus.origin && bus.destination)
         ? `${bus.origin} ➔ ${bus.destination}`
         : (bus.routeName || 'In Transit');
@@ -725,41 +732,69 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       const handleMarkerClick = () => {
         setIsFollowing(true);
         isFollowingRef.current = true;
-        map.panTo([bus.lat, bus.lng], { animate: true, duration: 0.5 });
+        map.panTo([bus.lat, bus.lng], { animate: true, duration: 0.4 });
         onSelectBus?.(bus);
       };
 
-      const lat = Number(bus.lat);
-      const lng = Number(bus.lng);
-      if (isNaN(lat) || isNaN(lng)) return;
-
       if (!markersRef.current[key]) {
+        // First time — create marker with icon
+        const busIcon = createModernBusIcon(bus.busNumber, {
+          isSelected,
+          speedKmh: bus.speedKmh,
+          status: bus.status,
+          heading: bus.heading,
+          isDemo
+        });
         const marker = L.marker([lat, lng], { icon: busIcon, zIndexOffset: 850 }).addTo(map);
         marker.on('click', handleMarkerClick);
         marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -10], className: 'custom-tooltip' });
         markersRef.current[key] = marker;
+        busIconStateRef.current[key] = iconStateKey;
       } else {
         const marker = markersRef.current[key];
         if (!map.hasLayer(marker)) marker.addTo(map);
-        marker.setIcon(busIcon);
+
+        // ONLY update icon when visual state actually changed (not just position)
+        // This prevents DOM element destruction which kills CSS transitions
+        if (needsIconUpdate) {
+          const busIcon = createModernBusIcon(bus.busNumber, {
+            isSelected,
+            speedKmh: bus.speedKmh,
+            status: bus.status,
+            heading: bus.heading,
+            isDemo
+          });
+          marker.setIcon(busIcon);
+          busIconStateRef.current[key] = iconStateKey;
+        }
+
+        // Position update — CSS transition handles smooth interpolation
         marker.setLatLng([lat, lng]);
-        marker.setZIndexOffset(850);
         marker.setTooltipContent(tooltipHtml);
-        marker.off('click');
-        marker.on('click', handleMarkerClick);
+        // Rebind click only when needed (selection change)
+        if (needsIconUpdate) {
+          marker.off('click');
+          marker.on('click', handleMarkerClick);
+        }
       }
 
+      // Throttled panTo for selected bus — only pan once per ~800ms to prevent rubber-banding
       if (isSelected && isFollowingRef.current) {
-        map.panTo([lat, lng], { animate: true, duration: 0.5 });
+        const now = Date.now();
+        if (now - lastPanTimeRef.current > 800) {
+          lastPanTimeRef.current = now;
+          map.panTo([lat, lng], { animate: true, duration: 0.6 });
+        }
       }
     });
 
-    // Cleanup stale bus markers
+    // Cleanup stale bus markers and their cached icon state
     const activeBusKeys = new Set(buses.map(b => `bus-${b.id}`));
     Object.keys(markersRef.current).forEach(key => {
       if (key.startsWith('bus-') && !activeBusKeys.has(key)) {
         markersRef.current[key].remove();
         delete markersRef.current[key];
+        delete busIconStateRef.current[key];
       }
     });
   }, [buses, selectedBusId, onSelectBus]);

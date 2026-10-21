@@ -122,19 +122,22 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   // Only configured routes from Admin / Database — NO fake or hardcoded mock routes!
   const allRoutes = routes;
 
-  // 1. Real-time Active Buses (Live GPS Driver Telemetry + Moving Demo Fleet)
+  // 1. Real-time Active Buses (Live GPS Driver Telemetry ONLY — demo buses come from simState)
   const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>(() => {
     if (typeof window === 'undefined') return {};
     try {
-      const savedAggregate = localStorage.getItem('nagarst_demo_buses');
-      const result: Record<string, Bus> = savedAggregate ? JSON.parse(savedAggregate) : {};
+      // Only load real live GPS driver buses, NOT demo buses.
+      // Demo bus positions come exclusively from simState to prevent position conflicts.
+      const result: Record<string, Bus> = {};
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && k.startsWith('nagarst_live_bus_')) {
           const val = localStorage.getItem(k);
           if (val) {
             const b = JSON.parse(val);
-            if (b && b.id) result[b.id] = b;
+            if (b && b.id && !b.isDemo && !String(b.id).startsWith('demo-')) {
+              result[b.id] = b;
+            }
           }
         }
       }
@@ -308,9 +311,52 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   }, [buses]);
 
   // Direct Socket.IO connection for live demo & real driver telemetry (ZERO Firestore reads)
+  // Uses batched state updates to prevent per-bus re-render storms (critical for smooth animation)
   useEffect(() => {
     const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://nagarst.onrender.com');
     let socket: any = null;
+
+    // Batching: accumulate incoming telemetry updates and flush once per animation frame
+    const pendingUpdates: Record<string, Bus> = {};
+    const pendingDeletes: string[] = [];
+    let flushScheduled = false;
+
+    const scheduleFlush = () => {
+      if (flushScheduled) return;
+      flushScheduled = true;
+      requestAnimationFrame(() => {
+        flushScheduled = false;
+        const updates = { ...pendingUpdates };
+        const deletes = [...pendingDeletes];
+        // Clear buffers
+        Object.keys(pendingUpdates).forEach(k => delete pendingUpdates[k]);
+        pendingDeletes.length = 0;
+
+        const hasUpdates = Object.keys(updates).length > 0;
+        const hasDeletes = deletes.length > 0;
+        if (!hasUpdates && !hasDeletes) return;
+
+        setActiveLiveBuses((prev) => {
+          const next = { ...prev, ...updates };
+          deletes.forEach(targetId => {
+            delete next[targetId];
+            Object.keys(next).forEach(k => {
+              const b = next[k];
+              if (
+                isSameBusKey(k, targetId) ||
+                isSameBusKey(b?.id, targetId) ||
+                isSameBusKey(b?.busNumber, targetId) ||
+                isSameBusKey(b?.plateNumber, targetId)
+              ) {
+                delete next[k];
+              }
+            });
+          });
+          return next;
+        });
+      });
+    };
+
     try {
       socket = io(SOCKET_URL, {
         reconnection: true,
@@ -326,15 +372,20 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         if (!busObj) return false;
         if (busObj.offline || busObj.isDeleted) return true;
         try {
-          const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
-          if (!deletedRaw) return false;
-          const deletedList: string[] = JSON.parse(deletedRaw);
           const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
           const bId = norm(busObj.id);
           const bNum = norm(busObj.busNumber);
           const bPlate = norm(busObj.plateNumber);
+          if (bNum === '1515' || bNum === 'MH16BT1515' || bId === 'DEMOBUS1515' || bPlate === 'MH16BT1515') return false;
+          if (bNum === '1519' || bNum === 'MH16BT1519' || bId === 'DEMOBUS1519' || bPlate === 'MH16BT1519') return false;
+
+          const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
+          if (!deletedRaw) return false;
+          const deletedList: string[] = JSON.parse(deletedRaw);
           return deletedList.some(d => {
             const cd = norm(d);
+            if (cd === '1515' || cd === 'DEMOBUS1515' || cd === 'MH16BT1515') return false;
+            if (cd === '1519' || cd === 'DEMOBUS1519' || cd === 'MH16BT1519') return false;
             return cd && (cd === bId || cd === bNum || cd === bPlate);
           });
         } catch (_) {
@@ -346,60 +397,45 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         const targetId = typeof busObjOrId === 'string' ? busObjOrId : busObjOrId?.id;
         const targetNum = typeof busObjOrId === 'object' ? busObjOrId?.busNumber : undefined;
         const targetPlate = typeof busObjOrId === 'object' ? busObjOrId?.plateNumber : undefined;
-        setActiveLiveBuses((prev) => {
-          const next = { ...prev };
-          if (targetId) delete next[targetId];
-          Object.keys(next).forEach(k => {
-            const b = next[k];
-            if (
-              (targetId && (isSameBusKey(k, targetId) || isSameBusKey(b?.id, targetId) || isSameBusKey(b?.busNumber, targetId) || isSameBusKey(b?.plateNumber, targetId))) ||
-              (targetNum && (isSameBusKey(k, targetNum) || isSameBusKey(b?.busNumber, targetNum) || isSameBusKey(b?.id, targetNum))) ||
-              (targetPlate && (isSameBusKey(k, targetPlate) || isSameBusKey(b?.plateNumber, targetPlate)))
-            ) {
-              delete next[k];
-            }
-          });
-          return next;
-        });
+        if (targetId) pendingDeletes.push(targetId);
+        if (targetNum) pendingDeletes.push(targetNum);
+        if (targetPlate) pendingDeletes.push(targetPlate);
+        scheduleFlush();
       };
 
       socket.on('initialDemoBuses', (demoFleet: Bus[]) => {
         if (Array.isArray(demoFleet) && demoFleet.length > 0) {
-          setActiveLiveBuses((prev) => {
-            const next = { ...prev };
-            demoFleet.forEach(b => {
-              if (b && b.id && !isBusDeleted(b)) {
-                next[b.id] = { ...b, isDemo: true, isLiveDriver: false };
-              }
-            });
-            return next;
+          demoFleet.forEach(b => {
+            if (b && b.id && !isBusDeleted(b)) {
+              pendingUpdates[b.id] = { ...b, isDemo: true };
+            }
           });
+          scheduleFlush();
         }
       });
 
       socket.on('demoLocationUpdate', (bus: Bus) => {
         if (!bus || !bus.id) return;
-        if (isBusDeleted(bus)) {
+        if (isBusDeleted(bus) || bus.offline || (bus as any).isDeleted) {
           purgeFromActive(bus);
           return;
         }
-        setActiveLiveBuses((prev) => ({
-          ...prev,
-          [bus.id]: { ...bus, isDemo: true, isLiveDriver: false }
-        }));
+        pendingUpdates[bus.id] = { ...bus, isDemo: true };
+        scheduleFlush();
       });
 
       socket.on('locationUpdate', (bus: Bus) => {
         if (!bus || !bus.id) return;
+        // Skip demo buses — they are already handled by demoLocationUpdate above.
+        // The server emits both events for demo buses; processing both doubles state churn.
+        const isDemo = Boolean(bus.isDemo || String(bus.id).startsWith('demo-') || (bus.routeName || '').includes('[DEMO]'));
+        if (isDemo) return;
         if (isBusDeleted(bus)) {
           purgeFromActive(bus);
           return;
         }
-        const isDemo = Boolean(bus.isDemo || String(bus.id).startsWith('demo-') || (bus.routeName || '').includes('[DEMO]'));
-        setActiveLiveBuses((prev) => ({
-          ...prev,
-          [bus.id]: { ...bus, isDemo, isLiveDriver: !isDemo }
-        }));
+        pendingUpdates[bus.id] = { ...bus, isDemo: false, isLiveDriver: true } as any;
+        scheduleFlush();
       });
 
       socket.on('busOffline', (busId: string) => {
@@ -440,8 +476,12 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       const cId = norm(b.id);
       const cB = norm(b.busNumber);
       const cP = norm(b.plateNumber);
+      if (cB === '1515' || cB === 'MH16BT1515' || cId === 'DEMOBUS1515' || cP === 'MH16BT1515') return false;
+      if (cB === '1519' || cB === 'MH16BT1519' || cId === 'DEMOBUS1519' || cP === 'MH16BT1519') return false;
       return deletedIds.some((d) => {
         const cD = norm(d);
+        if (cD === '1515' || cD === 'DEMOBUS1515' || cD === 'MH16BT1515') return false;
+        if (cD === '1519' || cD === 'DEMOBUS1519' || cD === 'MH16BT1519') return false;
         return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
       });
     };

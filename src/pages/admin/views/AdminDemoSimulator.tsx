@@ -85,17 +85,15 @@ export const AdminDemoSimulator: React.FC = () => {
 
   // Display ONLY active demo simulator buses, deduplicated by busNumber (prevents duplicate or ghost DB markers)
   const displayBuses = React.useMemo(() => {
-    if (!routes || routes.length === 0) return [];
-
     const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
     const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
     const map = new Map<string, any>();
 
     Object.values(simState.buses).forEach(runtime => {
       if (runtime && runtime.def) {
-        if (deletedIds.includes(runtime.id) || deletedIds.includes(runtime.def.busNumber)) return;
-        const hasRoute = routes.some(r => r.id === runtime.def.routeId || r.routeNumber === runtime.def.routeNumber);
-        if (!hasRoute) return;
+        const bNumNorm = (runtime.def.busNumber || '').trim().toUpperCase().replace(/[\s-_]/g, '');
+        const isDefault = bNumNorm === '1515' || bNumNorm === 'MH16BT1515' || bNumNorm === '1519' || bNumNorm === 'MH16BT1519';
+        if (!isDefault && (deletedIds.includes(runtime.id) || deletedIds.includes(runtime.def.busNumber))) return;
         const activeBus = runtime.currentBus || buildBusTelemetry(runtime);
         if (activeBus) {
           // Key by busNumber to strictly guarantee NO duplicate markers appear on the map!
@@ -104,7 +102,7 @@ export const AdminDemoSimulator: React.FC = () => {
       }
     });
     return Array.from(map.values());
-  }, [simState.buses, routes]);
+  }, [simState.buses]);
 
   const selectedBus = displayBuses.find(b => b.id === selectedBusId || b.busNumber === selectedBusId) || displayBuses[0] || null;
   const activeDemoBuses = displayBuses;

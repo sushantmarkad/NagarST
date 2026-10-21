@@ -390,6 +390,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Central updater for incoming telemetry across any channel
     const handleBusUpdate = (updatedBus: Partial<Bus>) => {
       if (!updatedBus) return;
+      // Demo buses are handled by demoSimulatorEngine / simState / activeLiveBuses directly.
+      // Do not mutate AppContext buses to prevent constant re-rendering of the entire app on every tick.
+      if (updatedBus.isDemo || String(updatedBus.id).startsWith('demo-') || (updatedBus as any).routeName?.includes('[DEMO]')) {
+        return;
+      }
       const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
       const uId = norm(updatedBus.id);
       const uNum = norm(updatedBus.busNumber);
