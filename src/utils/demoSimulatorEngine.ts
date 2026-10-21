@@ -1,5 +1,6 @@
 import type { Bus, Route, RouteStop } from '../types';
 import { getDistance, getBearing, fetchOSRMRoute } from './routing';
+import { io, Socket } from 'socket.io-client';
 
 export const DEMO_BUS_ID = 'demo-bus-1515';
 export const DEMO_BUS_NUMBER = 'MH-16 BT-1515';
@@ -568,18 +569,68 @@ export function buildBusTelemetry(runtime: BusSimRuntime): Bus {
 
 const fbThrottleTimes: Record<string, number> = {};
 
-let simSocket: any = null;
-function getSimSocket() {
+let simSocket: Socket | null = null;
+export function getSimSocket(): Socket | null {
   if (typeof window === 'undefined') return null;
   if (!simSocket) {
     try {
       const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://nagarst.onrender.com');
-      import('socket.io-client').then(({ io }) => {
-        simSocket = io(SOCKET_URL);
-      }).catch(() => {});
-    } catch (_) {}
+      simSocket = io(SOCKET_URL, {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 10,
+        transports: ['websocket', 'polling']
+      });
+
+      simSocket.on('connect', () => {
+        console.log('📡 Connected to NagarST Bus Socket.IO server:', simSocket?.id);
+        simSocket?.emit('joinDemoRoom');
+      });
+
+      // Synchronize with server-driven demo telemetry
+      simSocket.on('demoLocationUpdate', (telemetry: any) => {
+        if (!telemetry || !telemetry.id) return;
+        const target = runtimeStore[telemetry.id] || Object.values(runtimeStore).find(
+          r => isSameBusKey(r.id, telemetry.id) || isSameBusKey(r.def.busNumber, telemetry.busNumber) || isSameBusKey(r.def.plateNumber, telemetry.plateNumber)
+        );
+        if (target) {
+          target.currentBus = { ...target.currentBus, ...telemetry };
+          if (telemetry.lat && telemetry.lng) {
+            target.currentBus.lat = telemetry.lat;
+            target.currentBus.lng = telemetry.lng;
+          }
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      console.warn('Socket.IO init warning:', e);
+    }
   }
   return simSocket;
+}
+
+export function syncDemoFleetToBackend() {
+  const s = getSimSocket();
+  if (!s) return;
+  const payloadBuses = Object.values(runtimeStore)
+    .filter(r => r.def && r.def.waypoints && r.def.waypoints.length >= 2)
+    .map(r => ({
+      id: r.id,
+      busNumber: r.def.busNumber,
+      plateNumber: r.def.plateNumber,
+      routeId: r.def.routeId,
+      routeNumber: r.def.routeNumber,
+      routeName: r.def.routeName,
+      origin: r.def.origin,
+      destination: r.def.destination,
+      stops: r.def.stops,
+      waypoints: r.def.waypoints,
+      speedMultiplier: r.speedMultiplier
+    }));
+
+  if (payloadBuses.length > 0) {
+    s.emit('configureDemo', { buses: payloadBuses });
+  }
 }
 
 export function persistSimRunningState() {
@@ -702,11 +753,11 @@ function broadcastBusLocation(bus: Bus) {
     }
   } catch (_) {}
 
-  // Relay via Socket.IO for cross-device & network listeners
+  // Relay via Socket.IO for cross-device & network listeners (ZERO Firebase writes)
   try {
     const s = getSimSocket();
     if (s && s.connected) {
-      s.emit('updateLocation', bus);
+      s.emit('updateLocation', { ...bus, isDemo: true });
     }
   } catch (_) {}
 }
@@ -716,6 +767,13 @@ function broadcastBusOffline(busId: string) {
   if (ch) {
     ch.postMessage({ type: 'busOffline', busId });
   }
+
+  try {
+    const s = getSimSocket();
+    if (s && s.connected) {
+      s.emit('stopTrip', busId);
+    }
+  } catch (_) {}
 
   try {
     localStorage.removeItem('nagarst_live_bus_' + busId);
@@ -861,6 +919,16 @@ export function stopBus(busId: string) {
  * Start all available demo buses simultaneously
  */
 export function startAllBuses(options?: { speedMultiplier?: number }) {
+  // 1. Sync fleet configuration to Socket.IO backend and trigger server simulation
+  syncDemoFleetToBackend();
+  try {
+    const s = getSimSocket();
+    if (s) {
+      s.emit('startDemo', { speedMultiplier: options?.speedMultiplier || 1 });
+    }
+  } catch (_) {}
+
+  // 2. Run local simulation in parallel for instantaneous zero-latency local ticks
   Object.keys(runtimeStore).forEach(busId => {
     const runtime = runtimeStore[busId];
     if (options?.speedMultiplier) runtime.speedMultiplier = options.speedMultiplier;
@@ -883,6 +951,15 @@ export function resetAllBuses(options?: { speedMultiplier?: number }) {
     clearInterval(activeInterval);
     activeInterval = null;
   }
+
+  // Sync to Socket.IO backend
+  syncDemoFleetToBackend();
+  try {
+    const s = getSimSocket();
+    if (s) {
+      s.emit('resetDemo', { speedMultiplier: options?.speedMultiplier || 1 });
+    }
+  } catch (_) {}
 
   Object.values(runtimeStore).forEach(runtime => {
     // 1. Ensure waypoints are densified along the actual road corridor (minimum 120 points)
@@ -956,6 +1033,13 @@ export function resetBus(busId: string) {
  * Stop all running demo buses
  */
 export function stopAllBuses() {
+  try {
+    const s = getSimSocket();
+    if (s) {
+      s.emit('stopDemo');
+    }
+  } catch (_) {}
+
   Object.keys(runtimeStore).forEach(busId => {
     const runtime = runtimeStore[busId];
     runtime.isRunning = false;
@@ -983,6 +1067,12 @@ export function setBusSpeed(busId: string, speedMultiplier: number) {
   if (!runtime) return;
 
   runtime.speedMultiplier = Math.min(10, Math.max(1, speedMultiplier));
+  try {
+    const s = getSimSocket();
+    if (s) {
+      s.emit('setDemoSpeed', { speedMultiplier: runtime.speedMultiplier });
+    }
+  } catch (_) {}
   ensureTimerRunning();
   notifyListeners();
 }
@@ -992,9 +1082,16 @@ export function setBusSpeed(busId: string, speedMultiplier: number) {
  */
 export function setAllBusSpeed(speedMultiplier: number) {
   const speed = Math.min(10, Math.max(1, speedMultiplier));
+  try {
+    const s = getSimSocket();
+    if (s) {
+      s.emit('setDemoSpeed', { speedMultiplier: speed });
+    }
+  } catch (_) {}
   Object.values(runtimeStore).forEach(r => {
     r.speedMultiplier = speed;
   });
+
   ensureTimerRunning();
   notifyListeners();
 }
@@ -1443,8 +1540,26 @@ export function setDemoReplaySpeed(multiplier: number) {
   setAllBusSpeed(multiplier);
 }
 
+export function setBusDelay(busId: string, minutes: number) {
+  const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
+    r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
+  );
+  if (!runtime) return;
+  runtime.delayMinutes = Math.max(0, minutes);
+  notifyListeners();
+}
+
 export function setDemoDelay(minutes: number) {
-  Object.keys(runtimeStore).forEach(id => setBusDelay(id, minutes));
+  try {
+    const s = getSimSocket();
+    if (s) {
+      s.emit('setDemoDelay', { delayMinutes: minutes });
+    }
+  } catch (_) {}
+  Object.values(runtimeStore).forEach(r => {
+    r.delayMinutes = Math.max(0, minutes);
+  });
+  notifyListeners();
 }
 
 export function getDemoSimulatorState(): DemoSimulatorState {
@@ -1712,6 +1827,7 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
   } catch (_) {}
 
   restoreSimRunningState();
+  syncDemoFleetToBackend();
   notifyListeners();
 }
 

@@ -51,6 +51,7 @@ import {
   type DemoSimulatorState,
   type DemoStop
 } from '../utils/demoSimulatorEngine';
+import { io } from 'socket.io-client';
 
 // Major Ahilyanagar transit landmarks and hubs for manual location selection
 const AHILYANAGAR_HUBS = [
@@ -247,6 +248,75 @@ export const LiveTracking: React.FC = () => {
       window.removeEventListener('storage', onStorage);
     };
   }, [buses]);
+
+  // Direct Socket.IO connection for live demo & real driver telemetry (ZERO Firestore reads)
+  useEffect(() => {
+    const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://nagarst.onrender.com');
+    let socket: any = null;
+    try {
+      socket = io(SOCKET_URL, {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        transports: ['websocket', 'polling']
+      });
+
+      socket.on('connect', () => {
+        socket.emit('joinDemoRoom');
+      });
+
+      socket.on('initialDemoBuses', (demoFleet: Bus[]) => {
+        if (Array.isArray(demoFleet) && demoFleet.length > 0) {
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            demoFleet.forEach(b => {
+              if (b && b.id) next[b.id] = { ...b, isDemo: true, isLiveDriver: false };
+            });
+            return next;
+          });
+        }
+      });
+
+      socket.on('demoLocationUpdate', (bus: Bus) => {
+        if (!bus || !bus.id) return;
+        if ((bus as any).offline) {
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            delete next[bus.id];
+            return next;
+          });
+          return;
+        }
+        setActiveLiveBuses((prev) => ({
+          ...prev,
+          [bus.id]: { ...bus, isDemo: true, isLiveDriver: false }
+        }));
+      });
+
+      socket.on('locationUpdate', (bus: Bus) => {
+        if (!bus || !bus.id) return;
+        const isDemo = Boolean(bus.isDemo || String(bus.id).startsWith('demo-') || (bus.routeName || '').includes('[DEMO]'));
+        setActiveLiveBuses((prev) => ({
+          ...prev,
+          [bus.id]: { ...bus, isDemo, isLiveDriver: !isDemo }
+        }));
+      });
+
+      socket.on('busOffline', (busId: string) => {
+        setActiveLiveBuses((prev) => {
+          const next = { ...prev };
+          delete next[busId];
+          Object.keys(next).forEach(k => {
+            if (isSameBusKey(k, busId) || isSameBusKey(next[k]?.busNumber, busId)) delete next[k];
+          });
+          return next;
+        });
+      });
+    } catch (_) {}
+
+    return () => {
+      if (socket) socket.disconnect();
+    };
+  }, []);
 
   // Ensure simulator timer and running states are active on mount
   useEffect(() => {
