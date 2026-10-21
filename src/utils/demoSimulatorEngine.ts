@@ -59,6 +59,33 @@ export interface DemoRoutePreset {
 }
 
 /**
+ * Normalizes a bus identifier, plate, or number to facilitate robust cross-tab matching
+ */
+export function cleanBusKey(s: string | undefined | null): string {
+  if (!s) return '';
+  return s
+    .trim()
+    .toUpperCase()
+    .replace(/^DEMO[-_]?BUS[-_]?/i, '')
+    .replace(/^DEMO[-_]?/i, '')
+    .replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * Compares two bus IDs or registration numbers to determine if they refer to the same vehicle
+ */
+export function isSameBusKey(a: string | undefined | null, b: string | undefined | null): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const ca = cleanBusKey(a);
+  const cb = cleanBusKey(b);
+  if (ca && cb && ca === cb) return true;
+  const rawA = a.trim().toUpperCase().replace(/\s+/g, '');
+  const rawB = b.trim().toUpperCase().replace(/\s+/g, '');
+  return rawA === rawB;
+}
+
+/**
  * Densifies a polyline into evenly spaced sub-waypoints (~25-35m apart)
  * so buses glide smoothly along actual roads continuously without getting stuck.
  */
@@ -590,11 +617,10 @@ export function restoreSimRunningState() {
     let anyRunning = false;
     Object.entries(runningMap).forEach(([id, st]: [string, any]) => {
       if (st && st.isRunning) {
-        const normKey = id.trim().toUpperCase().replace(/\s+/g, '');
         const r = runtimeStore[id] || Object.values(runtimeStore).find(
-          item => (item.def.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === normKey ||
-                  (item.def.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === normKey ||
-                  item.id.trim().toUpperCase().replace(/\s+/g, '') === normKey
+          item => isSameBusKey(item.id, id) ||
+                  isSameBusKey(item.def.busNumber, id) ||
+                  isSameBusKey(item.def.plateNumber, id)
         );
         if (r) {
           r.isRunning = true;
@@ -624,11 +650,8 @@ if (typeof BroadcastChannel !== 'undefined') {
         const runningMap = e.data.runningMap;
         let anyRunning = false;
         Object.values(runtimeStore).forEach(r => {
-          const normKey = r.id.trim().toUpperCase().replace(/\s+/g, '');
-          const normNum = (r.def.busNumber || '').trim().toUpperCase().replace(/\s+/g, '');
           const matchEntry = Object.entries(runningMap).find(([k]) => {
-            const kn = k.trim().toUpperCase().replace(/\s+/g, '');
-            return kn === normKey || kn === normNum;
+            return isSameBusKey(k, r.id) || isSameBusKey(k, r.def.busNumber) || isSameBusKey(k, r.def.plateNumber);
           });
 
           if (matchEntry) {
@@ -638,7 +661,7 @@ if (typeof BroadcastChannel !== 'undefined') {
             if (st.currentIndex !== undefined) r.currentIndex = st.currentIndex;
             if (st.direction !== undefined) r.direction = st.direction;
             if (r.isRunning) anyRunning = true;
-          } else {
+          } else if (Object.keys(runningMap).length > 0) {
             r.isRunning = false;
           }
           r.currentBus = buildBusTelemetry(r);
@@ -767,9 +790,9 @@ export function ensureTimerRunning() {
     return;
   }
 
-  // Find max speed multiplier among running buses to set interval
+  // High-frequency smooth tick rate: 4 updates per second (250ms), scaling with speed
   const maxSpeed = Math.max(1, ...Object.values(runtimeStore).filter(r => r.isRunning).map(r => r.speedMultiplier));
-  const ms = Math.max(100, Math.round(800 / maxSpeed));
+  const ms = Math.max(80, Math.round(250 / maxSpeed));
 
   if (activeInterval) clearInterval(activeInterval);
   activeInterval = setInterval(tickDemoSimulation, ms);
@@ -794,7 +817,9 @@ try {
  * Start a specific demo bus
  */
 export function startBus(busId: string, options?: { speedMultiplier?: number; delayMinutes?: number }) {
-  const runtime = runtimeStore[busId];
+  const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
+    r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
+  );
   if (!runtime) return;
 
   if (options?.speedMultiplier) runtime.speedMultiplier = options.speedMultiplier;
@@ -816,7 +841,9 @@ export function startBus(busId: string, options?: { speedMultiplier?: number; de
  * Stop a specific demo bus
  */
 export function stopBus(busId: string) {
-  const runtime = runtimeStore[busId];
+  const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
+    r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
+  );
   if (!runtime) return;
 
   runtime.isRunning = false;
@@ -900,7 +927,9 @@ export function resetAllBuses(options?: { speedMultiplier?: number }) {
  * Reset a single demo bus to its starting point and run
  */
 export function resetBus(busId: string) {
-  const runtime = runtimeStore[busId];
+  const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
+    r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
+  );
   if (!runtime) return;
 
   if (!runtime.def.waypoints || runtime.def.waypoints.length < 15) {
@@ -948,7 +977,9 @@ export function stopAllBuses() {
  * Adjust speed for a specific bus
  */
 export function setBusSpeed(busId: string, speedMultiplier: number) {
-  const runtime = runtimeStore[busId];
+  const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
+    r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
+  );
   if (!runtime) return;
 
   runtime.speedMultiplier = Math.min(10, Math.max(1, speedMultiplier));
@@ -972,7 +1003,9 @@ export function setAllBusSpeed(speedMultiplier: number) {
  * Inject or clear traffic delay for a bus
  */
 export function setBusDelay(busId: string, delayMinutes: number) {
-  const runtime = runtimeStore[busId];
+  const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
+    r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
+  );
   if (!runtime) return;
 
   runtime.delayMinutes = Math.max(0, delayMinutes);

@@ -178,10 +178,13 @@
    MODERN ANIMATED VEHICLE RADAR BEACON (REPLACES STATIC EMOJIS)
    ========================================================================= */
 
+.leaflet-marker-icon.modern-bus-div-icon,
 .modern-bus-div-icon {
   background: transparent !important;
   border: none !important;
   overflow: visible !important;
+  transition: transform 0.28s linear !important;
+  will-change: transform;
 }
 
 .modern-bus-beacon-wrapper {

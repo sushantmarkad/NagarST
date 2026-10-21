@@ -46,6 +46,8 @@ import {
   ensureTimerRunning,
   syncSimulatorFleetWithAdminConfig,
   restoreSimRunningState,
+  cleanBusKey,
+  isSameBusKey,
   type DemoSimulatorState,
   type DemoStop
 } from '../utils/demoSimulatorEngine';
@@ -101,20 +103,43 @@ export const LiveTracking: React.FC = () => {
   // Only configured routes from Admin / Database — NO fake or hardcoded mock routes!
   const allRoutes = routes;
 
-  // 1. Real-time Active Buses (Live GPS Driver Telemetry)
-  const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>({});
+  // 1. Real-time Active Buses (Live GPS Driver Telemetry + Moving Demo Fleet)
+  const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const savedAggregate = localStorage.getItem('nagarst_demo_buses');
+      const result: Record<string, Bus> = savedAggregate ? JSON.parse(savedAggregate) : {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('nagarst_live_bus_')) {
+          const val = localStorage.getItem(k);
+          if (val) {
+            const b = JSON.parse(val);
+            if (b && b.id) result[b.id] = b;
+          }
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  });
 
   // Synchronize active live buses with fleet from AppContext and running demo state
   useEffect(() => {
     setActiveLiveBuses((prev) => {
       const next: Record<string, Bus> = {};
-      const validKeys = new Set(buses.map(b => (b.id || '').trim().toUpperCase().replace(/\s+/g, '')));
-      const validNums = new Set(buses.map(b => (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '')));
       Object.entries(prev).forEach(([k, b]) => {
-        const kNorm = k.trim().toUpperCase().replace(/\s+/g, '');
-        const bNum = (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '');
         // Retain if it's a known database bus OR an active demo bus
-        if (validKeys.has(kNorm) || validNums.has(bNum) || b.isDemo) {
+        const isKnown = buses.some(cb => 
+          isSameBusKey(cb.id, k) ||
+          isSameBusKey(cb.busNumber, k) ||
+          isSameBusKey(cb.plateNumber, k) ||
+          isSameBusKey(cb.id, b.id) ||
+          isSameBusKey(cb.busNumber, b.busNumber) ||
+          isSameBusKey(cb.plateNumber, b.plateNumber)
+        );
+        if (isKnown || b.isDemo || k.startsWith('demo-')) {
           next[k] = b;
         }
       });
@@ -133,11 +158,12 @@ export const LiveTracking: React.FC = () => {
           const incoming = (payload.data || payload.bus) as Bus;
           if (incoming && incoming.id) {
             const isDemo = Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
-            const key = (incoming.busNumber || incoming.id).trim().toUpperCase().replace(/\s+/g, '');
             const isKnown = buses.some(b => 
-              (b.id || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
-              (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
-              (b.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key
+              isSameBusKey(b.id, incoming.id) ||
+              isSameBusKey(b.busNumber, incoming.busNumber) ||
+              isSameBusKey(b.id, incoming.busNumber) ||
+              isSameBusKey(b.busNumber, incoming.id) ||
+              isSameBusKey(b.plateNumber, incoming.plateNumber)
             );
             // Accept if it belongs to registered municipal fleet OR if it's an active simulator bus
             if (!isKnown && !isDemo) return;
@@ -149,18 +175,18 @@ export const LiveTracking: React.FC = () => {
           }
         } else if (payload?.type === 'simRunningSync' || payload?.type === 'fleetSync' || payload?.type === 'resetDemo') {
           restoreSimRunningState();
+          if (payload?.type === 'fleetSync' && payload?.buses) {
+            setActiveLiveBuses((prev) => ({ ...prev, ...payload.buses }));
+          }
           setSimState(getDemoSimulatorState());
         } else if (payload?.type === 'busOffline' && event.data?.busId) {
-          const offNorm = event.data.busId.trim().toUpperCase().replace(/\s+/g, '');
+          const offId = event.data.busId;
           setActiveLiveBuses((prev) => {
             const next = { ...prev };
-            delete next[event.data.busId];
+            delete next[offId];
             Object.keys(next).forEach((k) => {
               const b = next[k];
-              const kNorm = k.trim().toUpperCase().replace(/\s+/g, '');
-              const bNorm = (b?.busNumber || '').trim().toUpperCase().replace(/\s+/g, '');
-              const idNorm = (b?.id || '').trim().toUpperCase().replace(/\s+/g, '');
-              if (kNorm === offNorm || bNorm === offNorm || idNorm === offNorm) {
+              if (isSameBusKey(k, offId) || isSameBusKey(b?.busNumber, offId) || isSameBusKey(b?.id, offId)) {
                 delete next[k];
               }
             });
@@ -171,17 +197,28 @@ export const LiveTracking: React.FC = () => {
     } catch (_) {}
 
     const onStorage = (e: StorageEvent) => {
-      if (e.key?.startsWith('nagarst_live_bus_')) {
+      if (e.key === 'nagarst_demo_buses' && e.newValue) {
+        try {
+          const fleet = JSON.parse(e.newValue);
+          if (fleet && typeof fleet === 'object') {
+            setActiveLiveBuses((prev) => ({ ...prev, ...fleet }));
+          }
+        } catch (_) {}
+      } else if (e.key === 'nagarst_sim_running_state') {
+        restoreSimRunningState();
+        setSimState(getDemoSimulatorState());
+      } else if (e.key?.startsWith('nagarst_live_bus_')) {
         if (e.newValue) {
           try {
             const b = JSON.parse(e.newValue);
             if (b && b.id) {
               const isDemo = Boolean(b.isDemo || b.id.startsWith('demo-'));
-              const key = (b.busNumber || b.id).trim().toUpperCase().replace(/\s+/g, '');
               const isKnown = buses.some(cb => 
-                (cb.id || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
-                (cb.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
-                (cb.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key
+                isSameBusKey(cb.id, b.id) ||
+                isSameBusKey(cb.busNumber, b.busNumber) ||
+                isSameBusKey(cb.id, b.busNumber) ||
+                isSameBusKey(cb.busNumber, b.id) ||
+                isSameBusKey(cb.plateNumber, b.plateNumber)
               );
               if (!isKnown && !isDemo) {
                 try { localStorage.removeItem(e.key); } catch (_) {}
@@ -215,6 +252,7 @@ export const LiveTracking: React.FC = () => {
   useEffect(() => {
     restoreSimRunningState();
     ensureTimerRunning();
+    setSimState(getDemoSimulatorState());
   }, []);
 
   const busIdsKey = useMemo(() => (buses || []).map(b => b.id).sort().join(','), [buses]);
@@ -245,23 +283,13 @@ export const LiveTracking: React.FC = () => {
     };
 
     const matchesBus = (a: { id?: string; busNumber?: string; plateNumber?: string }, b: { id?: string; busNumber?: string; plateNumber?: string }) => {
-      const aId = norm(a.id);
-      const aNum = norm(a.busNumber);
-      const aPlate = norm(a.plateNumber);
-
-      const bId = norm(b.id);
-      const bNum = norm(b.busNumber);
-      const bPlate = norm(b.plateNumber);
-
-      const stripDemo = (str: string) => str.replace(/^DEMOBUS/, '').replace(/^DEMO/, '');
-      const aIdClean = stripDemo(aId);
-      const bIdClean = stripDemo(bId);
-
-      return Boolean(
-        (aId && (aId === bId || aId === bNum || aId === bPlate || (aIdClean && (aIdClean === bIdClean || aIdClean === bNum || aIdClean === bPlate)))) ||
-        (aNum && (aNum === bId || aNum === bNum || aNum === bPlate || (bIdClean && aNum === bIdClean))) ||
-        (aPlate && (aPlate === bId || aPlate === bNum || aPlate === bPlate || (bIdClean && aPlate === bIdClean)))
-      );
+      if (!a || !b) return false;
+      if (isSameBusKey(a.id, b.id)) return true;
+      if (isSameBusKey(a.busNumber, b.busNumber)) return true;
+      if (isSameBusKey(a.plateNumber, b.plateNumber)) return true;
+      if (isSameBusKey(a.id, b.busNumber) || isSameBusKey(a.id, b.plateNumber)) return true;
+      if (isSameBusKey(b.id, a.busNumber) || isSameBusKey(b.id, a.plateNumber)) return true;
+      return false;
     };
 
     const byNumber = new Map<string, Bus>();

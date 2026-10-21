@@ -296,9 +296,6 @@ function tickDemoSimulator() {
 
     io.emit('locationUpdate', telemetryPayload);
     io.to('demo-tracking').emit('demoLocationUpdate', telemetryPayload);
-
-    // Sync directly to Firebase Firestore live_locations
-    syncToFirebaseLive(telemetryPayload);
   });
 }
 
@@ -384,7 +381,7 @@ io.on('connection', (socket) => {
       demoBuses.set(busId, payload);
       io.emit('locationUpdate', payload);
       io.to('demo-tracking').emit('demoLocationUpdate', payload);
-      syncToFirebaseLive(payload);
+      // Demo buses never write to Firebase to prevent quota exhaustion
       return;
     }
 

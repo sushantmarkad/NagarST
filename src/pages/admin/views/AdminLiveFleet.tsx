@@ -23,6 +23,7 @@ import {
   getDemoSimulatorState,
   subscribeToDemoState,
   buildBusTelemetry,
+  isSameBusKey,
   type DemoSimulatorState
 } from '../../../utils/demoSimulatorEngine';
 
@@ -48,23 +49,13 @@ export const AdminLiveFleet: React.FC = () => {
   const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
 
   const matchesBus = (a: { id?: string; busNumber?: string; plateNumber?: string }, b: { id?: string; busNumber?: string; plateNumber?: string }) => {
-    const aId = norm(a.id);
-    const aNum = norm(a.busNumber);
-    const aPlate = norm(a.plateNumber);
-
-    const bId = norm(b.id);
-    const bNum = norm(b.busNumber);
-    const bPlate = norm(b.plateNumber);
-
-    const stripDemo = (str: string) => str.replace(/^DEMOBUS/, '').replace(/^DEMO/, '');
-    const aIdClean = stripDemo(aId);
-    const bIdClean = stripDemo(bId);
-
-    return Boolean(
-      (aId && (aId === bId || aId === bNum || aId === bPlate || (aIdClean && (aIdClean === bIdClean || aIdClean === bNum || aIdClean === bPlate)))) ||
-      (aNum && (aNum === bId || aNum === bNum || aNum === bPlate || (bIdClean && aNum === bIdClean))) ||
-      (aPlate && (aPlate === bId || aPlate === bNum || aPlate === bPlate || (bIdClean && aPlate === bIdClean)))
-    );
+    if (!a || !b) return false;
+    if (isSameBusKey(a.id, b.id)) return true;
+    if (isSameBusKey(a.busNumber, b.busNumber)) return true;
+    if (isSameBusKey(a.plateNumber, b.plateNumber)) return true;
+    if (isSameBusKey(a.id, b.busNumber) || isSameBusKey(a.id, b.plateNumber)) return true;
+    if (isSameBusKey(b.id, a.busNumber) || isSameBusKey(b.id, a.plateNumber)) return true;
+    return false;
   };
 
   // Combined fleet strictly containing registered vehicles + active moving simulator coordinates
