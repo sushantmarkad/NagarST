@@ -1881,8 +1881,9 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
               {/* Step indicator */}
               <div className="shrink-0 px-5 py-3 border-b border-slate-100 flex items-center gap-1.5">
                 {(['form', 'payment', 'success'] as const).map((step, idx) => {
-                  const isComplete = (ticketStep === 'payment' && idx === 0) || ticketStep === 'success';
+                  const isComplete = (ticketStep === 'payment' && idx === 0) || (ticketStep === 'success' && idx < 2);
                   const isActive = ticketStep === step;
+                  const isConnectorDone = (idx === 0 && (ticketStep === 'payment' || ticketStep === 'success')) || (idx === 1 && ticketStep === 'success');
                   return (
                     <React.Fragment key={step}>
                       <div className="flex items-center gap-1.5">
@@ -1895,7 +1896,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                           {step === 'form' ? 'Journey' : step === 'payment' ? 'Payment' : 'Ticket'}
                         </span>
                       </div>
-                      {idx < 2 && <div className={`flex-1 h-px ${isComplete || (ticketStep === 'success' && idx < 1) ? 'bg-emerald-300' : 'bg-slate-200'
+                      {idx < 2 && <div className={`flex-1 h-px ${isConnectorDone ? 'bg-emerald-300' : 'bg-slate-200'
                         }`} />}
                     </React.Fragment>
                   );
