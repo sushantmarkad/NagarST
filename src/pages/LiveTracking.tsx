@@ -165,12 +165,17 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     }
   });
 
-  // Synchronize active live buses strictly with registered municipal fleet
+  // Synchronize active live buses strictly with registered municipal fleet while ALWAYS preserving live drivers
   useEffect(() => {
     setActiveLiveBuses((prev) => {
       const next: Record<string, Bus> = {};
       Object.entries(prev).forEach(([k, b]) => {
-        // Retain ONLY if it's a known database bus from the registered municipal fleet
+        // ALWAYS retain real live drivers transmitting GPS
+        if (b.isLiveDriver || !b.isDemo) {
+          next[k] = b;
+          return;
+        }
+        // For virtual simulator fleet, retain if known database bus
         const isKnown = buses.some(cb =>
           isSameBusKey(cb.id, k) ||
           isSameBusKey(cb.busNumber, k) ||
@@ -306,17 +311,6 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
             const b = JSON.parse(e.newValue);
             if (b && b.id) {
               const isDemo = Boolean(b.isDemo || b.id.startsWith('demo-'));
-              const isKnown = buses.some(cb =>
-                isSameBusKey(cb.id, b.id) ||
-                isSameBusKey(cb.busNumber, b.busNumber) ||
-                isSameBusKey(cb.id, b.busNumber) ||
-                isSameBusKey(cb.busNumber, b.id) ||
-                isSameBusKey(cb.plateNumber, b.plateNumber)
-              );
-              if (!isKnown) {
-                try { localStorage.removeItem(e.key); } catch (_) { }
-                return;
-              }
               setActiveLiveBuses((prev) => ({
                 ...prev,
                 [b.id]: { ...b, isDemo, isLiveDriver: !isDemo }
@@ -646,7 +640,9 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         b.routeId === filterRoute ||
         b.routeNumber === filterRoute ||
         (Boolean(b.routeId) && b.routeId.toLowerCase() === filterRoute.toLowerCase()) ||
-        (Boolean(b.routeNumber) && b.routeNumber.toLowerCase() === filterRoute.toLowerCase());
+        (Boolean(b.routeNumber) && b.routeNumber.toLowerCase() === filterRoute.toLowerCase()) ||
+        (b.id === selectedBusId) ||
+        (trackingMode === 'live' && b.isLiveDriver);
       const matchesSearch =
         !searchQuery ||
         b.busNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -654,7 +650,11 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         (b.nextStopName && b.nextStopName.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesRoute && matchesSearch;
     });
-  }, [allFleetBuses, filterRoute, searchQuery, trackingMode]);
+  }, [allFleetBuses, filterRoute, searchQuery, trackingMode, selectedBusId]);
+
+  const activeLiveDriverBus = useMemo(() => {
+    return allFleetBuses.find(b => !b.isDemo && !b.id.startsWith('demo-') && (b.isLiveDriver || b.speedKmh > 0 || (b.lat && b.lng)));
+  }, [allFleetBuses]);
 
   // Resolves complete route stops and details for the selected bus
   const selectedBusRoute = useMemo<RouteType | null>(() => {
@@ -928,6 +928,38 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
             onCancelInteractive={() => setIsPickingLocationOnMap(false)}
             className="w-full h-full rounded-none md:rounded-2xl border-0 md:border md:border-slate-200/90"
           />
+
+          {/* Floating Live Driver GPS Active Banner */}
+          {activeLiveDriverBus && (
+            <div className="absolute top-3 left-3 right-3 sm:left-4 sm:right-auto z-[450] bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl shadow-xl border border-emerald-500/50 flex items-center justify-between sm:justify-start gap-3 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 rounded shrink-0">
+                      LIVE BUS
+                    </span>
+                    <span className="text-xs font-black text-slate-900 truncate">
+                      {activeLiveDriverBus.busNumber}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 block truncate">
+                    {activeLiveDriverBus.speedKmh} km/h • {activeLiveDriverBus.routeName || `${activeLiveDriverBus.origin} ➔ ${activeLiveDriverBus.destination}`}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBusId(activeLiveDriverBus.id);
+                  setFilterRoute('all');
+                }}
+                className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs transition-colors shrink-0"
+              >
+                Focus Bus
+              </button>
+            </div>
+          )}
 
           {/* Floating Mobile Nearby Buses Quick Pill */}
           <div className="lg:hidden absolute bottom-5 left-3 z-[400]">

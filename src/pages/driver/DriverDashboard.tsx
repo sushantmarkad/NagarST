@@ -59,8 +59,14 @@ export const DriverDashboard: React.FC = () => {
   const [selectedRouteDetails, setSelectedRouteDetails] = useState<any>(null);
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
 
-  // GPS Telemetry State (Starts with null so we detect real device location!)
+  // GPS Telemetry State & Location Modes
   const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationMode, setLocationMode] = useState<'ahilyanagar' | 'device'>('ahilyanagar');
+  const locationModeRef = useRef<'ahilyanagar' | 'device'>('ahilyanagar');
+  locationModeRef.current = locationMode;
+  const [rawDevicePos, setRawDevicePos] = useState<{ lat: number; lng: number } | null>(null);
+  const hasAnnouncedGpsRef = useRef<boolean>(false);
+
   const [currentSpeedKmh, setCurrentSpeedKmh] = useState<number>(0);
   const [driverHeading, setDriverHeading] = useState<number>(0);
   const [gpsStatus, setGpsStatus] = useState<'searching' | 'active' | 'simulated' | 'fallback'>('searching');
@@ -400,8 +406,13 @@ export const DriverDashboard: React.FC = () => {
     }
   }, [user]);
 
+  // City Geofence Boundary Check (Ahilyanagar Metropolitan Zone)
+  const isOutsideAhilyanagar = useCallback((lat: number, lng: number) => {
+    return lat < 18.8 || lat > 19.4 || lng < 74.4 || lng > 75.1;
+  }, []);
+
   // Robust GPS Acquirer: Gets real browser device location
-  const acquireRealGPS = useCallback(() => {
+  const acquireRealGPS = useCallback((isManualClick = false) => {
     if (!('geolocation' in navigator)) {
       toast.error('Geolocation is not supported by your browser.');
       return;
@@ -417,14 +428,40 @@ export const DriverDashboard: React.FC = () => {
         const hdg = pos.coords.heading || 0;
         const acc = pos.coords.accuracy || 10;
 
-        setDriverPos({ lat, lng });
+        setRawDevicePos({ lat, lng });
         setCurrentSpeedKmh(spd);
         setDriverHeading(hdg);
         setGpsAccuracy(acc);
         setGpsStatus('active');
 
-        sendLiveTelemetry(lat, lng, spd, 'on_time', hdg);
-        toast.success(`Acquired live device location (±${Math.round(acc)}m accuracy).`, 'GPS Fixed');
+        const isOutside = isOutsideAhilyanagar(lat, lng);
+
+        // When in 'ahilyanagar' transit mode and detected location is outside the city (e.g. Ahmedabad),
+        // snap bus to Ahilyanagar route start or CBS so it appears on city map for passengers & admin!
+        if (locationModeRef.current === 'ahilyanagar' && isOutside) {
+          const snappedPos = tripStopsRef.current.length > 0
+            ? { lat: tripStopsRef.current[0].lat, lng: tripStopsRef.current[0].lng }
+            : { lat: 19.0975, lng: 74.7420 };
+          setDriverPos(snappedPos);
+          sendLiveTelemetry(snappedPos.lat, snappedPos.lng, spd, 'on_time', hdg);
+
+          if (!hasAnnouncedGpsRef.current || isManualClick) {
+            hasAnnouncedGpsRef.current = true;
+            toast.info(
+              `Device location detected in Gujarat (${lat.toFixed(2)}, ${lng.toFixed(2)}). Snapped bus to Ahilyanagar CBS (19.0975, 74.7420) so it appears on NagarST city transit maps.`,
+              'Ahilyanagar Transit Mode',
+              7000
+            );
+          }
+        } else {
+          setDriverPos({ lat, lng });
+          sendLiveTelemetry(lat, lng, spd, 'on_time', hdg);
+
+          if (!hasAnnouncedGpsRef.current || isManualClick) {
+            hasAnnouncedGpsRef.current = true;
+            toast.success(`Acquired live device location (±${Math.round(acc)}m accuracy).`, 'GPS Fixed');
+          }
+        }
       },
       (err) => {
         console.warn('Real GPS acquisition warning:', err.message);
@@ -435,15 +472,18 @@ export const DriverDashboard: React.FC = () => {
 
         setDriverPos(fallbackPos);
         setGpsStatus('fallback');
-        toast.warning('Could not get device GPS. Click "Allow" on location prompt in your browser bar, or tap a preset location.', 'Location Access');
+        if (isManualClick || !hasAnnouncedGpsRef.current) {
+          hasAnnouncedGpsRef.current = true;
+          toast.warning('Could not get device GPS. Click "Allow" on location prompt in your browser bar, or tap a preset location.', 'Location Access');
+        }
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
-  }, [toast, sendLiveTelemetry]);
+  }, [toast, sendLiveTelemetry, isOutsideAhilyanagar]);
 
-  // On mount: acquire real GPS and start watchPosition
+  // On mount: acquire real GPS once and start watchPosition
   useEffect(() => {
-    acquireRealGPS();
+    acquireRealGPS(false);
 
     if ('geolocation' in navigator) {
       try {
@@ -456,15 +496,22 @@ export const DriverDashboard: React.FC = () => {
             const hdg = pos.coords.heading || 0;
             const acc = pos.coords.accuracy || 10;
 
-            setDriverPos({ lat, lng });
+            setRawDevicePos({ lat, lng });
             setCurrentSpeedKmh(spd);
             setDriverHeading(hdg);
             setGpsAccuracy(acc);
             setGpsStatus('active');
 
-            if (isLiveBroadcastingRef.current) {
-              sendLiveTelemetry(lat, lng, spd, 'on_time', hdg);
+            const isOutside = isOutsideAhilyanagar(lat, lng);
+
+            // In 'device' mode OR if device is physically in Ahilyanagar, stream the raw coordinates
+            if (locationModeRef.current === 'device' || !isOutside) {
+              setDriverPos({ lat, lng });
+              if (isLiveBroadcastingRef.current) {
+                sendLiveTelemetry(lat, lng, spd, 'on_time', hdg);
+              }
             }
+            // If in 'ahilyanagar' mode and device is outside city, DO NOT overwrite the Ahilyanagar preset!
           },
           (err) => {
             console.log('GPS stream info:', err.message);
@@ -480,7 +527,7 @@ export const DriverDashboard: React.FC = () => {
         watchIdRef.current = null;
       }
     };
-  }, [acquireRealGPS, sendLiveTelemetry]);
+  }, [acquireRealGPS, sendLiveTelemetry, isOutsideAhilyanagar]);
 
   // Heartbeat interval: Continuously rebroadcast live telemetry every 3.5s so backend and maps stay live
   useEffect(() => {
@@ -508,7 +555,7 @@ export const DriverDashboard: React.FC = () => {
       if (driverPosRef.current) {
         sendLiveTelemetry(driverPosRef.current.lat, driverPosRef.current.lng, currentSpeedRef.current, 'on_time', driverHeadingRef.current);
       } else {
-        acquireRealGPS();
+        acquireRealGPS(true);
       }
       toast.success('Live GPS Broadcasting is ON! Your live location is streaming to Passenger & Admin dashboards.', 'Live Location Active');
     } else {
@@ -523,11 +570,12 @@ export const DriverDashboard: React.FC = () => {
 
   // Quick preset locator: allows instant positioning at Ahilyanagar landmarks for presentation testing
   const handleSetLocationPreset = (presetLat: number, presetLng: number, presetName: string) => {
+    setLocationMode('ahilyanagar');
     setDriverPos({ lat: presetLat, lng: presetLng });
     setGpsStatus('active');
     setGpsAccuracy(8);
     sendLiveTelemetry(presetLat, presetLng, 25, 'on_time', 45);
-    toast.success(`Position set to ${presetName} and broadcasted live!`, 'Location Updated');
+    toast.success(`Position set to ${presetName} and broadcasted live to all dashboards!`, 'Location Updated');
   };
 
   // Indoor Demo / Presentation Drive Simulation (Glides along route smoothly)
@@ -929,6 +977,67 @@ export const DriverDashboard: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* GEOFENCE DETECTION BANNER: When device GPS is in Gujarat/Ahmedabad or outside Ahilyanagar */}
+                  {rawDevicePos && isOutsideAhilyanagar(rawDevicePos.lat, rawDevicePos.lng) && (
+                    <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-300 text-xs space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                          <MapPin className="w-4 h-4 text-amber-600" />
+                          Device Outside Ahilyanagar
+                        </span>
+                        <span className="text-[10px] font-mono font-bold text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded-lg border border-amber-300">
+                          {rawDevicePos.lat.toFixed(3)}°N, {rawDevicePos.lng.toFixed(3)}°E
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-900 leading-snug">
+                        Your browser network resolved to <strong>Ahmedabad/Gujarat</strong> (~500 km away). Select transit broadcast mode:
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLocationMode('ahilyanagar');
+                            const pos = tripStopsRef.current.length > 0 
+                              ? { lat: tripStopsRef.current[0].lat, lng: tripStopsRef.current[0].lng } 
+                              : { lat: 19.0975, lng: 74.7420 };
+                            setDriverPos(pos);
+                            sendLiveTelemetry(pos.lat, pos.lng, 25, 'on_time', 45);
+                            toast.success('Position snapped to Ahilyanagar City Bus Stand! Bus is now visible on city transit maps.', 'Ahilyanagar Mode Active');
+                          }}
+                          className={`p-2.5 rounded-xl text-left font-bold transition-all border ${
+                            locationMode === 'ahilyanagar'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/30'
+                              : 'bg-white text-slate-800 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/30'
+                          }`}
+                        >
+                          <span className="block text-xs">🏙️ Ahilyanagar Mode</span>
+                          <span className={`text-[9px] block mt-0.5 ${locationMode === 'ahilyanagar' ? 'text-emerald-100' : 'text-slate-400'}`}>
+                            Snaps to CBS (Recommended)
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLocationMode('device');
+                            setDriverPos(rawDevicePos);
+                            sendLiveTelemetry(rawDevicePos.lat, rawDevicePos.lng, currentSpeedKmh, 'on_time', driverHeading);
+                            toast.info('Streaming raw device coordinates from Gujarat.', 'Raw Device Mode');
+                          }}
+                          className={`p-2.5 rounded-xl text-left font-bold transition-all border ${
+                            locationMode === 'device'
+                              ? 'bg-[#7847CB] text-white border-purple-800 shadow-xs ring-2 ring-[#7847CB]/30'
+                              : 'bg-white text-slate-800 border-slate-200 hover:border-[#7847CB] hover:bg-purple-50/30'
+                          }`}
+                        >
+                          <span className="block text-xs">📍 Raw Device GPS</span>
+                          <span className={`text-[9px] block mt-0.5 ${locationMode === 'device' ? 'text-purple-100' : 'text-slate-400'}`}>
+                            Broadcasts Ahmedabad Sensor
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* QUICK GPS FIX & LOCATION PRESETS (To test in Ahilyanagar landmarks or use Real Phone GPS) */}
                   <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
                     <div className="flex items-center justify-between">
@@ -937,7 +1046,7 @@ export const DriverDashboard: React.FC = () => {
                       </span>
                       <button
                         type="button"
-                        onClick={acquireRealGPS}
+                        onClick={() => acquireRealGPS(true)}
                         className="text-[11px] font-bold text-[#7847CB] flex items-center gap-1 hover:underline"
                       >
                         <LocateFixed className="w-3.5 h-3.5" />
@@ -948,7 +1057,11 @@ export const DriverDashboard: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleSetLocationPreset(19.0975, 74.7420, 'Ahilyanagar CBS')}
-                        className="p-2 rounded-xl bg-white border border-slate-200 hover:border-[#7847CB] text-left text-xs font-bold text-slate-800 transition-colors shadow-2xs"
+                        className={`p-2 rounded-xl border text-left text-xs font-bold transition-all shadow-2xs ${
+                          driverPos && Math.abs(driverPos.lat - 19.0975) < 0.001
+                            ? 'bg-purple-50 border-[#7847CB] text-[#7847CB]'
+                            : 'bg-white border-slate-200 hover:border-[#7847CB] text-slate-800'
+                        }`}
                       >
                         <span className="block text-[11px] text-purple-700">Central Bus Stand</span>
                         <span className="text-[9px] text-slate-400 font-mono">19.0975, 74.7420</span>
@@ -956,7 +1069,11 @@ export const DriverDashboard: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleSetLocationPreset(19.1235, 74.7321, 'Savedi Depot')}
-                        className="p-2 rounded-xl bg-white border border-slate-200 hover:border-[#7847CB] text-left text-xs font-bold text-slate-800 transition-colors shadow-2xs"
+                        className={`p-2 rounded-xl border text-left text-xs font-bold transition-all shadow-2xs ${
+                          driverPos && Math.abs(driverPos.lat - 19.1235) < 0.001
+                            ? 'bg-purple-50 border-[#7847CB] text-[#7847CB]'
+                            : 'bg-white border-slate-200 hover:border-[#7847CB] text-slate-800'
+                        }`}
                       >
                         <span className="block text-[11px] text-purple-700">Savedi Bus Depot</span>
                         <span className="text-[9px] text-slate-400 font-mono">19.1235, 74.7321</span>

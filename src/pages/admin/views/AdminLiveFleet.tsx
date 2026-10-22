@@ -38,7 +38,27 @@ export const AdminLiveFleet: React.FC = () => {
 
   // Subscribe to live simulation telemetry
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
-  const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, BusType>>({});
+  const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, BusType>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const result: Record<string, BusType> = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('nagarst_live_bus_')) {
+          const val = localStorage.getItem(k);
+          if (val) {
+            const b = JSON.parse(val);
+            if (b && b.id) {
+              result[b.id] = { ...b, isDemo: false, isLiveDriver: true };
+            }
+          }
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  });
 
   useEffect(() => {
     const unsub = subscribeToDemoState((newState) => {
@@ -47,7 +67,7 @@ export const AdminLiveFleet: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Listen to BroadcastChannel & Socket.IO so fleet tracking reflects real-time moving buses concurrently
+  // Listen to BroadcastChannel, storage events & Socket.IO so fleet tracking reflects real-time moving buses concurrently
   useEffect(() => {
     let ch: BroadcastChannel | null = null;
     let socket: any = null;
@@ -61,7 +81,7 @@ export const AdminLiveFleet: React.FC = () => {
           if (incoming && incoming.id) {
             setActiveLiveBuses((prev) => ({
               ...prev,
-              [incoming.id]: incoming
+              [incoming.id]: { ...incoming, isDemo: false, isLiveDriver: true }
             }));
           }
         } else if (payload?.type === 'busOffline' && payload?.busId) {
@@ -74,6 +94,30 @@ export const AdminLiveFleet: React.FC = () => {
         }
       };
     } catch (_) {}
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key?.startsWith('nagarst_live_bus_')) {
+        if (e.newValue) {
+          try {
+            const b = JSON.parse(e.newValue);
+            if (b && b.id) {
+              setActiveLiveBuses((prev) => ({
+                ...prev,
+                [b.id]: { ...b, isDemo: false, isLiveDriver: true }
+              }));
+            }
+          } catch (_) {}
+        } else {
+          const id = e.key.replace('nagarst_live_bus_', '');
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+        }
+      }
+    };
+    window.addEventListener('storage', onStorage);
 
     const onDriverTelemetry = (e: any) => {
       const incoming = e.detail as BusType;
@@ -111,6 +155,7 @@ export const AdminLiveFleet: React.FC = () => {
 
     return () => {
       ch?.close();
+      window.removeEventListener('storage', onStorage);
       window.removeEventListener('nagarst_driver_telemetry', onDriverTelemetry);
       if (socket) socket.disconnect();
     };
@@ -191,6 +236,10 @@ export const AdminLiveFleet: React.FC = () => {
   const liveCount = displayBuses.filter(b => !b.isDemo && !b.id?.startsWith('demo-')).length;
   const demoCount = displayBuses.filter(b => b.isDemo || b.id?.startsWith('demo-')).length;
 
+  const activeLiveDriver = React.useMemo(() => {
+    return displayBuses.find(b => !b.isDemo && !b.id?.startsWith('demo-') && (b.isLiveDriver || b.speedKmh > 0 || (b.lat && b.lng)));
+  }, [displayBuses]);
+
   const handleSendDispatch = async () => {
     if (!selectedBus) return;
 
@@ -232,6 +281,31 @@ export const AdminLiveFleet: React.FC = () => {
           height="100%"
           className="w-full h-full rounded-none md:rounded-3xl border-0 md:border md:border-slate-200/90"
         />
+
+        {/* Floating Active Live Driver GPS Notification */}
+        {activeLiveDriver && (
+          <div className="absolute top-16 md:top-4 left-3 md:left-4 z-[400] bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl shadow-xl border border-emerald-500/50 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+            <div className="text-left">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 rounded">
+                  LIVE GPS DRIVER
+                </span>
+                <span className="text-xs font-black text-slate-900">{activeLiveDriver.busNumber}</span>
+              </div>
+              <span className="text-[10px] text-slate-500 block">
+                {activeLiveDriver.speedKmh} km/h • {activeLiveDriver.routeName || `${activeLiveDriver.origin} ➔ ${activeLiveDriver.destination}`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedBus(activeLiveDriver)}
+              className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs transition-colors shrink-0"
+            >
+              Center Bus
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 2. FLOATING TELEMETRY HEADER OVERLAY (Mobile: Floating glass bar, Desktop: Top dashboard card) */}
