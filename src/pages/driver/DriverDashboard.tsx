@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { useToast, useConfirm } from '../../context/FeedbackContext';
 import {
   updateFirebaseLiveLocation,
@@ -13,7 +14,8 @@ import { doc, deleteDoc } from 'firebase/firestore';
 import {
   Navigation,
   AlertTriangle,
-  Square,
+  Radio,
+  RadioTower,
   Bus as BusIcon,
   CircleDot,
   MapPin,
@@ -22,70 +24,29 @@ import {
   Gauge,
   Wifi,
   WifiOff,
-  CheckCircle2
+  CheckCircle2,
+  Crosshair,
+  Sparkles,
+  Power,
+  RotateCcw
 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import { LiveMap } from '../../components/map/LiveMap';
 import { SharedLayout } from '../../components/layout/SharedLayout';
 import { getDistance, getDistanceToPolyline } from '../../utils/routing';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { createModernBusIcon } from '../../components/map/busMarkerIcon';
-
-// Fix for default leaflet icons in React
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-const MapAutoCenter = ({ position }: { position: { lat: number; lng: number } | null }) => {
-  const map = useMap();
-  const [isFollowing, setIsFollowing] = useState(true);
-
-  useEffect(() => {
-    const handleDragStart = () => setIsFollowing(false);
-    map.on('dragstart', handleDragStart);
-    return () => { map.off('dragstart', handleDragStart); };
-  }, [map]);
-
-  useEffect(() => {
-    if (position && isFollowing) {
-      map.setView([position.lat, position.lng], map.getZoom(), { animate: true });
-    }
-  }, [position, map, isFollowing]);
-
-  if (isFollowing) return null;
-
-  return (
-    <div className="leaflet-top leaflet-right mt-16 mr-4">
-      <div className="leaflet-control leaflet-bar">
-        <button 
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsFollowing(true);
-            if (position) map.setView([position.lat, position.lng], map.getZoom(), { animate: true });
-          }}
-          className="bg-white flex items-center justify-center w-[40px] h-[40px] text-[#7847CB] hover:bg-slate-50 transition-colors shadow-md rounded-xl"
-          title="Recenter Map"
-        >
-          <MapPin className="w-5 h-5" />
-        </button>
-      </div>
-    </div>
-  );
-};
+import type { Bus, BusStop, Route } from '../../types';
 
 export const DriverDashboard: React.FC = () => {
   const { user } = useAuth();
+  const { buses: appBuses, routes: appRoutes } = useApp();
   const toast = useToast();
   const confirm = useConfirm();
 
-  const [activeTab, setActiveTab] = useState<'home' | 'trip' | 'schedule'>('home');
+  const [activeTab, setActiveTab] = useState<'cockpit' | 'route' | 'schedule'>('cockpit');
+
+  // Master Live Location Broadcaster State (Can be turned ON/OFF independently without route requirement!)
+  const [isLiveBroadcasting, setIsLiveBroadcasting] = useState<boolean>(true);
 
   // Real data state
   const [driverSchedules, setDriverSchedules] = useState<any[]>([]);
@@ -95,44 +56,80 @@ export const DriverDashboard: React.FC = () => {
   
   const [tripStops, setTripStops] = useState<any[]>([]);
   const [selectedRouteDetails, setSelectedRouteDetails] = useState<any>(null);
-  const [isDevOverride, setIsDevOverride] = useState(false);
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
 
-  const [isTripActive, setIsTripActive] = useState(false);
-  const [isStartingTrip, setIsStartingTrip] = useState(false);
-  const [isNavigatingToOrigin, setIsNavigatingToOrigin] = useState(false);
-  const [currentTripId, setCurrentTripId] = useState<string | null>(null);
-  const [driverPos, setDriverPos] = useState<{lat: number, lng: number} | null>(null);
+  // GPS Telemetry State
+  const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>({ lat: 19.0975, lng: 74.7420 });
   const [currentSpeedKmh, setCurrentSpeedKmh] = useState<number>(0);
+  const [driverHeading, setDriverHeading] = useState<number>(0);
+  const [gpsStatus, setGpsStatus] = useState<'searching' | 'active' | 'simulated' | 'fallback'>('active');
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(12);
   const [isSocketConnected, setIsSocketConnected] = useState<boolean>(false);
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(true);
+
+  // Indoor presentation / Demo drive simulation toggle
+  const [isSimulatingDrive, setIsSimulatingDrive] = useState<boolean>(false);
+  const [simulationIndex, setSimulationIndex] = useState<number>(0);
 
   const watchIdRef = useRef<number | null>(null);
   const socketRef = useRef<any>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const lastDbWriteRef = useRef<number>(0);
+  const simulationTimerRef = useRef<any>(null);
 
+  // 1. Initial Data Fetching & Sync with AppContext / Firebase
   const fetchInitialData = useCallback(async () => {
     try {
       const fbBuses = await getFirebaseBuses();
-      if (fbBuses && fbBuses.length > 0) {
-        const myBus = fbBuses.find(b => b.id === user?.assignedBusId) || fbBuses[0];
+      const combinedBuses = (fbBuses && fbBuses.length > 0) ? fbBuses : appBuses;
+
+      if (combinedBuses && combinedBuses.length > 0) {
+        const myBus = combinedBuses.find((b: any) => 
+          b.id === user?.assignedBusId || 
+          b.bus_number === (user as any)?.assignedBusNumber || 
+          b.busNumber === (user as any)?.assignedBusNumber
+        ) || combinedBuses[0];
         setBusDetails(myBus);
       } else {
-        setBusDetails(null);
+        setBusDetails({
+          id: 'bus-ah24',
+          bus_number: 'AH-24',
+          plate_number: 'MH-16-CV-2024',
+          capacity: 40,
+          type: 'Standard City',
+          status: 'Active'
+        });
       }
     } catch (_) {
-      setBusDetails(null);
+      if (appBuses && appBuses.length > 0) {
+        setBusDetails(appBuses[0]);
+      } else {
+        setBusDetails({
+          id: 'bus-ah24',
+          bus_number: 'AH-24',
+          plate_number: 'MH-16-CV-2024',
+          capacity: 40,
+          type: 'Standard City',
+          status: 'Active'
+        });
+      }
     }
 
     try {
       const fbRoutes = await getFirebaseRoutes();
-      if (fbRoutes && fbRoutes.length > 0) {
-        setAvailableRoutes(fbRoutes);
-        if (!selectedRouteId) setSelectedRouteId(fbRoutes[0].id);
+      const combinedRoutes = (fbRoutes && fbRoutes.length > 0) ? fbRoutes : appRoutes;
+
+      if (combinedRoutes && combinedRoutes.length > 0) {
+        setAvailableRoutes(combinedRoutes);
+        if (!selectedRouteId) setSelectedRouteId(combinedRoutes[0].id);
       }
-    } catch (_) {}
-  }, [user?.assignedBusId, selectedRouteId]);
+    } catch (_) {
+      if (appRoutes && appRoutes.length > 0) {
+        setAvailableRoutes(appRoutes);
+        if (!selectedRouteId) setSelectedRouteId(appRoutes[0].id);
+      }
+    }
+  }, [user?.assignedBusId, appBuses, appRoutes, selectedRouteId]);
 
   const fetchSchedules = useCallback(async () => {
     if (!user?.id) return;
@@ -161,15 +158,21 @@ export const DriverDashboard: React.FC = () => {
     }
   }, [user?.id]);
 
+  // Connect to Socket.IO and establish BroadcastChannel
   useEffect(() => {
     fetchInitialData();
     fetchSchedules();
-    
-    // Connect to Socket.IO Server
-    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://nagarst.onrender.com';
+
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        broadcastChannelRef.current = new BroadcastChannel('nagarst_bus_telemetry');
+      }
+    } catch (_) {}
+
+    const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://nagarst.onrender.com');
     import('socket.io-client').then(({ io }) => {
-      socketRef.current = io(SOCKET_URL);
-      
+      socketRef.current = io(SOCKET_URL, { reconnection: true, transports: ['websocket', 'polling'] });
+
       socketRef.current.on('connect', () => {
         setIsSocketConnected(true);
       });
@@ -179,11 +182,11 @@ export const DriverDashboard: React.FC = () => {
       });
 
       socketRef.current.on('dispatchMessage', (data: { busId: string, message: string }) => {
-        if (data.busId === user?.assignedBusId) {
+        if (data.busId === busDetails?.id || data.busId === user?.assignedBusId) {
           toast.warning(data.message, 'City Admin Dispatch Alert', 8000);
         }
       });
-    });
+    }).catch(() => {});
 
     return () => {
       if (socketRef.current) {
@@ -194,93 +197,122 @@ export const DriverDashboard: React.FC = () => {
         broadcastChannelRef.current.close();
       }
     };
-  }, [user?.assignedBusId, fetchInitialData, fetchSchedules, toast]);
+  }, [user?.assignedBusId, fetchInitialData, fetchSchedules, toast, busDetails?.id]);
 
+  // Sync available routes if AppContext loads them later
+  useEffect(() => {
+    if (availableRoutes.length === 0 && appRoutes.length > 0) {
+      setAvailableRoutes(appRoutes);
+      if (!selectedRouteId) setSelectedRouteId(appRoutes[0].id);
+    }
+  }, [appRoutes, availableRoutes.length, selectedRouteId]);
+
+  // Fetch stops when route changes
   const fetchRouteStops = useCallback(async (routeId: string) => {
-    const route = availableRoutes.find(r => r.id === routeId);
+    if (!routeId) {
+      setTripStops([]);
+      setSelectedRouteDetails(null);
+      return;
+    }
+    const route = availableRoutes.find(r => r.id === routeId) || appRoutes.find(r => r.id === routeId);
     if (route && route.stops && route.stops.length > 0) {
       const formatted = route.stops.map((s: any, idx: number) => ({
         id: s.stopId || s.id || `stop-${idx}`,
-        stop_order: s.sequence || idx + 1,
-        estimated_minutes_from_origin: s.estimatedMinutesFromOrigin || idx * 4,
-        stops: {
-          id: s.stopId || s.id || `stop-${idx}`,
-          stop_name: s.stopName || s.name,
-          lat: s.lat,
-          lng: s.lng
-        }
+        stopId: s.stopId || s.id || `stop-${idx}`,
+        stopName: s.stopName || s.name || `Stop ${idx + 1}`,
+        sequence: s.sequence || idx + 1,
+        estimatedMinutesFromOrigin: s.estimatedMinutesFromOrigin || idx * 4,
+        lat: Number(s.lat),
+        lng: Number(s.lng)
       }));
       setTripStops(formatted);
+      setSelectedRouteDetails(route);
       return;
     }
+
     try {
       const allRoutes = await getFirebaseRoutes();
       const match = allRoutes.find(r => r.id === routeId);
       if (match && match.stops) {
         const formatted = match.stops.map((s: any, idx: number) => ({
           id: s.stopId || s.id || `stop-${idx}`,
-          stop_order: s.sequence || idx + 1,
-          estimated_minutes_from_origin: s.estimatedMinutesFromOrigin || idx * 4,
-          stops: {
-            id: s.stopId || s.id || `stop-${idx}`,
-            stop_name: s.stopName || s.name,
-            lat: s.lat,
-            lng: s.lng
-          }
+          stopId: s.stopId || s.id || `stop-${idx}`,
+          stopName: s.stopName || s.name || `Stop ${idx + 1}`,
+          sequence: s.sequence || idx + 1,
+          estimatedMinutesFromOrigin: s.estimatedMinutesFromOrigin || idx * 4,
+          lat: Number(s.lat),
+          lng: Number(s.lng)
         }));
         setTripStops(formatted);
+        setSelectedRouteDetails(match);
       }
     } catch (_) {}
-  }, [availableRoutes]);
+  }, [availableRoutes, appRoutes]);
 
-  // Fetch stops when route changes
   useEffect(() => {
     if (selectedRouteId) {
       fetchRouteStops(selectedRouteId);
-      const details = availableRoutes.find(r => r.id === selectedRouteId);
-      setSelectedRouteDetails(details || null);
+    } else {
+      setTripStops([]);
+      setSelectedRouteDetails(null);
     }
-  }, [selectedRouteId, availableRoutes, fetchRouteStops]);
+  }, [selectedRouteId, fetchRouteStops]);
 
-  // Centralized telemetry emitter for instant commuter sync
-  const sendLiveTelemetry = useCallback(async (
+  // Centralized telemetry emitter: broadcasts live GPS coordinates to Passenger and City Admin dashboards
+  const sendLiveTelemetry = useCallback((
     lat: number,
     lng: number,
     speedKmh: number,
-    statusOverride?: string
+    statusOverride?: string,
+    heading?: number
   ) => {
-    if (!busDetails || !busDetails.id) return;
+    if (!isLiveBroadcasting) return;
+
+    const bId = busDetails?.id || user?.assignedBusId || 'bus-ah24';
+    const bNumber = busDetails?.bus_number || busDetails?.busNumber || (user as any)?.assignedBusNumber || 'AH-24';
+    const bPlate = busDetails?.plate_number || busDetails?.plateNumber || 'MH-16-CV-2024';
 
     let currentStatus = statusOverride || 'on_time';
     const routePathCoords = selectedRouteDetails?.route_path || [];
     if (!statusOverride && routePathCoords.length > 0) {
       const distToRoute = getDistanceToPolyline({ lat, lng }, routePathCoords);
-      if (distToRoute > 150) {
+      if (distToRoute > 200) {
         currentStatus = 'off_route';
       }
     }
 
-    const payload = {
-      id: busDetails.id,
-      busId: busDetails.id,
-      busNumber: busDetails.bus_number,
-      plateNumber: busDetails.plate_number,
+    const nextStopObj = tripStops[currentStopIndex] || tripStops[0];
+    const nextStopName = nextStopObj?.stopName || (selectedRouteDetails ? selectedRouteDetails.destination : 'City Transit Corridor');
+
+    const payload: Bus = {
+      id: bId,
+      busNumber: bNumber,
+      plateNumber: bPlate,
       routeId: selectedRouteId || '',
-      routeNumber: selectedRouteDetails?.route_number || '',
-      routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} - ${selectedRouteDetails.destination}` : 'In Service',
-      origin: selectedRouteDetails?.origin || 'Depot',
-      destination: selectedRouteDetails?.destination || 'Depot',
+      routeNumber: selectedRouteDetails?.route_number || selectedRouteDetails?.routeNumber || 'Transit',
+      routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} ➔ ${selectedRouteDetails.destination}` : 'Municipal City Bus Service',
+      origin: selectedRouteDetails?.origin || 'Ahilyanagar CBS',
+      destination: selectedRouteDetails?.destination || 'City Transit',
+      currentStopId: tripStops[Math.max(0, currentStopIndex - 1)]?.id || 'stop1',
+      currentStopName: tripStops[Math.max(0, currentStopIndex - 1)]?.stopName || 'Transit Origin',
+      nextStopId: nextStopObj?.id || 'stop2',
+      nextStopName: nextStopName,
+      etaToNextMinutes: Math.max(1, Math.round(nextStopObj?.estimatedMinutesFromOrigin || 3)),
       lat,
       lng,
       speedKmh,
-      status: currentStatus,
-      occupancy: 'moderate' as const,
-      nextStopName: tripStops[currentStopIndex]?.stops?.stop_name || (tripStops[0]?.stops?.stop_name || 'Terminal'),
-      driverName: user?.name || 'Driver',
-      lastUpdated: new Date().toISOString()
+      heading: heading ?? driverHeading ?? 0,
+      status: currentStatus as any,
+      occupancy: 'moderate',
+      driverName: user?.name || 'Duty Operator',
+      conductorName: 'Duty Conductor',
+      busType: (busDetails?.type || 'Standard City') as any,
+      lastUpdated: new Date().toISOString(),
+      isDemo: false,
+      isLiveDriver: true
     };
 
-    // 1. Cross-tab BroadcastChannel (instant 0ms latency sync)
+    // 1. Cross-tab BroadcastChannel (instant zero-latency sync to Passenger & Admin tabs)
     try {
       if (!broadcastChannelRef.current && typeof BroadcastChannel !== 'undefined') {
         broadcastChannelRef.current = new BroadcastChannel('nagarst_bus_telemetry');
@@ -288,245 +320,226 @@ export const DriverDashboard: React.FC = () => {
       broadcastChannelRef.current?.postMessage({
         type: 'locationUpdate',
         data: payload,
-        bus: payload
+        bus: payload,
+        isLiveDriver: true
+      });
+      broadcastChannelRef.current?.postMessage({
+        type: 'driver_location_update',
+        data: payload,
+        bus: payload,
+        isLiveDriver: true
       });
     } catch (_) {}
 
     // 2. Cross-tab localStorage
     try {
-      localStorage.setItem('nagarst_live_bus_' + busDetails.id, JSON.stringify(payload));
+      localStorage.setItem('nagarst_live_bus_' + bId, JSON.stringify(payload));
       const existingListStr = localStorage.getItem('nagarst_active_live_drivers');
       let driverList: any[] = [];
       if (existingListStr) {
-        try {
-          driverList = JSON.parse(existingListStr);
-        } catch (_) {}
+        try { driverList = JSON.parse(existingListStr); } catch (_) {}
       }
-      const updatedList = [payload, ...driverList.filter((b: any) => b.id !== payload.id)];
+      const updatedList = [payload, ...driverList.filter((b: any) => b.id !== bId)];
       localStorage.setItem('nagarst_active_live_drivers', JSON.stringify(updatedList));
     } catch (_) {}
 
-    // 3. Socket.IO (when connected)
+    // 3. In-window custom event (instant in-memory notification across all components)
+    try {
+      window.dispatchEvent(new CustomEvent('nagarst_driver_telemetry', { detail: payload }));
+    } catch (_) {}
+
+    // 4. Socket.IO (transmits to cloud dispatcher and external commuter devices)
     if (socketRef.current) {
       socketRef.current.emit('updateLocation', payload);
+      socketRef.current.emit('driverLocation', payload);
     }
 
-    // 4. Firebase Firestore live_locations collection (debounced to 6s for real physical drivers only)
-    const isDemoBus = Boolean(busDetails.id?.startsWith('demo-') || (busDetails as any).isDemo);
+    // 5. Firebase Firestore live_locations collection (backend database: written every 4s)
     const now = Date.now();
-    if (!isDemoBus && (now - lastDbWriteRef.current >= 6000 || lastDbWriteRef.current === 0)) {
+    if (now - lastDbWriteRef.current >= 4000 || lastDbWriteRef.current === 0) {
       lastDbWriteRef.current = now;
       try {
         updateFirebaseLiveLocation({
-          bus_id: busDetails.id,
+          bus_id: bId,
           lat,
           lng,
           speed_kmh: speedKmh,
-          heading: 0,
+          heading: heading ?? driverHeading ?? 0,
           route_id: selectedRouteId || undefined,
           updated_at: new Date().toISOString()
-        }).catch(() => {});
+        } as any).catch(() => {});
       } catch (_) {}
     }
-  }, [busDetails, selectedRouteId, selectedRouteDetails, tripStops, currentStopIndex, user?.name, currentTripId]);
+  }, [isLiveBroadcasting, busDetails, user, selectedRouteId, selectedRouteDetails, tripStops, currentStopIndex, driverHeading]);
 
-  // Standby GPS watcher so driver location is tracked as soon as GPS is turned on
-  useEffect(() => {
-    let standbyWatchId: number | null = null;
-    if ('geolocation' in navigator && !isTripActive && !isNavigatingToOrigin && busDetails && busDetails.id) {
-      standbyWatchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          const spd = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
-          setDriverPos({ lat, lng });
-          setCurrentSpeedKmh(spd);
-          if (busDetails && busDetails.id) {
-            sendLiveTelemetry(lat, lng, spd, 'standby');
-          }
-        },
-        (err) => console.log('Standby GPS fix wait:', err.message),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
-      );
-    }
-    return () => {
-      if (standbyWatchId !== null) {
-        navigator.geolocation.clearWatch(standbyWatchId);
-      }
-    };
-  }, [busDetails, isTripActive, isNavigatingToOrigin, sendLiveTelemetry]);
-
-  const beginActualTrip = async (latitude: number, longitude: number, speedKmh: number) => {
-    // 1. Create Trip directly in Firebase Firestore
-    const tripId = `trip-${Date.now()}`;
-    try {
-      await saveFirebaseTrip({
-        id: tripId,
-        bus_id: busDetails.id,
-        route_id: selectedRouteId,
-        driver_id: user?.id || 'driver-current',
-        status: 'Active',
-        start_time: new Date().toISOString()
-      });
-    } catch (err: any) {
-      console.warn('Trip save notice:', err);
-    }
-
-    setCurrentTripId(tripId);
-    setIsTripActive(true);
-    setIsNavigatingToOrigin(false);
-    setActiveTab('trip');
-    setCurrentStopIndex(0);
-    setIsStartingTrip(false);
-    toast.success('Live GPS tracking active and broadcasting to commuter map.', 'Trip Started');
-
-    // Immediately transmit initial trip point
-    sendLiveTelemetry(latitude, longitude, speedKmh, 'on_time');
-
-    // 2. Start Real GPS Tracking
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-    }
-    
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      (position) => {
-        const { latitude: lat, longitude: lng, speed } = position.coords;
-        const currentSpeed = speed ? Math.round(speed * 3.6) : 0;
-        setDriverPos({ lat, lng });
-        setCurrentSpeedKmh(currentSpeed);
-        sendLiveTelemetry(lat, lng, currentSpeed);
-      },
-      (error) => {
-        console.error(`Failed to get real GPS: ${error.message}`);
-      },
-      { enableHighAccuracy: true }
-    );
-  };
-
-  const handleStartTrip = async () => {
-    if (!selectedRouteId || !busDetails) {
-      toast.error('Please select an assigned route first.');
-      return;
-    }
-
+  // Robust 2-Stage Geolocation Acquirer with High/Low Accuracy Fallback
+  const acquireGPSPosition = useCallback((
+    onSuccess?: (coords: { lat: number; lng: number; speed: number; heading: number }) => void,
+    onFail?: (errorMsg: string) => void
+  ) => {
     if (!('geolocation' in navigator)) {
-      toast.error('Geolocation is not supported by your browser. Cannot start trip without GPS.');
+      const msg = 'Geolocation is not supported by your browser.';
+      toast.error(msg);
+      onFail?.(msg);
       return;
     }
 
-    setIsStartingTrip(true);
+    setGpsStatus('searching');
 
-    // Get current position first to validate distance
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const driverLatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      
-      let needsNavigation = false;
-      if (tripStops.length > 0 && !isDevOverride) {
-        const firstStop = { lat: tripStops[0].stops.lat, lng: tripStops[0].stops.lng };
-        const dist = getDistance(driverLatLng, firstStop);
-        if (dist > 150) {
-          needsNavigation = true;
-          toast.warning(`You are ${dist.toFixed(0)}m from the origin stop. Tracking started. Proceed to origin.`);
-        }
+    const handleSuccess = (pos: GeolocationPosition) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const spd = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
+      const hdg = pos.coords.heading || 0;
+      const acc = pos.coords.accuracy || 15;
+
+      setDriverPos({ lat, lng });
+      setCurrentSpeedKmh(spd);
+      setDriverHeading(hdg);
+      setGpsAccuracy(acc);
+      setGpsStatus('active');
+
+      onSuccess?.({ lat, lng, speed: spd, heading: hdg });
+    };
+
+    // Stage 1: Try high accuracy with strict 5s timeout
+    navigator.geolocation.getCurrentPosition(
+      handleSuccess,
+      (highErr) => {
+        // Stage 2: Fallback to network/standard accuracy if high-accuracy times out or satellite unavailable
+        navigator.geolocation.getCurrentPosition(
+          handleSuccess,
+          (fallbackErr) => {
+            const defaultPos = tripStops.length > 0 
+              ? { lat: tripStops[0].lat, lng: tripStops[0].lng } 
+              : { lat: 19.0975, lng: 74.7420 };
+
+            setDriverPos(defaultPos);
+            setGpsStatus('fallback');
+            onFail?.(fallbackErr.message);
+          },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+    );
+  }, [toast, tripStops]);
+
+  // On mount: acquire standby GPS position immediately and broadcast if enabled
+  useEffect(() => {
+    acquireGPSPosition((coords) => {
+      if (isLiveBroadcasting) {
+        sendLiveTelemetry(coords.lat, coords.lng, coords.speed, 'on_time', coords.heading);
       }
+    });
 
-      if (needsNavigation) {
-        setIsNavigatingToOrigin(true);
-        setIsStartingTrip(false);
-        
-        watchIdRef.current = navigator.geolocation.watchPosition(async (position) => {
-          const { latitude, longitude, speed } = position.coords;
-          const currentSpeed = speed ? Math.round(speed * 3.6) : 0;
-          setDriverPos({ lat: latitude, lng: longitude });
-          setCurrentSpeedKmh(currentSpeed);
-          sendLiveTelemetry(latitude, longitude, currentSpeed, 'navigating_to_origin');
+    // Start watchPosition for continuous live tracking updates
+    if ('geolocation' in navigator) {
+      try {
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (pos) => {
+            if (isSimulatingDrive) return; // In simulation mode, ignore hardware GPS
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            const spd = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
+            const hdg = pos.coords.heading || 0;
+            setDriverPos({ lat, lng });
+            setCurrentSpeedKmh(spd);
+            setDriverHeading(hdg);
+            setGpsAccuracy(pos.coords.accuracy || 12);
+            setGpsStatus('active');
 
-          const currentLatLng = { lat: latitude, lng: longitude };
-          const firstStop = { lat: tripStops[0].stops.lat, lng: tripStops[0].stops.lng };
-          const currentDist = getDistance(currentLatLng, firstStop);
-          
-          if (currentDist <= 150) {
-            navigator.geolocation.clearWatch(watchIdRef.current!);
-            watchIdRef.current = null;
-            const startConfirmed = await confirm({
-              title: 'Arrived at Origin Stop',
-              message: `You have reached ${tripStops[0]?.stops?.stop_name}. Start passengers journey now?`,
-              confirmText: 'Start Journey',
-            });
-            if (startConfirmed) {
-              beginActualTrip(latitude, longitude, currentSpeed);
-            } else {
-              setIsNavigatingToOrigin(false);
+            if (isLiveBroadcasting) {
+              sendLiveTelemetry(lat, lng, spd, 'on_time', hdg);
             }
-          }
-        }, undefined, { enableHighAccuracy: true });
-      } else {
-        beginActualTrip(pos.coords.latitude, pos.coords.longitude, pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0);
-      }
-    }, (err) => {
-      toast.error(`Could not get GPS fix: ${err.message}`);
-      setIsStartingTrip(false);
-    }, { enableHighAccuracy: true });
-  };
+          },
+          (err) => {
+            console.log('GPS watch info:', err.message);
+          },
+          { enableHighAccuracy: false, maximumAge: 10000 }
+        );
+      } catch (_) {}
+    }
 
-  const getBusIcon = (busNumber: string) => {
-    return createModernBusIcon(busNumber, {
-      isSelected: true,
-      isSelf: true,
-      speedKmh: currentSpeedKmh,
-      status: isTripActive ? 'on_time' : 'standby'
-    });
-  };
-
-  const handleEndTrip = async () => {
-    const isConfirmed = await confirm({
-      title: 'End Active Trip',
-      message: 'Are you sure you want to end this trip? Real-time broadcasting to passenger maps will stop.',
-      confirmText: 'Yes, End Trip',
-      isDestructive: true,
-    });
-
-    if (isConfirmed) {
-      if (currentTripId) {
-        try {
-          await saveFirebaseTrip({
-            id: currentTripId,
-            bus_id: busDetails?.id || '',
-            route_id: selectedRouteId || '',
-            driver_id: user?.id || '',
-            status: 'Completed',
-            end_time: new Date().toISOString()
-          });
-        } catch (_) {}
-        
-        if (busDetails) {
-          try {
-            await deleteDoc(doc(db, 'live_locations', busDetails.id));
-          } catch (_) {}
-          try {
-            localStorage.removeItem('nagarst_live_bus_' + busDetails.id);
-          } catch (_) {}
-          if (broadcastChannelRef.current) {
-            broadcastChannelRef.current.postMessage({ type: 'busOffline', busId: busDetails.id });
-          }
-          if (socketRef.current) {
-            socketRef.current.emit('stopTrip', busDetails.id);
-          }
-        }
-      }
-
-      setIsTripActive(false);
-      setCurrentTripId(null);
-      setActiveTab('home');
-      toast.info('Trip ended successfully. Shift data saved.');
-
+    return () => {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
       }
+    };
+  }, [acquireGPSPosition, sendLiveTelemetry, isLiveBroadcasting, isSimulatingDrive]);
+
+  // Master Switch: Toggle Live Location Broadcasting
+  const handleToggleLiveBroadcasting = async (checked: boolean) => {
+    setIsLiveBroadcasting(checked);
+    const bId = busDetails?.id || user?.assignedBusId || 'bus-ah24';
+
+    if (checked) {
+      acquireGPSPosition((coords) => {
+        sendLiveTelemetry(coords.lat, coords.lng, coords.speed, 'on_time', coords.heading);
+      });
+      toast.success('Live GPS Broadcasting is now ON! Passenger and City Admin maps are receiving your live coordinates.', 'Live GPS Active');
+    } else {
+      setIsSimulatingDrive(false);
+      try { await deleteDoc(doc(db, 'live_locations', bId)); } catch (_) {}
+      try { localStorage.removeItem('nagarst_live_bus_' + bId); } catch (_) {}
+      broadcastChannelRef.current?.postMessage({ type: 'busOffline', busId: bId });
+      socketRef.current?.emit('stopTrip', bId);
+      toast.info('Live GPS Broadcasting paused. Your bus is now in standby mode.', 'Live GPS Paused');
     }
   };
 
+  // Indoor Demo / Presentation Drive Simulation (Glides along route smoothly)
+  useEffect(() => {
+    if (!isSimulatingDrive) {
+      if (simulationTimerRef.current) {
+        clearInterval(simulationTimerRef.current);
+        simulationTimerRef.current = null;
+      }
+      return;
+    }
+
+    setGpsStatus('simulated');
+
+    // Build dense route path along the route or city center
+    const waypoints: { lat: number; lng: number }[] = (selectedRouteDetails?.route_path && selectedRouteDetails.route_path.length > 5)
+      ? selectedRouteDetails.route_path
+      : (tripStops.length > 0 ? tripStops.map(s => ({ lat: s.lat, lng: s.lng })) : [
+          { lat: 19.0975, lng: 74.7420 },
+          { lat: 19.1025, lng: 74.7380 },
+          { lat: 19.1120, lng: 74.7350 },
+          { lat: 19.1235, lng: 74.7321 }
+        ]);
+
+    let step = simulationIndex;
+    simulationTimerRef.current = setInterval(() => {
+      if (waypoints.length < 2) return;
+      step = (step + 1) % waypoints.length;
+      setSimulationIndex(step);
+
+      const currentPt = waypoints[step];
+      const nextPt = waypoints[(step + 1) % waypoints.length];
+      const dLat = nextPt.lat - currentPt.lat;
+      const dLng = nextPt.lng - currentPt.lng;
+      const calculatedHeading = Math.round((Math.atan2(dLng, dLat) * 180 / Math.PI + 360) % 360);
+      const simulatedSpeed = Math.floor(26 + Math.random() * 10);
+
+      setDriverPos(currentPt);
+      setCurrentSpeedKmh(simulatedSpeed);
+      setDriverHeading(calculatedHeading);
+
+      sendLiveTelemetry(currentPt.lat, currentPt.lng, simulatedSpeed, 'on_time', calculatedHeading);
+    }, 1200);
+
+    return () => {
+      if (simulationTimerRef.current) {
+        clearInterval(simulationTimerRef.current);
+        simulationTimerRef.current = null;
+      }
+    };
+  }, [isSimulatingDrive, selectedRouteDetails, tripStops, sendLiveTelemetry]);
+
+  // Emergency SOS trigger
   const handleTriggerSOS = async () => {
     const sosConfirmed = await confirm({
       title: 'TRIGGER EMERGENCY SOS DISPATCH',
@@ -550,21 +563,105 @@ export const DriverDashboard: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
+  // Format data for the unified LiveMap component (exact same structure used by Passenger and Admin)
+  const mapRoute: Route | null = useMemo(() => {
+    if (!selectedRouteDetails) return null;
+    return {
+      id: selectedRouteDetails.id,
+      routeNumber: selectedRouteDetails.route_number || selectedRouteDetails.routeNumber || 'Transit',
+      name: selectedRouteDetails.name || `${selectedRouteDetails.origin} ➔ ${selectedRouteDetails.destination}`,
+      nameMarathi: selectedRouteDetails.nameMarathi || selectedRouteDetails.name || `${selectedRouteDetails.origin} ➔ ${selectedRouteDetails.destination}`,
+      origin: selectedRouteDetails.origin || 'Depot',
+      destination: selectedRouteDetails.destination || 'Depot',
+      firstBus: selectedRouteDetails.firstBus || '06:00 AM',
+      lastBus: selectedRouteDetails.lastBus || '10:00 PM',
+      frequencyMinutes: selectedRouteDetails.frequencyMinutes || 15,
+      baseFare: selectedRouteDetails.baseFare || 10,
+      maxFare: selectedRouteDetails.maxFare || 30,
+      totalStops: tripStops.length,
+      durationMinutes: selectedRouteDetails.durationMinutes || 30,
+      color: selectedRouteDetails.color || '#7847CB',
+      status: 'normal',
+      route_path: selectedRouteDetails.route_path,
+      activeBusesCount: 1,
+      stops: tripStops.map((s, idx) => ({
+        stopId: s.id,
+        stopName: s.stopName,
+        stopNameMarathi: s.stopName,
+        sequence: s.sequence || idx + 1,
+        fareFromOrigin: (idx + 1) * 5,
+        estimatedMinutesFromOrigin: s.estimatedMinutesFromOrigin || idx * 4,
+        lat: s.lat,
+        lng: s.lng
+      }))
     };
-  }, []);
+  }, [selectedRouteDetails, tripStops]);
+
+  const mapStops: BusStop[] = useMemo(() => {
+    return tripStops.map((s) => ({
+      id: s.id,
+      name: s.stopName,
+      nameMarathi: s.stopName,
+      area: 'Ahilyanagar',
+      lat: s.lat,
+      lng: s.lng,
+      lines: [mapRoute?.routeNumber || 'Route'],
+      facilities: ['Shelter', 'Digital Display'],
+      accessibility: true,
+      shelter: true,
+      digitalBoard: true,
+      liveArrivals: []
+    }));
+  }, [tripStops, mapRoute]);
+
+  const driverBusObject: Bus | null = useMemo(() => {
+    const bId = busDetails?.id || user?.assignedBusId || 'bus-ah24';
+    const bNumber = busDetails?.bus_number || busDetails?.busNumber || (user as any)?.assignedBusNumber || 'AH-24';
+    const bPlate = busDetails?.plate_number || busDetails?.plateNumber || 'MH-16-CV-2024';
+
+    return {
+      id: bId,
+      busNumber: bNumber,
+      plateNumber: bPlate,
+      routeId: selectedRouteId || '',
+      routeNumber: mapRoute?.routeNumber || 'Transit',
+      routeName: mapRoute?.name || 'Live City Transit',
+      origin: mapRoute?.origin || 'Ahilyanagar CBS',
+      destination: mapRoute?.destination || 'Depot',
+      currentStopId: tripStops[Math.max(0, currentStopIndex - 1)]?.id || 'stop1',
+      currentStopName: tripStops[Math.max(0, currentStopIndex - 1)]?.stopName || 'Transit Origin',
+      nextStopId: tripStops[currentStopIndex]?.id || 'stop2',
+      nextStopName: tripStops[currentStopIndex]?.stopName || 'En Route',
+      etaToNextMinutes: 3,
+      speedKmh: currentSpeedKmh,
+      occupancy: 'moderate',
+      status: 'on_time',
+      lat: driverPos ? driverPos.lat : (tripStops[0]?.lat || 19.0975),
+      lng: driverPos ? driverPos.lng : (tripStops[0]?.lng || 74.7420),
+      heading: driverHeading || 0,
+      driverName: user?.name || 'Driver',
+      conductorName: 'Conductor',
+      busType: (busDetails?.type || 'Standard City') as any,
+      lastUpdated: new Date().toISOString(),
+      isDemo: false,
+      isLiveDriver: isLiveBroadcasting
+    };
+  }, [busDetails, user, selectedRouteId, mapRoute, tripStops, currentStopIndex, currentSpeedKmh, driverPos, driverHeading, isLiveBroadcasting]);
 
   const navItems = [
     {
-      id: 'home',
-      label: 'Dispatch Console',
+      id: 'cockpit',
+      label: 'Live GPS Console',
+      icon: Navigation,
+      onClick: () => setActiveTab('cockpit'),
+      isActive: activeTab === 'cockpit'
+    },
+    {
+      id: 'route',
+      label: 'Route Corridor',
       icon: BusIcon,
-      onClick: () => setActiveTab('home'),
-      isActive: activeTab === 'home'
+      onClick: () => setActiveTab('route'),
+      isActive: activeTab === 'route'
     },
     {
       id: 'schedule',
@@ -572,13 +669,6 @@ export const DriverDashboard: React.FC = () => {
       icon: Calendar,
       onClick: () => setActiveTab('schedule'),
       isActive: activeTab === 'schedule'
-    },
-    {
-      id: 'trip',
-      label: 'Live Navigation',
-      icon: Navigation,
-      onClick: () => setActiveTab('trip'),
-      isActive: activeTab === 'trip'
     }
   ];
 
@@ -586,389 +676,453 @@ export const DriverDashboard: React.FC = () => {
     <SharedLayout 
       navItems={navItems} 
       title="Driver Console" 
-      subtitle={`Bus ${busDetails?.bus_number || 'Loading...'}`} 
+      subtitle={`Bus ${busDetails?.bus_number || busDetails?.busNumber || 'AH-24'} • ${isLiveBroadcasting ? 'Broadcasting Live Location' : 'GPS Standby'}`} 
       headerIcon={CircleDot}
     >
-      <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden bg-[#f8f9fc]">
+      <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden bg-slate-100">
         
         {/* OPERATIONAL STATUS BAR (High glanceability for vehicle cab) */}
-        <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 text-xs border-b border-slate-800 shrink-0">
+        <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 text-xs border-b border-slate-800 shrink-0 z-20">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-bold">
               <BusIcon className="w-4 h-4 text-purple-400" />
-              <span>{busDetails ? `${busDetails.bus_number}` : 'AH-BUS'}</span>
+              <span>{busDetails ? `${busDetails.bus_number || busDetails.busNumber}` : 'AH-24'}</span>
             </div>
-            <span className="text-slate-500">•</span>
+            <span className="text-slate-600">•</span>
             <div className="flex items-center gap-1.5 text-slate-300">
               <Gauge className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="font-mono font-bold">{currentSpeedKmh} km/h</span>
+              <span className="font-mono font-bold text-sm text-emerald-400">{currentSpeedKmh}</span>
+              <span className="text-[10px] text-slate-400">km/h</span>
             </div>
-            <span className="text-slate-500">•</span>
+            <span className="text-slate-600">•</span>
             <div className="flex items-center gap-1.5 text-slate-300">
-              <span className={`w-2 h-2 rounded-full ${driverPos ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              <span className={`w-2.5 h-2.5 rounded-full ${
+                isLiveBroadcasting 
+                  ? (gpsStatus === 'simulated' ? 'bg-amber-400 animate-bounce' : 'bg-emerald-400 animate-pulse') 
+                  : 'bg-slate-500'
+              }`} />
               <span className="font-semibold text-[11px]">
-                {driverPos ? 'GPS Broadcasting' : 'Acquiring GPS...'}
+                {isLiveBroadcasting 
+                  ? (gpsStatus === 'simulated' ? 'Demo Drive Active' : `Live GPS (${gpsAccuracy ? `±${Math.round(gpsAccuracy)}m` : 'High'})`)
+                  : 'GPS Broadcasting Off'}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 text-[11px]">
-              {isSocketConnected ? (
-                <span className="text-emerald-400 flex items-center gap-1 font-semibold">
-                  <Wifi className="w-3.5 h-3.5" /> Live Radio
-                </span>
-              ) : (
-                <span className="text-amber-400 flex items-center gap-1 font-semibold">
-                  <WifiOff className="w-3.5 h-3.5" /> Reconnecting
-                </span>
-              )}
-            </div>
+          <div className="flex items-center gap-2 md:gap-3">
+            {/* MASTER ONE-CLICK LIVE LOCATION BROADCAST TOGGLE */}
+            <button
+              type="button"
+              onClick={() => handleToggleLiveBroadcasting(!isLiveBroadcasting)}
+              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all active:scale-95 ${
+                isLiveBroadcasting
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                  : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+              }`}
+            >
+              <RadioTower className={`w-3.5 h-3.5 ${isLiveBroadcasting ? 'animate-pulse' : ''}`} />
+              <span>{isLiveBroadcasting ? 'GPS BROADCASTING: ON' : 'BROADCAST GPS: OFF'}</span>
+            </button>
 
             {/* HIGH-VISIBILITY PROTECTED SOS ACTION */}
             <button
               type="button"
               onClick={handleTriggerSOS}
-              className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] flex items-center gap-1 shadow-sm sos-beacon transition-transform active:scale-95"
+              className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] flex items-center gap-1 shadow-sm sos-beacon transition-transform active:scale-95"
             >
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>SOS EMERGENCY</span>
+              <span>SOS DISPATCH</span>
             </button>
           </div>
         </div>
 
-        {/* TAB 1: DISPATCH / HOME */}
-        {activeTab === 'home' && (
-          <div className="flex-1 p-4 md:p-6 max-w-lg mx-auto w-full space-y-4 overflow-y-auto">
-            <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-2xs space-y-5">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <span className="text-xs font-bold text-[#7847CB] uppercase tracking-wider block">
-                  Trip Assignment & Shift Console
-                </span>
-                <Badge variant={isTripActive ? 'success' : 'neutral'} size="sm" dot>
-                  {isTripActive ? 'Trip Active' : 'Idle / Standby'}
-                </Badge>
-              </div>
+        {/* UNIFIED PASSENGER & CITY ADMIN SPLIT LAYOUT */}
+        <div className="flex-1 flex flex-col md:flex-row h-full relative overflow-hidden">
+          
+          {/* PRIMARY WORKSPACE: LIVE INTERACTIVE MAP (Exact same layout as Passenger and City Admin) */}
+          <div className="flex-1 h-[50vh] md:h-full w-full relative order-1 md:order-1">
+            <LiveMap
+              buses={driverBusObject ? [driverBusObject] : []}
+              stops={mapStops}
+              routes={mapRoute ? [mapRoute] : []}
+              selectedBusId={driverBusObject?.id}
+              selectedRouteId={mapRoute?.id}
+              height="100%"
+              showUserLocation={true}
+              userLocation={driverPos}
+              onUserLocationChange={(pos) => {
+                if (pos && !isSimulatingDrive) {
+                  setDriverPos(pos);
+                  if (isLiveBroadcasting) {
+                    sendLiveTelemetry(pos.lat, pos.lng, currentSpeedKmh, 'on_time', driverHeading);
+                  }
+                }
+              }}
+            />
 
-              <div className="space-y-4">
-                <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1.5">
-                    Assigned Vehicle
-                  </label>
-                  <div className="text-sm font-bold text-slate-900 flex items-center justify-between p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-purple-100 text-[#7847CB] flex items-center justify-center font-bold">
-                        AH
-                      </div>
-                      <div>
-                        <span className="block text-slate-900 leading-tight">
-                          {busDetails ? `${busDetails.bus_number}` : 'Fetching bus info...'}
-                        </span>
-                        <span className="text-[11px] text-slate-500 font-mono">
-                          {busDetails?.plate_number}
-                        </span>
-                      </div>
-                    </div>
-                    <Badge variant="brand" size="sm">EV City Bus</Badge>
-                  </div>
+            {/* Floating Live Status Overlay on Map */}
+            <div className="absolute top-4 left-4 z-[500] flex flex-wrap gap-2 pointer-events-auto">
+              <Badge variant={isLiveBroadcasting ? 'success' : 'neutral'} size="md" dot>
+                {isLiveBroadcasting ? 'BROADCASTING LIVE TO PASSENGERS & ADMIN' : 'LOCATION BROADCASTING PAUSED'}
+              </Badge>
+              {mapRoute ? (
+                <div className="bg-white/95 backdrop-blur-md shadow-md px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs font-bold text-slate-800 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: mapRoute.color || '#7847CB' }} />
+                  <span>Route {mapRoute.routeNumber}: {mapRoute.origin} ➔ {mapRoute.destination}</span>
                 </div>
-
-                <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1.5">
-                    Select Assigned Route
-                  </label>
-                  <select 
-                    value={selectedRouteId} 
-                    onChange={(e) => setSelectedRouteId(e.target.value)}
-                    disabled={isTripActive}
-                    className="w-full text-xs md:text-sm font-bold text-slate-900 p-3 bg-slate-50 rounded-2xl border border-slate-200 outline-none focus:border-[#7847CB] focus:ring-2 focus:ring-[#7847CB]/20"
-                  >
-                    <option value="" disabled>Select route...</option>
-                    {availableRoutes.map(r => (
-                      <option key={r.id} value={r.id}>
-                        Route {r.route_number} ({r.origin} ➔ {r.destination})
-                      </option>
-                    ))}
-                  </select>
+              ) : (
+                <div className="bg-white/95 backdrop-blur-md shadow-md px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs font-bold text-slate-800 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                  <span>Free City Duty (No Route Filter)</span>
                 </div>
-
-                {!isTripActive && (
-                  <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={isDevOverride}
-                      onChange={(e) => setIsDevOverride(e.target.checked)}
-                      className="w-4 h-4 text-[#7847CB] rounded border-slate-300 focus:ring-[#7847CB]"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">Bypass Location Check (Testing)</span>
-                      <span className="text-[10px] text-slate-500 block">Allows starting trip from anywhere for verification</span>
-                    </div>
-                  </label>
-                )}
-              </div>
-
-              {!isTripActive && !isNavigatingToOrigin && (
-                <Button
-                  onClick={handleStartTrip}
-                  disabled={!selectedRouteId || tripStops.length === 0 || isStartingTrip}
-                  isLoading={isStartingTrip}
-                  className="w-full"
-                  size="lg"
-                  leftIcon={<Navigation className="w-4 h-4" />}
-                >
-                  {isStartingTrip ? 'Acquiring GPS Fix...' : 'Start Scheduled Trip'}
-                </Button>
-              )}
-
-              {isNavigatingToOrigin && !isTripActive && (
-                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 space-y-3">
-                  <div className="flex items-center gap-2 font-bold text-xs">
-                    <div className="w-4 h-4 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
-                    Moving to Route Origin Stop...
-                  </div>
-                  <p className="text-xs">
-                    Please navigate to <strong>{tripStops[0]?.stops?.stop_name}</strong>. Trip will start automatically upon arrival within 150m.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => {
-                      setIsNavigatingToOrigin(false);
-                      if (watchIdRef.current !== null) {
-                        navigator.geolocation.clearWatch(watchIdRef.current);
-                        watchIdRef.current = null;
-                      }
-                    }}
-                  >
-                    Cancel Navigation
-                  </Button>
-                </div>
-              )}
-
-              {isTripActive && (
-                <Button
-                  onClick={() => setActiveTab('trip')}
-                  className="w-full"
-                  size="lg"
-                  leftIcon={<Navigation className="w-4 h-4" />}
-                >
-                  Open Live Trip Cockpit
-                </Button>
               )}
             </div>
           </div>
-        )}
 
-        {/* TAB 2: SCHEDULE */}
-        {activeTab === 'schedule' && (
-          <div className="flex-1 p-4 md:p-6 max-w-lg mx-auto w-full space-y-4 overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-900">Assigned Shift Schedule</h2>
-              <Badge variant="brand" size="md">{driverSchedules.length} Trips</Badge>
+          {/* CONTROL COCKPIT SIDE PANEL (Responsive: docked side panel on desktop, sliding drawer on mobile) */}
+          <div className={`w-full md:w-[380px] lg:w-[410px] bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-out z-30 order-2 ${
+            isBottomSheetOpen ? 'translate-y-0' : 'translate-y-[calc(100%-48px)] md:translate-y-0'
+          } absolute md:relative bottom-0 md:bottom-auto md:right-0 md:ml-auto h-auto max-h-[60vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none border-l border-slate-200/90`}>
+            
+            {/* Mobile Drag Handle */}
+            <div 
+              className="w-full h-9 flex items-center justify-center cursor-pointer md:hidden active:bg-slate-50 shrink-0"
+              onClick={() => setIsBottomSheetOpen(!isBottomSheetOpen)}
+            >
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full" />
+              <ChevronUp className={`absolute right-4 text-slate-400 transition-transform ${isBottomSheetOpen ? 'rotate-180' : ''}`} />
             </div>
 
-            {driverSchedules.length === 0 ? (
-              <div className="p-8 text-center bg-white border border-slate-200 rounded-3xl shadow-2xs space-y-2">
-                <Calendar className="w-10 h-10 mx-auto text-slate-300" />
-                <p className="text-xs font-bold text-slate-700">No trips scheduled for you currently.</p>
-                <p className="text-[11px] text-slate-400">The Municipal Dispatcher assigns shifts here.</p>
+            {/* Cockpit Sub-Header & Navigation Tabs */}
+            <div className="p-3 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/70">
+              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('cockpit')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    activeTab === 'cockpit' ? 'bg-[#7847CB] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Live Location
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('route')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    activeTab === 'route' ? 'bg-[#7847CB] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Route ({mapRoute ? `Route ${mapRoute.routeNumber}` : 'Optional'})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('schedule')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    activeTab === 'schedule' ? 'bg-[#7847CB] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Schedule ({driverSchedules.length})
+                </button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {driverSchedules.map(trip => (
-                  <div key={trip.id} className="bg-white p-4 rounded-3xl border border-slate-200/90 shadow-2xs space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <Badge variant="brand" size="sm">
-                          {trip.status}
-                        </Badge>
-                        <h3 className="text-sm font-bold text-slate-900 mt-2">Route {trip.routes?.route_number}</h3>
-                        <p className="text-xs text-slate-500">{trip.routes?.origin} ➔ {trip.routes?.destination}</p>
+
+              <button
+                type="button"
+                onClick={() => acquireGPSPosition()}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-[#7847CB] hover:bg-white border border-transparent hover:border-slate-200 transition-colors"
+                title="Refresh GPS Coordinate"
+              >
+                <Crosshair className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* TAB CONTENT */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+              {/* TAB 1: DEDICATED LIVE LOCATION BROADCASTER */}
+              {activeTab === 'cockpit' && (
+                <div className="space-y-4">
+                  
+                  {/* MASTER BROADCAST CARD */}
+                  <div className={`p-4 rounded-3xl border transition-all ${
+                    isLiveBroadcasting 
+                      ? 'bg-gradient-to-br from-emerald-500/10 via-purple-500/5 to-white border-emerald-500/40 shadow-sm' 
+                      : 'bg-slate-50 border-slate-200/90'
+                  }`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold ${
+                          isLiveBroadcasting ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30' : 'bg-slate-200 text-slate-500'
+                        }`}>
+                          <Radio className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-black text-slate-900 text-sm md:text-base leading-tight">
+                            Live GPS Location
+                          </h3>
+                          <span className={`text-[11px] font-bold ${isLiveBroadcasting ? 'text-emerald-700' : 'text-slate-500'}`}>
+                            {isLiveBroadcasting ? 'Broadcasting to Passenger & Admin Maps' : 'Standby (Not Broadcasting)'}
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-xs font-bold text-slate-700 tabular-nums">
-                        {trip.start_time ? new Date(trip.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'TBD'}
+
+                      {/* Power Switch */}
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input 
+                          type="checkbox" 
+                          checked={isLiveBroadcasting}
+                          onChange={(e) => handleToggleLiveBroadcasting(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                      </label>
+                    </div>
+
+                    <p className="text-xs text-slate-600 leading-relaxed mb-3">
+                      {isLiveBroadcasting
+                        ? 'Your live position, speed, and heading are broadcasting continuously to the backend Firestore, Socket.IO, Passenger Live Tracking, and City Admin Fleet Map.'
+                        : 'Switch ON to instantly broadcast your vehicle location to commuters and transit authorities. No route assignment is required.'}
+                    </p>
+
+                    {/* Quick GPS Readout Pill */}
+                    <div className="grid grid-cols-2 gap-2 text-xs bg-white/90 p-2.5 rounded-2xl border border-slate-200/80">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Current Speed</span>
+                        <span className="font-mono font-bold text-slate-900 text-sm">{currentSpeedKmh} km/h</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Coordinates</span>
+                        <span className="font-mono font-bold text-slate-900 text-[11px]">
+                          {driverPos ? `${driverPos.lat.toFixed(4)}, ${driverPos.lng.toFixed(4)}` : 'Acquiring...'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Route Status Summary */}
+                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700">Assigned Route</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('route')}
+                        className="text-xs font-bold text-[#7847CB] hover:underline"
+                      >
+                        Change Route
+                      </button>
+                    </div>
+                    {mapRoute ? (
+                      <div className="flex items-center justify-between bg-purple-50/70 p-2.5 rounded-xl border border-purple-200/60">
+                        <div>
+                          <strong className="text-xs font-black text-[#7847CB]">Route {mapRoute.routeNumber}</strong>
+                          <p className="text-[11px] text-slate-600 font-medium">{mapRoute.origin} ➔ {mapRoute.destination}</p>
+                        </div>
+                        <Badge variant="brand" size="sm">{tripStops.length} stops</Badge>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500 italic">
+                        No specific route selected. Operating in general municipal duty.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Indoor Presentation / Demo Drive Toggle */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                        Simulate Live Drive (For Presentation)
+                      </span>
+                      <span className="text-[10px] text-slate-500 block">
+                        Glides vehicle along the road, broadcasting to Commuter & Admin maps
                       </span>
                     </div>
-                    
-                    <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                      <BusIcon className="w-3.5 h-3.5 text-slate-400" />
-                      Assigned Bus: <strong className="text-slate-800">{trip.buses?.bus_number}</strong>
-                    </div>
-
-                    {trip.status === 'Scheduled' && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => {
-                          if (trip.routes?.id) {
-                            setSelectedRouteId(trip.routes.id);
-                            setActiveTab('home');
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                      <input 
+                        type="checkbox" 
+                        checked={isSimulatingDrive}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setIsSimulatingDrive(checked);
+                          if (checked) {
+                            setIsLiveBroadcasting(true);
+                            toast.info('Simulated Live Drive enabled: Bus is gliding along the road and broadcasting real telemetry.', 'Live Drive Simulator');
                           }
                         }}
-                      >
-                        Select This Route
-                      </Button>
-                    )}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#7847CB]"></div>
+                    </label>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
-        {/* TAB 3: ACTIVE TRIP COCKPIT */}
-        {activeTab === 'trip' && (
-          <div className="absolute inset-0 flex flex-col md:flex-row overflow-hidden bg-slate-100">
-            {/* FULL SCREEN MAP */}
-            <div className="absolute inset-0 z-0">
-              <MapContainer 
-                center={driverPos ? [driverPos.lat, driverPos.lng] : (tripStops.length > 0 ? [tripStops[0].stops.lat, tripStops[0].stops.lng] : [19.0952, 74.7396])} 
-                zoom={14} 
-                className="w-full h-full"
-                zoomControl={false}
-              >
-                <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                <MapAutoCenter position={driverPos} />
-                
-                {/* Route Polyline */}
-                {(() => {
-                  const pathPoints = (selectedRouteDetails?.route_path && selectedRouteDetails.route_path.length > 0)
-                    ? selectedRouteDetails.route_path.map((p: any) => L.latLng(p.lat, p.lng))
-                    : tripStops.map(s => L.latLng(s.stops.lat, s.stops.lng));
-                  
-                  if (pathPoints.length < 2) return null;
-
-                  return (
-                    <Polyline 
-                      positions={pathPoints} 
-                      color="#7847CB" 
-                      weight={5} 
-                      opacity={0.9}
-                    />
-                  );
-                })()}
-
-                {/* Stop Markers */}
-                {tripStops.map((s, i) => {
-                  const isPassed = i < currentStopIndex;
-                  return (
-                    <Marker 
-                      key={s.id} 
-                      position={[s.stops.lat, s.stops.lng]}
-                      opacity={isPassed ? 0.4 : 1}
-                    >
-                      <Popup>
-                        <div className="font-bold">{i + 1}. {s.stops.stop_name}</div>
-                        {isPassed ? <div className="text-emerald-600 text-xs font-bold">Passed</div> : null}
-                      </Popup>
-                    </Marker>
-                  );
-                })}
-
-                {/* Driver Live Position Marker */}
-                {driverPos && busDetails && (
-                  <Marker position={[driverPos.lat, driverPos.lng]} zIndexOffset={1000} icon={getBusIcon(busDetails.bus_number)}>
-                    <Popup className="font-bold">Your Bus Location ({currentSpeedKmh} km/h)</Popup>
-                  </Marker>
-                )}
-              </MapContainer>
-            </div>
-
-            {/* FLOATING TRIP COCKPIT PANEL */}
-            <div className={`w-full md:w-[380px] bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-out z-40 ${
-              isBottomSheetOpen ? 'translate-y-0' : 'translate-y-[calc(100%-48px)] md:translate-y-0'
-            } absolute md:relative bottom-0 md:right-0 md:ml-auto h-auto max-h-[70vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none border-l border-slate-200/90`}>
-              
-              {/* Drag Handle (Mobile) */}
-              <div 
-                className="w-full h-10 flex items-center justify-center cursor-pointer md:hidden active:bg-slate-50 shrink-0"
-                onClick={() => setIsBottomSheetOpen(!isBottomSheetOpen)}
-              >
-                <div className="w-10 h-1 bg-slate-300 rounded-full" />
-                <ChevronUp className={`absolute right-4 text-slate-400 transition-transform ${isBottomSheetOpen ? 'rotate-180' : ''}`} />
-              </div>
-
-              {/* Panel Header */}
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <h3 className="font-extrabold text-slate-900 text-sm">Trip Navigation Active</h3>
-                </div>
-                <Badge variant="brand" size="sm">
-                  {currentSpeedKmh} km/h
-                </Badge>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {/* Current Next Stop Card */}
-                <div className="rounded-2xl bg-purple-50/70 border border-purple-200/80 p-4 shadow-xs relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-1.5 h-full bg-[#7847CB]" />
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">
-                    Approaching Next Stop
-                  </span>
-                  <h2 className="text-lg md:text-xl font-black text-[#7847CB] leading-tight">
-                    {tripStops[currentStopIndex]?.stops?.stop_name || 'Terminal Destination'}
-                  </h2>
-                  <p className="text-xs font-semibold text-slate-600 mt-1">
-                    Route {selectedRouteDetails?.route_number} ({currentStopIndex + 1} of {tripStops.length} stops)
-                  </p>
-                </div>
-
-                {/* Upcoming Stops List */}
-                <div className="rounded-2xl border border-slate-200/90 overflow-hidden shadow-2xs">
-                  <div className="p-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Next in Sequence</h4>
-                    <span className="text-[10px] text-slate-400">Order</span>
-                  </div>
-                  <div className="p-2 space-y-1.5 max-h-44 overflow-y-auto">
-                    {tripStops.slice(currentStopIndex, currentStopIndex + 4).map((stop, idx) => (
-                      <div key={stop.id} className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-white border border-slate-100 shadow-2xs">
-                        <span className={`font-bold ${idx === 0 ? 'text-[#7847CB]' : 'text-slate-700'}`}>
-                          {stop.stops.stop_name}
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-medium">+{stop.estimated_minutes_from_origin}m</span>
+                  {/* Route Sequence Checklist (If Route is Assigned) */}
+                  {tripStops.length > 0 && (
+                    <div className="rounded-2xl border border-slate-200/90 overflow-hidden shadow-2xs">
+                      <div className="p-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Route Stops Sequence</h4>
+                        <span className="text-[10px] text-slate-400 font-mono">{tripStops.length} stops</span>
                       </div>
-                    ))}
-                    {currentStopIndex >= tripStops.length && (
-                      <div className="text-center text-xs font-bold text-emerald-600 p-3 flex items-center justify-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        <span>All scheduled route stops completed!</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                      <div className="p-2 space-y-1.5 max-h-44 overflow-y-auto">
+                        {tripStops.map((stop, idx) => {
+                          const isCurrent = idx === currentStopIndex;
+                          const isPassed = idx < currentStopIndex;
 
-                {/* Controls */}
-                <div className="space-y-2.5 pt-2">
-                  {currentStopIndex < tripStops.length && (
-                    <Button
-                      onClick={() => setCurrentStopIndex(prev => prev + 1)}
-                      className="w-full"
-                      size="lg"
-                    >
-                      Mark Stop Reached & Next
-                    </Button>
+                          return (
+                            <div 
+                              key={stop.id} 
+                              className={`flex items-center justify-between text-xs p-2.5 rounded-xl border transition-colors ${
+                                isCurrent 
+                                  ? 'bg-purple-50 border-[#7847CB]/30 text-[#7847CB] font-black' 
+                                  : isPassed 
+                                    ? 'bg-slate-50 border-slate-100 text-slate-400 font-medium'
+                                    : 'bg-white border-slate-100 text-slate-700 font-bold'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                  isCurrent ? 'bg-[#7847CB] text-white' : isPassed ? 'bg-slate-200 text-slate-600' : 'bg-slate-100 text-slate-700'
+                                }`}>
+                                  {idx + 1}
+                                </span>
+                                <span>{stop.stopName}</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400">+{stop.estimatedMinutesFromOrigin}m</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
-                  
+                </div>
+              )}
+
+              {/* TAB 2: OPTIONAL ROUTE CORRIDOR SELECTION */}
+              {activeTab === 'route' && (
+                <div className="space-y-4">
+                  {/* Assigned Vehicle Card */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                      Assigned Vehicle
+                    </span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-purple-100 text-[#7847CB] flex items-center justify-center font-black text-sm">
+                          AH
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-slate-900 text-base">
+                            {busDetails ? (busDetails.bus_number || busDetails.busNumber) : 'AH-24'}
+                          </h3>
+                          <span className="text-xs text-slate-500 font-mono">
+                            {busDetails?.plate_number || busDetails?.plateNumber || 'MH-16-CV-2024'}
+                          </span>
+                        </div>
+                      </div>
+                      <Badge variant="brand" size="sm">EV City Bus</Badge>
+                    </div>
+                  </div>
+
+                  {/* Route Selector (Optional) */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Select Assigned Route Corridor (Optional)
+                    </label>
+                    <select
+                      value={selectedRouteId}
+                      onChange={(e) => setSelectedRouteId(e.target.value)}
+                      className="w-full text-xs md:text-sm font-bold text-slate-900 p-3 bg-white rounded-2xl border border-slate-200 outline-none focus:border-[#7847CB] focus:ring-2 focus:ring-[#7847CB]/20"
+                    >
+                      <option value="">No Route (General City Duty)</option>
+                      {availableRoutes.map(r => (
+                        <option key={r.id} value={r.id}>
+                          Route {r.route_number || r.routeNumber} ({r.origin} ➔ {r.destination})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Route Details Card */}
+                  {selectedRouteDetails && (
+                    <div className="p-4 rounded-2xl border border-slate-200/80 bg-white space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-500">
+                        <span>Origin Terminal:</span>
+                        <strong className="text-slate-800">{selectedRouteDetails.origin}</strong>
+                      </div>
+                      <div className="flex justify-between text-slate-500">
+                        <span>Destination Terminal:</span>
+                        <strong className="text-slate-800">{selectedRouteDetails.destination}</strong>
+                      </div>
+                      <div className="flex justify-between text-slate-500">
+                        <span>Total Scheduled Stops:</span>
+                        <strong className="text-slate-800">{tripStops.length} stops</strong>
+                      </div>
+                      <div className="flex justify-between text-slate-500">
+                        <span>Trip Duration:</span>
+                        <strong className="text-slate-800">~{selectedRouteDetails.durationMinutes || 30} mins</strong>
+                      </div>
+                    </div>
+                  )}
+
                   <Button
-                    variant="destructive"
-                    onClick={handleEndTrip}
+                    onClick={() => setActiveTab('cockpit')}
                     className="w-full"
                     size="md"
-                    leftIcon={<Square className="w-4 h-4 fill-current" />}
                   >
-                    Complete & End Trip
+                    Return to Live Location Console
                   </Button>
                 </div>
-              </div>
+              )}
+
+              {/* TAB 3: SHIFT SCHEDULE */}
+              {activeTab === 'schedule' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <h3 className="text-sm font-bold text-slate-900">Assigned Shift Schedule</h3>
+                    <Badge variant="brand" size="sm">{driverSchedules.length} Trips</Badge>
+                  </div>
+
+                  {driverSchedules.length === 0 ? (
+                    <div className="p-6 text-center bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                      <Calendar className="w-8 h-8 mx-auto text-slate-300" />
+                      <p className="text-xs font-bold text-slate-700">No specific shift assigned.</p>
+                      <p className="text-[11px] text-slate-400">Live GPS Location can broadcast anytime on duty.</p>
+                    </div>
+                  ) : (
+                    driverSchedules.map(trip => (
+                      <div key={trip.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-2">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <Badge variant="brand" size="sm">{trip.status}</Badge>
+                            <h4 className="text-xs font-bold text-slate-900 mt-1.5">Route {trip.routes?.route_number}</h4>
+                            <p className="text-[11px] text-slate-500">{trip.routes?.origin} ➔ {trip.routes?.destination}</p>
+                          </div>
+                          <span className="text-xs font-bold text-slate-700 font-mono">
+                            {trip.start_time ? new Date(trip.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '08:00 AM'}
+                          </span>
+                        </div>
+                        {trip.routes?.id && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="w-full mt-2"
+                            onClick={() => {
+                              setSelectedRouteId(trip.routes.id);
+                              setActiveTab('cockpit');
+                            }}
+                          >
+                            Select This Route
+                          </Button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
             </div>
           </div>
-        )}
+
+        </div>
+
       </div>
     </SharedLayout>
   );

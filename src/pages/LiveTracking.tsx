@@ -244,18 +244,19 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
               }
             } catch (_) { }
 
-            const isDemo = Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
-            const isKnown = buses.some(b =>
+            const isLiveDriver = Boolean(incoming.isLiveDriver || !incoming.isDemo || payload?.type === 'driver_location_update');
+            const isDemo = !isLiveDriver && Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
+            const isKnown = buses.length === 0 || buses.some(b =>
               isSameBusKey(b.id, incoming.id) ||
               isSameBusKey(b.busNumber, incoming.busNumber) ||
               isSameBusKey(b.id, incoming.busNumber) ||
               isSameBusKey(b.busNumber, incoming.id) ||
               isSameBusKey(b.plateNumber, incoming.plateNumber)
             );
-            // Accept ONLY if it belongs to registered municipal fleet
-            if (!isKnown) return;
+            // Accept if it belongs to registered municipal fleet OR is an active live driver
+            if (!isKnown && !isLiveDriver) return;
 
-            pendingBroadcastUpdates[incoming.id] = { ...incoming, isDemo, isLiveDriver: !isDemo };
+            pendingBroadcastUpdates[incoming.id] = { ...incoming, isDemo, isLiveDriver };
             if (!rafBroadcastId) {
               rafBroadcastId = requestAnimationFrame(flushBroadcastUpdates);
             }
@@ -332,11 +333,22 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         }
       }
     };
+    const onDriverTelemetry = (e: any) => {
+      const incoming = e.detail as Bus;
+      if (incoming && incoming.id) {
+        pendingBroadcastUpdates[incoming.id] = { ...incoming, isDemo: false, isLiveDriver: true };
+        if (!rafBroadcastId) {
+          rafBroadcastId = requestAnimationFrame(flushBroadcastUpdates);
+        }
+      }
+    };
+    window.addEventListener('nagarst_driver_telemetry', onDriverTelemetry);
     window.addEventListener('storage', onStorage);
 
     return () => {
       ch?.close();
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener('nagarst_driver_telemetry', onDriverTelemetry);
     };
   }, [buses]);
 
@@ -536,17 +548,18 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       });
 
       validConfigured.forEach(cb => {
-        // Check if there is an active simulator runtime in simState
-        const simRuntime = Object.values(simState?.buses || {}).find(r =>
-          matchesBus(cb, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
-        );
-
         // Check if there is live telemetry in activeLiveBuses (from BroadcastChannel or driver GPS)
         const live = Object.values(activeLiveBuses).find(lb => matchesBus(cb, lb));
+        const isLiveDriver = Boolean(live && (live.isLiveDriver || !live.isDemo));
+
+        // When a real driver is broadcasting, bypass simulator so real GPS takes full precedence
+        const simRuntime = !isLiveDriver ? Object.values(simState?.buses || {}).find(r =>
+          matchesBus(cb, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
+        ) : null;
 
         const isSimRunning = Boolean(simRuntime?.isRunning);
         const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
-        const activeTelemetry = live || simTelemetry;
+        const activeTelemetry = isLiveDriver ? live : (live || simTelemetry);
 
         const targetRoute = allRoutes.find(
           r => r.id === (activeTelemetry?.routeId || cb.routeId) ||
@@ -565,7 +578,8 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           routeName: targetRoute?.name || `${cb.origin || ''} ➔ ${cb.destination || ''}`,
           origin: targetRoute?.origin || cb.origin || '',
           destination: targetRoute?.destination || cb.destination || '',
-          isDemo: isSimRunning ? true : Boolean(activeTelemetry?.isDemo),
+          isDemo: isLiveDriver ? false : (isSimRunning ? true : Boolean(activeTelemetry?.isDemo)),
+          isLiveDriver: isLiveDriver,
           lat: Number(activeTelemetry?.lat ?? cb.lat),
           lng: Number(activeTelemetry?.lng ?? cb.lng),
           speedKmh: activeTelemetry ? (activeTelemetry.speedKmh ?? 0) : cb.speedKmh,
@@ -577,6 +591,26 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         byNumber.set(key, merged);
       });
     }
+
+    // 2. Also ensure any actively broadcasting live drivers are always included on the live map
+    Object.values(activeLiveBuses).forEach(lb => {
+      if (!lb || !lb.lat || !lb.lng) return;
+      const key = norm(lb.busNumber) || norm(lb.id);
+      if (key && !byNumber.has(key)) {
+        const targetRoute = allRoutes.find(
+          r => r.id === lb.routeId || r.routeNumber === lb.routeNumber
+        );
+        byNumber.set(key, {
+          ...lb,
+          routeName: targetRoute?.name || lb.routeName || `${lb.origin || ''} ➔ ${lb.destination || ''}`,
+          routeNumber: targetRoute?.routeNumber || lb.routeNumber || 'Route',
+          origin: targetRoute?.origin || lb.origin || 'Depot',
+          destination: targetRoute?.destination || lb.destination || 'Depot',
+          isDemo: false,
+          isLiveDriver: true
+        });
+      }
+    });
 
     return Array.from(byNumber.values());
   }, [activeLiveBuses, buses, allRoutes, simState]);

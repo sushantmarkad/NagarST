@@ -75,6 +75,17 @@ export const AdminLiveFleet: React.FC = () => {
       };
     } catch (_) {}
 
+    const onDriverTelemetry = (e: any) => {
+      const incoming = e.detail as BusType;
+      if (incoming && incoming.id) {
+        setActiveLiveBuses((prev) => ({
+          ...prev,
+          [incoming.id]: { ...incoming, isDemo: false, isLiveDriver: true }
+        }));
+      }
+    };
+    window.addEventListener('nagarst_driver_telemetry', onDriverTelemetry);
+
     try {
       socket = io(SOCKET_URL, { reconnection: true, transports: ['websocket', 'polling'] });
       socket.on('demoLocationUpdate', (bus: BusType) => {
@@ -100,6 +111,7 @@ export const AdminLiveFleet: React.FC = () => {
 
     return () => {
       ch?.close();
+      window.removeEventListener('nagarst_driver_telemetry', onDriverTelemetry);
       if (socket) socket.disconnect();
     };
   }, []);
@@ -122,15 +134,16 @@ export const AdminLiveFleet: React.FC = () => {
 
     // 1. Configured fleet buses from DB / AppContext
     buses.forEach((b) => {
-      const simRuntime = Object.values(simState?.buses || {}).find((r) =>
-        matchesBus(b, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
-      );
-
       const live = Object.values(activeLiveBuses).find((lb) => matchesBus(b, lb));
+      const isLiveDriver = Boolean(live && (live.isLiveDriver || !live.isDemo));
+
+      const simRuntime = !isLiveDriver ? Object.values(simState?.buses || {}).find((r) =>
+        matchesBus(b, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
+      ) : null;
 
       const isSimRunning = Boolean(simRuntime?.isRunning);
       const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
-      const activeTelemetry = live || simTelemetry;
+      const activeTelemetry = isLiveDriver ? live : (live || simTelemetry);
 
       const merged: BusType = {
         ...b,
@@ -138,7 +151,8 @@ export const AdminLiveFleet: React.FC = () => {
         id: b.id,
         busNumber: b.busNumber,
         plateNumber: b.plateNumber,
-        isDemo: isSimRunning ? true : Boolean(activeTelemetry?.isDemo || b.isDemo),
+        isDemo: isLiveDriver ? false : (isSimRunning ? true : Boolean(activeTelemetry?.isDemo || b.isDemo)),
+        isLiveDriver: isLiveDriver,
         lat: Number(activeTelemetry?.lat ?? b.lat),
         lng: Number(activeTelemetry?.lng ?? b.lng),
         speedKmh: activeTelemetry ? (activeTelemetry.speedKmh ?? 0) : b.speedKmh,
@@ -150,8 +164,28 @@ export const AdminLiveFleet: React.FC = () => {
       byNumber.set(key, merged);
     });
 
+    // 2. Ensure any active live driver is included in fleet display
+    Object.values(activeLiveBuses).forEach((lb) => {
+      if (!lb || !lb.lat || !lb.lng) return;
+      const key = norm(lb.busNumber) || norm(lb.id);
+      if (key && !byNumber.has(key)) {
+        const targetRoute = routes.find(
+          (r) => r.id === lb.routeId || r.routeNumber === lb.routeNumber
+        );
+        byNumber.set(key, {
+          ...lb,
+          routeName: targetRoute?.name || lb.routeName || `${lb.origin || ''} ➔ ${lb.destination || ''}`,
+          routeNumber: targetRoute?.routeNumber || lb.routeNumber || 'Route',
+          origin: targetRoute?.origin || lb.origin || 'Depot',
+          destination: targetRoute?.destination || lb.destination || 'Depot',
+          isDemo: false,
+          isLiveDriver: true
+        });
+      }
+    });
+
     return Array.from(byNumber.values());
-  }, [buses, simState, activeLiveBuses]);
+  }, [buses, simState, activeLiveBuses, routes]);
 
   const allRoutes = routes;
   const liveCount = displayBuses.filter(b => !b.isDemo && !b.id?.startsWith('demo-')).length;

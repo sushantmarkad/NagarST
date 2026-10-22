@@ -426,6 +426,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (index !== -1) {
           const newBuses = [...prevBuses];
+          const isLiveDriver = Boolean(updatedBus.isLiveDriver || (updatedBus as any).driverName);
           newBuses[index] = {
             ...newBuses[index],
             ...updatedBus,
@@ -437,9 +438,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             speedKmh: updatedBus.speedKmh ?? newBuses[index].speedKmh,
             heading: updatedBus.heading ?? newBuses[index].heading,
             status: updatedBus.status || newBuses[index].status,
+            isDemo: isLiveDriver ? false : Boolean(updatedBus.isDemo ?? newBuses[index].isDemo),
+            isLiveDriver: isLiveDriver || Boolean(newBuses[index].isLiveDriver),
             lastUpdated: new Date().toISOString()
           };
           return newBuses;
+        } else if (updatedBus && (updatedBus.id || updatedBus.busNumber) && updatedBus.lat && updatedBus.lng) {
+          const isLive = Boolean(updatedBus.isLiveDriver || !updatedBus.isDemo);
+          const fullBus: Bus = {
+            id: updatedBus.id || `bus-${Date.now()}`,
+            busNumber: updatedBus.busNumber || 'AH-BUS',
+            plateNumber: updatedBus.plateNumber || 'MH-16',
+            routeId: updatedBus.routeId || '',
+            routeNumber: updatedBus.routeNumber || 'Route',
+            routeName: updatedBus.routeName || 'In Transit',
+            origin: updatedBus.origin || 'Depot',
+            destination: updatedBus.destination || 'Depot',
+            currentStopId: 'stop1',
+            currentStopName: updatedBus.currentStopName || 'Origin',
+            nextStopId: 'stop2',
+            nextStopName: updatedBus.nextStopName || 'Approaching Stop',
+            etaToNextMinutes: updatedBus.etaToNextMinutes || 3,
+            speedKmh: updatedBus.speedKmh || 0,
+            occupancy: updatedBus.occupancy || 'moderate',
+            status: updatedBus.status || 'on_time',
+            lat: Number(updatedBus.lat),
+            lng: Number(updatedBus.lng),
+            heading: updatedBus.heading || 0,
+            driverName: updatedBus.driverName || 'Driver',
+            conductorName: 'Conductor',
+            busType: updatedBus.busType || 'Standard City',
+            lastUpdated: new Date().toISOString(),
+            isDemo: !isLive,
+            isLiveDriver: isLive
+          };
+          return [...prevBuses, fullBus];
         }
         return prevBuses;
       });
@@ -449,6 +482,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Offline vehicles remain registered in fleet inventory; only live movement ceases
     };
 
+    // 0. In-window direct telemetry event
+    const onDriverTelemetry = (e: any) => {
+      if (e.detail) {
+        handleBusUpdate(e.detail);
+      }
+    };
+    window.addEventListener('nagarst_driver_telemetry', onDriverTelemetry);
 
     // 1. Cross-Tab Fast Channel (Zero Latency)
     let broadcastChannel: BroadcastChannel | null = null;
@@ -456,8 +496,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
         broadcastChannel = new BroadcastChannel('nagarst_bus_telemetry');
         broadcastChannel.onmessage = (event) => {
-          if (event.data?.type === 'locationUpdate' && event.data?.data) {
-            handleBusUpdate(event.data.data);
+          if ((event.data?.type === 'locationUpdate' || event.data?.type === 'driver_location_update') && (event.data?.data || event.data?.bus)) {
+            handleBusUpdate(event.data.data || event.data.bus);
           } else if (event.data?.type === 'busOffline' && event.data?.busId) {
             handleBusOffline(event.data.busId);
           } else if (event.data?.type === 'routesUpdated' || event.data?.type === 'busesUpdated') {
@@ -630,6 +670,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => {
       if (broadcastChannel) broadcastChannel.close();
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener('nagarst_driver_telemetry', onDriverTelemetry);
       if (socketInstance) socketInstance.disconnect();
       unsubscribeFirebase();
       unsubscribeRoutes();

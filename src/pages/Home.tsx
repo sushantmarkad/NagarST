@@ -169,11 +169,23 @@ export const Home: React.FC = () => {
         }
       }
     };
+
+    const onDriverTelemetry = (e: any) => {
+      const incoming = e.detail as Bus;
+      if (incoming && incoming.id) {
+        setActiveLiveBuses((prev) => ({
+          ...prev,
+          [incoming.id]: { ...incoming, isDemo: false, isLiveDriver: true }
+        }));
+      }
+    };
+    window.addEventListener('nagarst_driver_telemetry', onDriverTelemetry);
     window.addEventListener('storage', onStorage);
 
     return () => {
       ch?.close();
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener('nagarst_driver_telemetry', onDriverTelemetry);
     };
   }, [buses]);
 
@@ -229,15 +241,16 @@ export const Home: React.FC = () => {
       });
 
       validConfigured.forEach(cb => {
-        const simRuntime = Object.values(simState?.buses || {}).find(r => 
-          matchesBus(cb, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
-        );
-
         const live = Object.values(activeLiveBuses).find(lb => matchesBus(cb, lb));
+        const isLiveDriver = Boolean(live && (live.isLiveDriver || !live.isDemo));
+
+        const simRuntime = !isLiveDriver ? Object.values(simState?.buses || {}).find(r => 
+          matchesBus(cb, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
+        ) : null;
 
         const isSimRunning = Boolean(simRuntime?.isRunning);
         const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
-        const activeTelemetry = live || simTelemetry;
+        const activeTelemetry = isLiveDriver ? live : (live || simTelemetry);
 
         const targetRoute = routes.find(
           r => r.id === (activeTelemetry?.routeId || cb.routeId) ||
@@ -256,7 +269,8 @@ export const Home: React.FC = () => {
           routeName: targetRoute?.name || `${cb.origin || ''} ➔ ${cb.destination || ''}`,
           origin: targetRoute?.origin || cb.origin || '',
           destination: targetRoute?.destination || cb.destination || '',
-          isDemo: isSimRunning ? true : Boolean(activeTelemetry?.isDemo),
+          isDemo: isLiveDriver ? false : (isSimRunning ? true : Boolean(activeTelemetry?.isDemo)),
+          isLiveDriver: isLiveDriver,
           lat: Number(activeTelemetry?.lat ?? cb.lat),
           lng: Number(activeTelemetry?.lng ?? cb.lng),
           speedKmh: activeTelemetry ? (activeTelemetry.speedKmh ?? 0) : cb.speedKmh,
@@ -268,6 +282,26 @@ export const Home: React.FC = () => {
         byNumber.set(key, merged);
       });
     }
+
+    // 2. Also ensure any actively broadcasting live drivers are always included on the map
+    Object.values(activeLiveBuses).forEach(lb => {
+      if (!lb || !lb.lat || !lb.lng) return;
+      const key = norm(lb.busNumber) || norm(lb.id);
+      if (key && !byNumber.has(key)) {
+        const targetRoute = routes.find(
+          r => r.id === lb.routeId || r.routeNumber === lb.routeNumber
+        );
+        byNumber.set(key, {
+          ...lb,
+          routeName: targetRoute?.name || lb.routeName || `${lb.origin || ''} ➔ ${lb.destination || ''}`,
+          routeNumber: targetRoute?.routeNumber || lb.routeNumber || 'Route',
+          origin: targetRoute?.origin || lb.origin || 'Depot',
+          destination: targetRoute?.destination || lb.destination || 'Depot',
+          isDemo: false,
+          isLiveDriver: true
+        });
+      }
+    });
 
     return Array.from(byNumber.values());
   }, [activeLiveBuses, buses, routes, simState]);
