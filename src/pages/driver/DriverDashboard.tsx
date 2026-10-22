@@ -28,7 +28,8 @@ import {
   Crosshair,
   Sparkles,
   Power,
-  RotateCcw
+  LocateFixed,
+  Building2
 } from 'lucide-react';
 import { LiveMap } from '../../components/map/LiveMap';
 import { SharedLayout } from '../../components/layout/SharedLayout';
@@ -58,18 +59,37 @@ export const DriverDashboard: React.FC = () => {
   const [selectedRouteDetails, setSelectedRouteDetails] = useState<any>(null);
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
 
-  // GPS Telemetry State
-  const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>({ lat: 19.0975, lng: 74.7420 });
+  // GPS Telemetry State (Starts with null so we detect real device location!)
+  const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(null);
   const [currentSpeedKmh, setCurrentSpeedKmh] = useState<number>(0);
   const [driverHeading, setDriverHeading] = useState<number>(0);
-  const [gpsStatus, setGpsStatus] = useState<'searching' | 'active' | 'simulated' | 'fallback'>('active');
-  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(12);
+  const [gpsStatus, setGpsStatus] = useState<'searching' | 'active' | 'simulated' | 'fallback'>('searching');
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [isSocketConnected, setIsSocketConnected] = useState<boolean>(false);
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(true);
 
   // Indoor presentation / Demo drive simulation toggle
   const [isSimulatingDrive, setIsSimulatingDrive] = useState<boolean>(false);
-  const [simulationIndex, setSimulationIndex] = useState<number>(0);
+
+  // Mutable refs to eliminate cascading dependency loops
+  const driverPosRef = useRef<{ lat: number; lng: number } | null>(null);
+  driverPosRef.current = driverPos;
+  const currentSpeedRef = useRef<number>(0);
+  currentSpeedRef.current = currentSpeedKmh;
+  const driverHeadingRef = useRef<number>(0);
+  driverHeadingRef.current = driverHeading;
+  const isLiveBroadcastingRef = useRef<boolean>(true);
+  isLiveBroadcastingRef.current = isLiveBroadcasting;
+  const isSimulatingDriveRef = useRef<boolean>(false);
+  isSimulatingDriveRef.current = isSimulatingDrive;
+  const busDetailsRef = useRef<any>(null);
+  busDetailsRef.current = busDetails;
+  const selectedRouteRef = useRef<any>(null);
+  selectedRouteRef.current = selectedRouteDetails;
+  const tripStopsRef = useRef<any[]>([]);
+  tripStopsRef.current = tripStops;
+  const currentStopIndexRef = useRef<number>(0);
+  currentStopIndexRef.current = currentStopIndex;
 
   const watchIdRef = useRef<number | null>(null);
   const socketRef = useRef<any>(null);
@@ -182,7 +202,8 @@ export const DriverDashboard: React.FC = () => {
       });
 
       socketRef.current.on('dispatchMessage', (data: { busId: string, message: string }) => {
-        if (data.busId === busDetails?.id || data.busId === user?.assignedBusId) {
+        const myBusId = busDetailsRef.current?.id || user?.assignedBusId;
+        if (data.busId === myBusId) {
           toast.warning(data.message, 'City Admin Dispatch Alert', 8000);
         }
       });
@@ -197,7 +218,7 @@ export const DriverDashboard: React.FC = () => {
         broadcastChannelRef.current.close();
       }
     };
-  }, [user?.assignedBusId, fetchInitialData, fetchSchedules, toast, busDetails?.id]);
+  }, [user?.assignedBusId, fetchInitialData, fetchSchedules, toast]);
 
   // Sync available routes if AppContext loads them later
   useEffect(() => {
@@ -259,6 +280,7 @@ export const DriverDashboard: React.FC = () => {
   }, [selectedRouteId, fetchRouteStops]);
 
   // Centralized telemetry emitter: broadcasts live GPS coordinates to Passenger and City Admin dashboards
+  // Uses refs to ensure this function reference is stable and NEVER triggers effect cascades
   const sendLiveTelemetry = useCallback((
     lat: number,
     lng: number,
@@ -266,47 +288,52 @@ export const DriverDashboard: React.FC = () => {
     statusOverride?: string,
     heading?: number
   ) => {
-    if (!isLiveBroadcasting) return;
+    if (!isLiveBroadcastingRef.current) return;
 
-    const bId = busDetails?.id || user?.assignedBusId || 'bus-ah24';
-    const bNumber = busDetails?.bus_number || busDetails?.busNumber || (user as any)?.assignedBusNumber || 'AH-24';
-    const bPlate = busDetails?.plate_number || busDetails?.plateNumber || 'MH-16-CV-2024';
+    const b = busDetailsRef.current;
+    const bId = b?.id || user?.assignedBusId || 'bus-ah24';
+    const bNumber = b?.bus_number || b?.busNumber || (user as any)?.assignedBusNumber || 'AH-24';
+    const bPlate = b?.plate_number || b?.plateNumber || 'MH-16-CV-2024';
+
+    const r = selectedRouteRef.current;
+    const stops = tripStopsRef.current;
+    const stopIdx = currentStopIndexRef.current;
 
     let currentStatus = statusOverride || 'on_time';
-    const routePathCoords = selectedRouteDetails?.route_path || [];
+    const routePathCoords = r?.route_path || [];
     if (!statusOverride && routePathCoords.length > 0) {
       const distToRoute = getDistanceToPolyline({ lat, lng }, routePathCoords);
-      if (distToRoute > 200) {
+      if (distToRoute > 250) {
         currentStatus = 'off_route';
       }
     }
 
-    const nextStopObj = tripStops[currentStopIndex] || tripStops[0];
-    const nextStopName = nextStopObj?.stopName || (selectedRouteDetails ? selectedRouteDetails.destination : 'City Transit Corridor');
+    const nextStopObj = stops[stopIdx] || stops[0];
+    const nextStopName = nextStopObj?.stopName || (r ? r.destination : 'City Transit Corridor');
 
     const payload: Bus = {
       id: bId,
       busNumber: bNumber,
       plateNumber: bPlate,
-      routeId: selectedRouteId || '',
-      routeNumber: selectedRouteDetails?.route_number || selectedRouteDetails?.routeNumber || 'Transit',
-      routeName: selectedRouteDetails ? `${selectedRouteDetails.origin} ➔ ${selectedRouteDetails.destination}` : 'Municipal City Bus Service',
-      origin: selectedRouteDetails?.origin || 'Ahilyanagar CBS',
-      destination: selectedRouteDetails?.destination || 'City Transit',
-      currentStopId: tripStops[Math.max(0, currentStopIndex - 1)]?.id || 'stop1',
-      currentStopName: tripStops[Math.max(0, currentStopIndex - 1)]?.stopName || 'Transit Origin',
+      routeId: r?.id || '',
+      routeNumber: r?.route_number || r?.routeNumber || 'Transit',
+      routeName: r ? `${r.origin} ➔ ${r.destination}` : 'Municipal City Bus Service',
+      origin: r?.origin || 'Ahilyanagar CBS',
+      destination: r?.destination || 'City Transit',
+      currentStopId: stops[Math.max(0, stopIdx - 1)]?.id || 'stop1',
+      currentStopName: stops[Math.max(0, stopIdx - 1)]?.stopName || 'Transit Origin',
       nextStopId: nextStopObj?.id || 'stop2',
       nextStopName: nextStopName,
       etaToNextMinutes: Math.max(1, Math.round(nextStopObj?.estimatedMinutesFromOrigin || 3)),
       lat,
       lng,
       speedKmh,
-      heading: heading ?? driverHeading ?? 0,
+      heading: heading ?? driverHeadingRef.current ?? 0,
       status: currentStatus as any,
       occupancy: 'moderate',
       driverName: user?.name || 'Duty Operator',
       conductorName: 'Duty Conductor',
-      busType: (busDetails?.type || 'Standard City') as any,
+      busType: (b?.type || 'Standard City') as any,
       lastUpdated: new Date().toISOString(),
       isDemo: false,
       isLiveDriver: true
@@ -339,7 +366,7 @@ export const DriverDashboard: React.FC = () => {
       if (existingListStr) {
         try { driverList = JSON.parse(existingListStr); } catch (_) {}
       }
-      const updatedList = [payload, ...driverList.filter((b: any) => b.id !== bId)];
+      const updatedList = [payload, ...driverList.filter((x: any) => x.id !== bId)];
       localStorage.setItem('nagarst_active_live_drivers', JSON.stringify(updatedList));
     } catch (_) {}
 
@@ -354,109 +381,95 @@ export const DriverDashboard: React.FC = () => {
       socketRef.current.emit('driverLocation', payload);
     }
 
-    // 5. Firebase Firestore live_locations collection (backend database: written every 4s)
+    // 5. Firebase Firestore live_locations collection (backend database: written every 3s)
     const now = Date.now();
-    if (now - lastDbWriteRef.current >= 4000 || lastDbWriteRef.current === 0) {
+    if (now - lastDbWriteRef.current >= 3000 || lastDbWriteRef.current === 0) {
       lastDbWriteRef.current = now;
       try {
         updateFirebaseLiveLocation({
           bus_id: bId,
+          bus_number: bNumber,
           lat,
           lng,
           speed_kmh: speedKmh,
-          heading: heading ?? driverHeading ?? 0,
-          route_id: selectedRouteId || undefined,
+          heading: heading ?? driverHeadingRef.current ?? 0,
+          route_id: r?.id || undefined,
           updated_at: new Date().toISOString()
         } as any).catch(() => {});
       } catch (_) {}
     }
-  }, [isLiveBroadcasting, busDetails, user, selectedRouteId, selectedRouteDetails, tripStops, currentStopIndex, driverHeading]);
+  }, [user]);
 
-  // Robust 2-Stage Geolocation Acquirer with High/Low Accuracy Fallback
-  const acquireGPSPosition = useCallback((
-    onSuccess?: (coords: { lat: number; lng: number; speed: number; heading: number }) => void,
-    onFail?: (errorMsg: string) => void
-  ) => {
+  // Robust GPS Acquirer: Gets real browser device location
+  const acquireRealGPS = useCallback(() => {
     if (!('geolocation' in navigator)) {
-      const msg = 'Geolocation is not supported by your browser.';
-      toast.error(msg);
-      onFail?.(msg);
+      toast.error('Geolocation is not supported by your browser.');
       return;
     }
 
     setGpsStatus('searching');
 
-    const handleSuccess = (pos: GeolocationPosition) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const spd = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
-      const hdg = pos.coords.heading || 0;
-      const acc = pos.coords.accuracy || 15;
-
-      setDriverPos({ lat, lng });
-      setCurrentSpeedKmh(spd);
-      setDriverHeading(hdg);
-      setGpsAccuracy(acc);
-      setGpsStatus('active');
-
-      onSuccess?.({ lat, lng, speed: spd, heading: hdg });
-    };
-
-    // Stage 1: Try high accuracy with strict 5s timeout
     navigator.geolocation.getCurrentPosition(
-      handleSuccess,
-      (highErr) => {
-        // Stage 2: Fallback to network/standard accuracy if high-accuracy times out or satellite unavailable
-        navigator.geolocation.getCurrentPosition(
-          handleSuccess,
-          (fallbackErr) => {
-            const defaultPos = tripStops.length > 0 
-              ? { lat: tripStops[0].lat, lng: tripStops[0].lng } 
-              : { lat: 19.0975, lng: 74.7420 };
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const spd = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
+        const hdg = pos.coords.heading || 0;
+        const acc = pos.coords.accuracy || 10;
 
-            setDriverPos(defaultPos);
-            setGpsStatus('fallback');
-            onFail?.(fallbackErr.message);
-          },
-          { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
-        );
+        setDriverPos({ lat, lng });
+        setCurrentSpeedKmh(spd);
+        setDriverHeading(hdg);
+        setGpsAccuracy(acc);
+        setGpsStatus('active');
+
+        sendLiveTelemetry(lat, lng, spd, 'on_time', hdg);
+        toast.success(`Acquired live device location (±${Math.round(acc)}m accuracy).`, 'GPS Fixed');
       },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+      (err) => {
+        console.warn('Real GPS acquisition warning:', err.message);
+        // Fallback to route origin or Ahilyanagar CBS only if real GPS is blocked
+        const fallbackPos = tripStopsRef.current.length > 0 
+          ? { lat: tripStopsRef.current[0].lat, lng: tripStopsRef.current[0].lng } 
+          : { lat: 19.0975, lng: 74.7420 };
+
+        setDriverPos(fallbackPos);
+        setGpsStatus('fallback');
+        toast.warning('Could not get device GPS. Click "Allow" on location prompt in your browser bar, or tap a preset location.', 'Location Access');
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
-  }, [toast, tripStops]);
+  }, [toast, sendLiveTelemetry]);
 
-  // On mount: acquire standby GPS position immediately and broadcast if enabled
+  // On mount: acquire real GPS and start watchPosition
   useEffect(() => {
-    acquireGPSPosition((coords) => {
-      if (isLiveBroadcasting) {
-        sendLiveTelemetry(coords.lat, coords.lng, coords.speed, 'on_time', coords.heading);
-      }
-    });
+    acquireRealGPS();
 
-    // Start watchPosition for continuous live tracking updates
     if ('geolocation' in navigator) {
       try {
         watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
-            if (isSimulatingDrive) return; // In simulation mode, ignore hardware GPS
+            if (isSimulatingDriveRef.current) return;
             const lat = pos.coords.latitude;
             const lng = pos.coords.longitude;
             const spd = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
             const hdg = pos.coords.heading || 0;
+            const acc = pos.coords.accuracy || 10;
+
             setDriverPos({ lat, lng });
             setCurrentSpeedKmh(spd);
             setDriverHeading(hdg);
-            setGpsAccuracy(pos.coords.accuracy || 12);
+            setGpsAccuracy(acc);
             setGpsStatus('active');
 
-            if (isLiveBroadcasting) {
+            if (isLiveBroadcastingRef.current) {
               sendLiveTelemetry(lat, lng, spd, 'on_time', hdg);
             }
           },
           (err) => {
-            console.log('GPS watch info:', err.message);
+            console.log('GPS stream info:', err.message);
           },
-          { enableHighAccuracy: false, maximumAge: 10000 }
+          { enableHighAccuracy: true, maximumAge: 0 }
         );
       } catch (_) {}
     }
@@ -467,7 +480,24 @@ export const DriverDashboard: React.FC = () => {
         watchIdRef.current = null;
       }
     };
-  }, [acquireGPSPosition, sendLiveTelemetry, isLiveBroadcasting, isSimulatingDrive]);
+  }, [acquireRealGPS, sendLiveTelemetry]);
+
+  // Heartbeat interval: Continuously rebroadcast live telemetry every 3.5s so backend and maps stay live
+  useEffect(() => {
+    const heartbeatTimer = setInterval(() => {
+      if (isLiveBroadcastingRef.current && driverPosRef.current) {
+        sendLiveTelemetry(
+          driverPosRef.current.lat,
+          driverPosRef.current.lng,
+          currentSpeedRef.current,
+          'on_time',
+          driverHeadingRef.current
+        );
+      }
+    }, 3500);
+
+    return () => clearInterval(heartbeatTimer);
+  }, [sendLiveTelemetry]);
 
   // Master Switch: Toggle Live Location Broadcasting
   const handleToggleLiveBroadcasting = async (checked: boolean) => {
@@ -475,18 +505,29 @@ export const DriverDashboard: React.FC = () => {
     const bId = busDetails?.id || user?.assignedBusId || 'bus-ah24';
 
     if (checked) {
-      acquireGPSPosition((coords) => {
-        sendLiveTelemetry(coords.lat, coords.lng, coords.speed, 'on_time', coords.heading);
-      });
-      toast.success('Live GPS Broadcasting is now ON! Passenger and City Admin maps are receiving your live coordinates.', 'Live GPS Active');
+      if (driverPosRef.current) {
+        sendLiveTelemetry(driverPosRef.current.lat, driverPosRef.current.lng, currentSpeedRef.current, 'on_time', driverHeadingRef.current);
+      } else {
+        acquireRealGPS();
+      }
+      toast.success('Live GPS Broadcasting is ON! Your live location is streaming to Passenger & Admin dashboards.', 'Live Location Active');
     } else {
       setIsSimulatingDrive(false);
       try { await deleteDoc(doc(db, 'live_locations', bId)); } catch (_) {}
       try { localStorage.removeItem('nagarst_live_bus_' + bId); } catch (_) {}
       broadcastChannelRef.current?.postMessage({ type: 'busOffline', busId: bId });
       socketRef.current?.emit('stopTrip', bId);
-      toast.info('Live GPS Broadcasting paused. Your bus is now in standby mode.', 'Live GPS Paused');
+      toast.info('Live GPS Broadcasting paused. Your bus is now in standby mode.', 'Live Location Paused');
     }
+  };
+
+  // Quick preset locator: allows instant positioning at Ahilyanagar landmarks for presentation testing
+  const handleSetLocationPreset = (presetLat: number, presetLng: number, presetName: string) => {
+    setDriverPos({ lat: presetLat, lng: presetLng });
+    setGpsStatus('active');
+    setGpsAccuracy(8);
+    sendLiveTelemetry(presetLat, presetLng, 25, 'on_time', 45);
+    toast.success(`Position set to ${presetName} and broadcasted live!`, 'Location Updated');
   };
 
   // Indoor Demo / Presentation Drive Simulation (Glides along route smoothly)
@@ -501,7 +542,6 @@ export const DriverDashboard: React.FC = () => {
 
     setGpsStatus('simulated');
 
-    // Build dense route path along the route or city center
     const waypoints: { lat: number; lng: number }[] = (selectedRouteDetails?.route_path && selectedRouteDetails.route_path.length > 5)
       ? selectedRouteDetails.route_path
       : (tripStops.length > 0 ? tripStops.map(s => ({ lat: s.lat, lng: s.lng })) : [
@@ -511,11 +551,10 @@ export const DriverDashboard: React.FC = () => {
           { lat: 19.1235, lng: 74.7321 }
         ]);
 
-    let step = simulationIndex;
+    let step = 0;
     simulationTimerRef.current = setInterval(() => {
       if (waypoints.length < 2) return;
       step = (step + 1) % waypoints.length;
-      setSimulationIndex(step);
 
       const currentPt = waypoints[step];
       const nextPt = waypoints[(step + 1) % waypoints.length];
@@ -636,8 +675,8 @@ export const DriverDashboard: React.FC = () => {
       speedKmh: currentSpeedKmh,
       occupancy: 'moderate',
       status: 'on_time',
-      lat: driverPos ? driverPos.lat : (tripStops[0]?.lat || 19.0975),
-      lng: driverPos ? driverPos.lng : (tripStops[0]?.lng || 74.7420),
+      lat: driverPos ? driverPos.lat : 19.0975,
+      lng: driverPos ? driverPos.lng : 74.7420,
       heading: driverHeading || 0,
       driverName: user?.name || 'Driver',
       conductorName: 'Conductor',
@@ -703,7 +742,7 @@ export const DriverDashboard: React.FC = () => {
               }`} />
               <span className="font-semibold text-[11px]">
                 {isLiveBroadcasting 
-                  ? (gpsStatus === 'simulated' ? 'Demo Drive Active' : `Live GPS (${gpsAccuracy ? `±${Math.round(gpsAccuracy)}m` : 'High'})`)
+                  ? (gpsStatus === 'simulated' ? 'Demo Drive Active' : `Live GPS (${gpsAccuracy ? `±${Math.round(gpsAccuracy)}m` : 'Detecting...'})`)
                   : 'GPS Broadcasting Off'}
               </span>
             </div>
@@ -748,16 +787,8 @@ export const DriverDashboard: React.FC = () => {
               selectedBusId={driverBusObject?.id}
               selectedRouteId={mapRoute?.id}
               height="100%"
-              showUserLocation={true}
+              showUserLocation={Boolean(driverPos)}
               userLocation={driverPos}
-              onUserLocationChange={(pos) => {
-                if (pos && !isSimulatingDrive) {
-                  setDriverPos(pos);
-                  if (isLiveBroadcasting) {
-                    sendLiveTelemetry(pos.lat, pos.lng, currentSpeedKmh, 'on_time', driverHeading);
-                  }
-                }
-              }}
             />
 
             {/* Floating Live Status Overlay on Map */}
@@ -827,11 +858,11 @@ export const DriverDashboard: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => acquireGPSPosition()}
+                onClick={() => acquireRealGPS()}
                 className="p-1.5 rounded-lg text-slate-500 hover:text-[#7847CB] hover:bg-white border border-transparent hover:border-slate-200 transition-colors"
-                title="Refresh GPS Coordinate"
+                title="Refresh Real Device GPS"
               >
-                <Crosshair className="w-4 h-4" />
+                <LocateFixed className="w-4 h-4" />
               </button>
             </div>
 
@@ -890,7 +921,7 @@ export const DriverDashboard: React.FC = () => {
                         <span className="font-mono font-bold text-slate-900 text-sm">{currentSpeedKmh} km/h</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Coordinates</span>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Detected GPS</span>
                         <span className="font-mono font-bold text-slate-900 text-[11px]">
                           {driverPos ? `${driverPos.lat.toFixed(4)}, ${driverPos.lng.toFixed(4)}` : 'Acquiring...'}
                         </span>
@@ -898,16 +929,51 @@ export const DriverDashboard: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* QUICK GPS FIX & LOCATION PRESETS (To test in Ahilyanagar landmarks or use Real Phone GPS) */}
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Location Selector / Calibration
+                      </span>
+                      <button
+                        type="button"
+                        onClick={acquireRealGPS}
+                        className="text-[11px] font-bold text-[#7847CB] flex items-center gap-1 hover:underline"
+                      >
+                        <LocateFixed className="w-3.5 h-3.5" />
+                        Detect My Device GPS
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSetLocationPreset(19.0975, 74.7420, 'Ahilyanagar CBS')}
+                        className="p-2 rounded-xl bg-white border border-slate-200 hover:border-[#7847CB] text-left text-xs font-bold text-slate-800 transition-colors shadow-2xs"
+                      >
+                        <span className="block text-[11px] text-purple-700">Central Bus Stand</span>
+                        <span className="text-[9px] text-slate-400 font-mono">19.0975, 74.7420</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetLocationPreset(19.1235, 74.7321, 'Savedi Depot')}
+                        className="p-2 rounded-xl bg-white border border-slate-200 hover:border-[#7847CB] text-left text-xs font-bold text-slate-800 transition-colors shadow-2xs"
+                      >
+                        <span className="block text-[11px] text-purple-700">Savedi Bus Depot</span>
+                        <span className="text-[9px] text-slate-400 font-mono">19.1235, 74.7321</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Route Status Summary */}
                   <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-700">Assigned Route</span>
+                      <span className="text-xs font-bold text-slate-700">Assigned Corridor</span>
                       <button
                         type="button"
                         onClick={() => setActiveTab('route')}
                         className="text-xs font-bold text-[#7847CB] hover:underline"
                       >
-                        Change Route
+                        {mapRoute ? 'Change' : 'Select Corridor'}
                       </button>
                     </div>
                     {mapRoute ? (
@@ -920,7 +986,7 @@ export const DriverDashboard: React.FC = () => {
                       </div>
                     ) : (
                       <p className="text-xs text-slate-500 italic">
-                        No specific route selected. Operating in general municipal duty.
+                        No route selected. Operating in free municipal city duty.
                       </p>
                     )}
                   </div>

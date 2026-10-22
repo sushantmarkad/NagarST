@@ -89,10 +89,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     });
   };
 
-  const updateUserMarker = useCallback((lat: number, lng: number, accuracy: number, center: boolean) => {
+  const updateUserMarker = useCallback((lat: number, lng: number, accuracy: number, center: boolean, notify = true) => {
     const latlng = L.latLng(lat, lng);
     setUserCoords({ lat, lng });
-    if (onUserLocationChange) {
+    if (notify && onUserLocationChange) {
       onUserLocationChange({ lat, lng });
     }
 
@@ -216,12 +216,12 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     });
   }, [language, updateUserMarker, onLocationError]);
 
-  // Sync external userLocation prop if passed
+  // Sync external userLocation prop if passed (notify=false to prevent feedback loop)
   useEffect(() => {
     if (userLocation && userLocation.lat && userLocation.lng) {
-      updateUserMarker(userLocation.lat, userLocation.lng, 20, false);
+      updateUserMarker(userLocation.lat, userLocation.lng, 20, false, false);
     }
-  }, [userLocation, updateUserMarker]);
+  }, [userLocation?.lat, userLocation?.lng, updateUserMarker]);
 
   // Initialize Map
   useEffect(() => {
