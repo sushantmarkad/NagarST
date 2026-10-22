@@ -87,6 +87,7 @@ export interface Bus {
   busType: BusType;
   lastUpdated: string;
   isDemo?: boolean;
+  isLiveDriver?: boolean;
   passengerCount?: number;
   maxCapacity?: number;
   availableSeats?: number;

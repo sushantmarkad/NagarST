@@ -11,6 +11,7 @@ import {
   addStopToBusRoute,
   syncSimulatorFleetWithAdminConfig,
   buildBusTelemetry,
+  isSameBusKey,
   type DemoBusDefinition,
   type DemoSimulatorState
 } from '../../../utils/demoSimulatorEngine';
@@ -83,82 +84,54 @@ export const AdminDemoSimulator: React.FC = () => {
     setInteractiveMode('view');
   };
 
-  // Display ONLY active demo simulator buses, deduplicated by busNumber (prevents duplicate or ghost DB markers)
+  // Display ONLY buses from registered municipal fleet
   const displayBuses = React.useMemo(() => {
     const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
     const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+    const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
+
     const map = new Map<string, any>();
 
-    Object.values(simState.buses).forEach(runtime => {
-      if (runtime && runtime.def) {
-        const bNumNorm = (runtime.def.busNumber || '').trim().toUpperCase().replace(/[\s-_]/g, '');
-        const isDefault = bNumNorm === '1515' || bNumNorm === 'MH16BT1515' || bNumNorm === '1519' || bNumNorm === 'MH16BT1519';
-        if (!isDefault && (deletedIds.includes(runtime.id) || deletedIds.includes(runtime.def.busNumber))) return;
-        const activeBus = runtime.currentBus || buildBusTelemetry(runtime);
-        if (activeBus) {
-          // Key by busNumber to strictly guarantee NO duplicate markers appear on the map!
-          map.set(activeBus.busNumber, activeBus);
-        }
+    (buses || []).forEach((b) => {
+      const bNumNorm = norm(b.busNumber);
+      const bIdNorm = norm(b.id);
+      const bPlateNorm = norm(b.plateNumber);
+      const isDel = deletedIds.some((d) => {
+        const cd = norm(d);
+        return cd && (cd === bNumNorm || cd === bIdNorm || cd === bPlateNorm);
+      });
+      if (isDel) return;
+
+      const runtime = Object.values(simState?.buses || {}).find(
+        (r) =>
+          isSameBusKey(r.id, b.id) ||
+          isSameBusKey(r.def?.busNumber, b.busNumber) ||
+          isSameBusKey(r.def?.plateNumber, b.plateNumber)
+      );
+
+      const activeBus =
+        runtime?.isRunning && runtime?.currentBus
+          ? runtime.currentBus
+          : runtime
+          ? buildBusTelemetry(runtime)
+          : null;
+      if (activeBus) {
+        map.set(activeBus.busNumber, activeBus);
       }
     });
     return Array.from(map.values());
-  }, [simState.buses]);
+  }, [buses, simState.buses]);
 
   const selectedBus = displayBuses.find(b => b.id === selectedBusId || b.busNumber === selectedBusId) || displayBuses[0] || null;
   const activeDemoBuses = displayBuses;
 
-  // Only display routes configured in Route Corridors tab or actively running bus corridors
+  // Only display routes configured in Route Corridors tab
   const allRoutes = React.useMemo(() => {
-    // If the admin deleted all routes, return an empty array (do NOT show ghost corridors or pins!)
     if (!routes || routes.length === 0) {
       return [];
     }
-
-    // 1. Configured routes from Route Corridors tab with valid road paths
-    const configured = routes.filter((r) => (r.route_path && r.route_path.length > 2) || (r.stops && r.stops.length >= 2));
-
-    // 2. Active demo bus route ONLY if the bus is running and assigned to a recognized route
-    const activeCorridors: any[] = [];
-    Object.values(simState.buses).forEach((b) => {
-      if (b && b.isRunning && b.def && b.def.routeId && b.def.waypoints && b.def.waypoints.length > 2) {
-        const matchesConfigured = configured.some((cr) => cr.id === b.def.routeId || cr.routeNumber === b.def.routeNumber);
-        if (!matchesConfigured) {
-          activeCorridors.push({
-            id: b.def.routeId,
-            routeNumber: b.def.routeNumber || 'Route',
-            name: b.def.routeName || 'Corridor',
-            nameMarathi: b.def.routeName || 'Corridor',
-            origin: b.def.origin || '',
-            destination: b.def.destination || '',
-            firstBus: '06:00 AM',
-            lastBus: '10:00 PM',
-            frequencyMinutes: 15,
-            baseFare: 10,
-            maxFare: 25,
-            totalStops: b.def.stops ? b.def.stops.length : 0,
-            durationMinutes: 30,
-            color: b.def.color || '#7847CB',
-            activeBusesCount: 1,
-            status: 'normal' as const,
-            stops: (b.def.stops || []).map((s, idx) => ({
-              stopId: s.id,
-              stopName: s.name,
-              stopNameMarathi: s.name,
-              sequence: idx + 1,
-              fareFromOrigin: idx * 5,
-              estimatedMinutesFromOrigin: idx * 5,
-              isMajorHub: idx === 0 || idx === (b.def.stops?.length || 1) - 1,
-              lat: s.lat,
-              lng: s.lng,
-            })),
-            route_path: b.def.waypoints,
-          });
-        }
-      }
-    });
-
-    return [...configured, ...activeCorridors];
-  }, [routes, simState.buses]);
+    return routes.filter((r) => (r.route_path && r.route_path.length > 2) || (r.stops && r.stops.length >= 2));
+  }, [routes]);
 
   return (
     <div className="flex-1 w-full h-full flex flex-col p-4 md:p-6 gap-6 bg-[#f8f9fc] text-slate-900 overflow-y-auto">

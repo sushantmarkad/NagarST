@@ -184,7 +184,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         name: 'Senior Bus Operator',
         email: email,
         role: 'DRIVER',
-        assignedBusId: 'demo-bus-1515'
+        assignedBusId: ''
       };
       setUser(driverUser);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(driverUser));

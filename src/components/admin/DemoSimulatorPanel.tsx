@@ -53,6 +53,7 @@ import {
   deleteDemoBus,
   addNewCustomRoute,
   setBusCustomCorridor,
+  isSameBusKey,
   DEMO_BUS_DEFINITIONS,
   AVAILABLE_DEMO_ROUTES,
   type DemoSimulatorState,
@@ -64,6 +65,8 @@ import { fetchShortestRoadCorridor, findStopsAlongRoad } from '../../utils/routi
 import { Link } from 'react-router-dom';
 
 import { useApp } from '../../context/AppContext';
+import { saveFirebaseBus, deleteFirebaseBus } from '../../utils/firebaseService';
+import type { Bus } from '../../types';
 
 interface DemoSimulatorPanelProps {
   onSelectBusOnMap?: (busId: string) => void;
@@ -89,12 +92,12 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   onClearCustomPins
 }) => {
   const { user } = useAuth();
-  const { routes, stops: appStops } = useApp();
+  const { routes, stops: appStops, buses, refreshData } = useApp();
   const toast = useToast();
 
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
   const [selectedBusId, setSelectedBusId] = useState<string>(
-    externalSelectedBusId || DEMO_BUS_DEFINITIONS[0]?.id || ''
+    externalSelectedBusId || buses[0]?.id || DEMO_BUS_DEFINITIONS[0]?.id || ''
   );
 
   // Dynamically compute corridors strictly from Route Corridors tab
@@ -125,14 +128,8 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
       });
     });
 
-    AVAILABLE_DEMO_ROUTES.forEach((dr) => {
-      if (!list.some((item) => item.id === dr.id)) {
-        list.push(dr);
-      }
-    });
-
     return list;
-  }, [routes, AVAILABLE_DEMO_ROUTES]);
+  }, [routes]);
 
   const [selectedRoutePresetId, setSelectedRoutePresetId] = useState<string>('');
   const [isReverseDirection, setIsReverseDirection] = useState<boolean>(false);
@@ -299,22 +296,26 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     toast.info(`Reversed route direction for ${activeBusRuntime.def.busNumber}.`);
   };
 
-  const handleDeleteBus = (busId: string, busNumber: string) => {
+  const handleDeleteBus = async (busId: string, busNumber: string) => {
     if (!isAuthorized) {
       toast.error('Unauthorized: Multi-bus simulator requires Administrator authorization.');
       return;
     }
-    const confirmed = window.confirm(`Are you sure you want to delete demo bus "${busNumber}" from the fleet?`);
+    const confirmed = window.confirm(`Are you sure you want to delete bus "${busNumber}" from the fleet?`);
     if (!confirmed) return;
 
     deleteDemoBus(busId, busNumber);
-    toast.success(`Demo bus "${busNumber}" deleted from fleet.`, 'Bus Deleted');
+    try {
+      await deleteFirebaseBus(busId);
+    } catch (_) {}
+    await refreshData();
+    toast.success(`Bus "${busNumber}" deleted from fleet.`, 'Bus Deleted');
 
     // Switch selection to remaining bus if any
-    const remaining = Object.keys(simState.buses).filter(id => id !== busId);
+    const remaining = buses.filter(b => b.id !== busId);
     if (remaining.length > 0) {
-      setSelectedBusId(remaining[0]);
-      onSelectBusOnMap?.(remaining[0]);
+      setSelectedBusId(remaining[0].id);
+      onSelectBusOnMap?.(remaining[0].id);
     }
   };
 
@@ -434,7 +435,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
   };
 
   // Add new bus submit
-  const handleAddNewBusSubmit = (e: React.FormEvent) => {
+  const handleAddNewBusSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBusNumber.trim()) {
       toast.error('Please enter a valid Bus Number.');
@@ -442,6 +443,31 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
     }
 
     const assignedId = newBusRouteId || (availableCorridors[0]?.id || '');
+    const matchedRoute = availableCorridors.find(c => c.id === assignedId);
+
+    const busId = `bus-${Date.now()}`;
+    const busPayload: any = {
+      id: busId,
+      bus_number: newBusNumber.trim(),
+      plate_number: newBusPlate.trim() || newBusNumber.trim(),
+      capacity: 35,
+      type: newBusType,
+      status: 'Active',
+      route_id: assignedId,
+      routeNumber: matchedRoute?.routeNumber || 'Route',
+      routeName: matchedRoute?.routeName || '',
+      origin: matchedRoute?.origin || '',
+      destination: matchedRoute?.destination || '',
+      speedKmh: 45,
+      driverName: 'Assigned Driver',
+      lat: matchedRoute?.stops[0]?.lat || 19.0975,
+      lng: matchedRoute?.stops[0]?.lng || 74.7420,
+    };
+
+    try {
+      await saveFirebaseBus(busPayload);
+    } catch (_) {}
+
     const created = addNewCustomBus({
       busNumber: newBusNumber.trim(),
       plateNumber: newBusPlate.trim() || newBusNumber.trim(),
@@ -450,6 +476,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
       busType: newBusType
     });
 
+    await refreshData();
     setSelectedBusId(created.id);
     setShowAddBusModal(false);
     toast.success(`Bus ${created.def.busNumber} added to fleet and assigned to ${created.def.routeNumber}!`, 'Bus Created');
@@ -600,7 +627,7 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
         <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-700 uppercase tracking-tight flex items-center gap-1.5">
-              <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" /> 1. Fleet Buses ({DEMO_BUS_DEFINITIONS.length})
+              <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" /> 1. Fleet Buses ({buses.length})
             </span>
             <button
               type="button"
@@ -613,17 +640,20 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {DEMO_BUS_DEFINITIONS.map((def) => {
-              const runtime = simState.buses[def.id];
-              const isSelected = selectedBusId === def.id;
+            {buses.map((b) => {
+              const runtime = simState.buses[b.id] || Object.values(simState.buses).find(
+                (r) => isSameBusKey(r.id, b.id) || isSameBusKey(r.def.busNumber, b.busNumber) || isSameBusKey(r.def.plateNumber, b.plateNumber)
+              );
+              const isSelected = selectedBusId === b.id || (runtime && selectedBusId === runtime.id);
               const isRunning = Boolean(runtime?.isRunning);
 
               return (
                 <div
-                  key={def.id}
+                  key={b.id}
                   onClick={() => {
-                    setSelectedBusId(def.id);
-                    onSelectBusOnMap?.(def.id);
+                    const targetId = runtime ? runtime.id : b.id;
+                    setSelectedBusId(targetId);
+                    onSelectBusOnMap?.(targetId);
                   }}
                   className={`p-3 rounded-2xl border text-left cursor-pointer transition-all ${
                     isSelected
@@ -634,9 +664,9 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                   <div className="flex items-center justify-between mb-1.5">
                     <span
                       className="px-2 py-0.5 rounded-md text-[11px] font-black text-white"
-                      style={{ backgroundColor: runtime?.def.color || def.color }}
+                      style={{ backgroundColor: runtime?.def.color || '#7847CB' }}
                     >
-                      {def.busNumber}
+                      {b.busNumber}
                     </span>
                     <div className="flex items-center gap-1.5">
                       <span className={`w-2.5 h-2.5 rounded-full ${isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
@@ -644,9 +674,9 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteBus(def.id, def.busNumber);
+                          handleDeleteBus(b.id, b.busNumber);
                         }}
-                        title={`Delete ${def.busNumber} from fleet`}
+                        title={`Delete ${b.busNumber} from fleet`}
                         className="p-1 -mr-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -654,10 +684,10 @@ export const DemoSimulatorPanel: React.FC<DemoSimulatorPanelProps> = ({
                     </div>
                   </div>
                   <h4 className="font-bold text-xs text-slate-900 truncate">
-                    {runtime?.def.routeNumber || def.routeNumber}
+                    {runtime?.def.routeNumber || b.routeNumber || 'Unassigned'}
                   </h4>
                   <p className="text-[11px] text-slate-500 truncate">
-                    {runtime?.def.destination || def.destination}
+                    {runtime?.def.destination || b.destination || 'No Destination'}
                   </p>
                 </div>
               );

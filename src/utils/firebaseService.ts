@@ -134,11 +134,43 @@ export async function saveFirebaseRoute(route: FirebaseRoute): Promise<void> {
   });
   await setDoc(routeRef, data, { merge: true });
   invalidateFirebaseCache();
+  try {
+    const ch = new BroadcastChannel('nagarst_bus_telemetry');
+    ch.postMessage({ type: 'routesUpdated' });
+    ch.close();
+  } catch (_) {}
 }
 
 export async function deleteFirebaseRoute(routeId: string): Promise<void> {
   await deleteDoc(doc(db, 'routes', routeId));
   invalidateFirebaseCache();
+  try {
+    const ch = new BroadcastChannel('nagarst_bus_telemetry');
+    ch.postMessage({ type: 'routesUpdated' });
+    ch.close();
+  } catch (_) {}
+}
+
+export function subscribeFirebaseRoutes(
+  callback: (routes: FirebaseRoute[]) => void
+): () => void {
+  const colRef = collection(db, 'routes');
+  return onSnapshot(colRef, (snapshot) => {
+    const routes: FirebaseRoute[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data() as FirebaseRoute;
+      routes.push({
+        ...data,
+        id: docSnap.id,
+        routeNumber: data.route_number || (data as any).routeNumber,
+      });
+    });
+    routesCache = routes;
+    routesCacheTime = Date.now();
+    callback(routes);
+  }, (err) => {
+    console.warn('Firebase routes onSnapshot notice:', err);
+  });
 }
 
 // ==================== BUSES ====================
@@ -179,6 +211,11 @@ export async function saveFirebaseBus(bus: FirebaseBus): Promise<void> {
   });
   await setDoc(busRef, data, { merge: true });
   invalidateFirebaseCache();
+  try {
+    const ch = new BroadcastChannel('nagarst_bus_telemetry');
+    ch.postMessage({ type: 'busesUpdated' });
+    ch.close();
+  } catch (_) {}
 }
 
 export async function deleteFirebaseBus(busId: string): Promise<void> {
@@ -188,6 +225,34 @@ export async function deleteFirebaseBus(busId: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'live_locations', busId));
   } catch (_) {}
+  try {
+    const ch = new BroadcastChannel('nagarst_bus_telemetry');
+    ch.postMessage({ type: 'busesUpdated' });
+    ch.close();
+  } catch (_) {}
+}
+
+export function subscribeFirebaseBuses(
+  callback: (buses: FirebaseBus[]) => void
+): () => void {
+  const colRef = collection(db, 'buses');
+  return onSnapshot(colRef, (snapshot) => {
+    const buses: FirebaseBus[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data() as FirebaseBus;
+      buses.push({
+        ...data,
+        id: docSnap.id,
+        bus_number: data.bus_number || (data as any).busNumber,
+        plate_number: data.plate_number || (data as any).plateNumber,
+      });
+    });
+    busesCache = buses;
+    busesCacheTime = Date.now();
+    callback(buses);
+  }, (err) => {
+    console.warn('Firebase buses onSnapshot notice:', err);
+  });
 }
 
 // ==================== LIVE LOCATIONS ====================

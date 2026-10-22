@@ -5,7 +5,9 @@ import {
   saveFirebaseRoute,
   getFirebaseBuses,
   saveFirebaseBus,
-  subscribeFirebaseLiveLocations
+  subscribeFirebaseLiveLocations,
+  subscribeFirebaseRoutes,
+  subscribeFirebaseBuses
 } from '../utils/firebaseService';
 import { syncSimulatorFleetWithAdminConfig } from '../utils/demoSimulatorEngine';
 
@@ -201,12 +203,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
         localStorage.removeItem('nagarst_configured_routes');
         localStorage.removeItem('nagarst_custom_buses');
+        localStorage.removeItem('nagarst_demo_bus');
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && (k.includes('1515') || k.includes('1519'))) {
+            localStorage.removeItem(k);
+          }
+        }
       } catch (_) {}
 
       // 1. Fetch routes strictly from Firebase Firestore
       let combinedRoutes: any[] = [];
       try {
-        const fbRoutes = await getFirebaseRoutes();
+        const fbRoutes = await getFirebaseRoutes(true);
         if (fbRoutes && fbRoutes.length > 0) {
           combinedRoutes = fbRoutes.map(r => ({
             id: r.id,
@@ -245,7 +254,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       setRoutes(combinedRoutes as unknown as Route[]);
 
-      // Extract real stops from active routes
+      // Extract real stops strictly from active configured routes
       const uniqueStopsMap = new Map<string, BusStop>();
       combinedRoutes.forEach(r => {
         (r.stops || []).forEach((s: any) => {
@@ -270,10 +279,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
       setStops(Array.from(uniqueStopsMap.values()));
 
-      // 2. Fetch all buses strictly from Firebase Firestore
+      // 2. Fetch all buses strictly from Firebase Firestore (created by City Admin in Bus Fleet)
       let dbBuses: any[] = [];
       try {
-        const fbBuses = await getFirebaseBuses();
+        const fbBuses = await getFirebaseBuses(true);
         if (fbBuses && fbBuses.length > 0) {
           dbBuses = fbBuses;
         }
@@ -326,6 +335,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const routeTitle = matchedRoute?.name || 'Unassigned Route';
           const originName = matchedRoute?.origin || 'Depot';
           const destName = matchedRoute?.destination || 'Depot';
+          const defaultLat = matchedRoute?.stops?.[0]?.lat || 19.0975;
+          const defaultLng = matchedRoute?.stops?.[0]?.lng || 74.7420;
 
           return {
             id: b.id,
@@ -344,8 +355,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             speedKmh: 0,
             occupancy: 'moderate' as Bus['occupancy'],
             status: 'on_time' as Bus['status'],
-            lat: 19.0975,
-            lng: 74.7420,
+            lat: defaultLat,
+            lng: defaultLng,
             heading: 0,
             driverName: 'Assigned Driver',
             conductorName: 'Duty Conductor',
@@ -360,6 +371,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         } catch (_) {}
       } else {
         setBuses([]);
+        try {
+          syncSimulatorFleetWithAdminConfig([], combinedRoutes as unknown as Route[]);
+        } catch (_) {}
       }
     } catch (err) {
       console.error('Failed to load database records:', err);
@@ -431,8 +445,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     };
 
-    const handleBusOffline = (busId: string) => {
-      setBuses(prev => prev.filter(b => b.id !== busId));
+    const handleBusOffline = (_busId: string) => {
+      // Offline vehicles remain registered in fleet inventory; only live movement ceases
     };
 
 
@@ -446,6 +460,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             handleBusUpdate(event.data.data);
           } else if (event.data?.type === 'busOffline' && event.data?.busId) {
             handleBusOffline(event.data.busId);
+          } else if (event.data?.type === 'routesUpdated' || event.data?.type === 'busesUpdated') {
+            refreshData();
           }
         };
       } catch (e) {
@@ -515,11 +531,109 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     });
 
+    // 5. Authoritative Real-time Routes Subscription (City Admin routes show across all dashboards immediately)
+    const unsubscribeRoutes = subscribeFirebaseRoutes((fbRoutes) => {
+      const combinedRoutes = (fbRoutes || []).map(r => ({
+        id: r.id,
+        routeNumber: r.route_number || r.routeNumber,
+        origin: r.origin,
+        destination: r.destination,
+        name: r.name || `${r.origin} ↔ ${r.destination}`,
+        nameMarathi: r.name || `${r.origin} ↔ ${r.destination}`,
+        firstBus: '06:00 AM',
+        lastBus: '10:00 PM',
+        frequencyMinutes: 15,
+        baseFare: 10,
+        maxFare: 30,
+        totalStops: r.stops?.length || 0,
+        durationMinutes: 30,
+        color: r.color || '#7847CB',
+        activeBusesCount: 1,
+        status: 'normal' as const,
+        route_path: r.route_path,
+        stops: (r.stops || []).map((s: any, idx: number) => ({
+          stopId: s.stopId || `stop-${idx}`,
+          stopName: s.stopName,
+          stopNameMarathi: s.stopName,
+          lat: s.lat,
+          lng: s.lng,
+          sequence: s.sequence || idx + 1,
+          fareFromOrigin: (idx + 1) * 5,
+          estimatedMinutesFromOrigin: s.estimatedMinutesFromOrigin || idx * 4,
+          isMajorHub: idx === 0
+        }))
+      }));
+
+      setRoutes(combinedRoutes as unknown as Route[]);
+
+      // Extract unique stops strictly from active configured routes
+      const uniqueStopsMap = new Map<string, BusStop>();
+      combinedRoutes.forEach(r => {
+        (r.stops || []).forEach((s: any) => {
+          const key = (s.stopName || '').trim().toLowerCase();
+          if (key && !uniqueStopsMap.has(key)) {
+            uniqueStopsMap.set(key, {
+              id: s.stopId || `stop-${s.sequence}`,
+              name: s.stopName,
+              nameMarathi: s.stopName,
+              area: 'City Center',
+              lat: s.lat,
+              lng: s.lng,
+              lines: [r.routeNumber || 'Route'],
+              facilities: ['Shelter', 'Bus Bay'],
+              accessibility: true,
+              shelter: true,
+              digitalBoard: true,
+              liveArrivals: []
+            });
+          }
+        });
+      });
+      setStops(Array.from(uniqueStopsMap.values()));
+    });
+
+    // 6. Authoritative Real-time Buses Subscription (Bus fleet created by City Admin shows immediately)
+    const unsubscribeBuses = subscribeFirebaseBuses((fbBuses) => {
+      setBuses(prevBuses => {
+        const mapped = (fbBuses || []).map((b: any) => {
+          const existing = prevBuses.find(pb => pb.id === b.id || pb.busNumber === (b.bus_number || b.busNumber));
+          return {
+            id: b.id,
+            busNumber: b.bus_number || b.busNumber,
+            plateNumber: b.plate_number || b.plateNumber || b.bus_number || b.busNumber,
+            routeId: b.route_id || b.routeId || '',
+            routeNumber: existing?.routeNumber || '',
+            routeName: existing?.routeName || 'Unassigned Route',
+            origin: existing?.origin || 'Depot',
+            destination: existing?.destination || 'Depot',
+            currentStopId: existing?.currentStopId || 'stop1',
+            currentStopName: existing?.currentStopName || 'Central Depot',
+            nextStopId: existing?.nextStopId || 'stop2',
+            nextStopName: existing?.nextStopName || 'Approaching Corridor',
+            etaToNextMinutes: existing?.etaToNextMinutes ?? 4,
+            speedKmh: existing?.speedKmh ?? 0,
+            occupancy: (existing?.occupancy || 'moderate') as Bus['occupancy'],
+            status: (existing?.status || 'on_time') as Bus['status'],
+            lat: existing?.lat || 19.0975,
+            lng: existing?.lng || 74.7420,
+            heading: existing?.heading ?? 0,
+            driverName: existing?.driverName || 'Assigned Driver',
+            conductorName: existing?.conductorName || 'Duty Conductor',
+            busType: b.type || existing?.busType || 'Standard City',
+            lastUpdated: b.created_at || new Date().toISOString()
+          };
+        });
+        return mapped as Bus[];
+      });
+    });
+
     return () => {
       if (broadcastChannel) broadcastChannel.close();
       window.removeEventListener('storage', onStorage);
       if (socketInstance) socketInstance.disconnect();
       unsubscribeFirebase();
+      unsubscribeRoutes();
+      unsubscribeBuses();
     };
   }, []);
 

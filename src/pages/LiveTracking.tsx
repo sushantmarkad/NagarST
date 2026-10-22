@@ -147,12 +147,12 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     }
   });
 
-  // Synchronize active live buses with fleet from AppContext and running demo state
+  // Synchronize active live buses strictly with registered municipal fleet
   useEffect(() => {
     setActiveLiveBuses((prev) => {
       const next: Record<string, Bus> = {};
       Object.entries(prev).forEach(([k, b]) => {
-        // Retain if it's a known database bus OR an active demo bus
+        // Retain ONLY if it's a known database bus from the registered municipal fleet
         const isKnown = buses.some(cb => 
           isSameBusKey(cb.id, k) ||
           isSameBusKey(cb.busNumber, k) ||
@@ -161,7 +161,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           isSameBusKey(cb.busNumber, b.busNumber) ||
           isSameBusKey(cb.plateNumber, b.plateNumber)
         );
-        if (isKnown || b.isDemo || k.startsWith('demo-')) {
+        if (isKnown) {
           next[k] = b;
         }
       });
@@ -172,6 +172,17 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   // Listen to cross-tab BroadcastChannel & storage events for live bus telemetry
   useEffect(() => {
     let ch: BroadcastChannel | null = null;
+    const pendingBroadcastUpdates: Record<string, Bus> = {};
+    let rafBroadcastId: number | null = null;
+
+    const flushBroadcastUpdates = () => {
+      rafBroadcastId = null;
+      const updates = { ...pendingBroadcastUpdates };
+      Object.keys(pendingBroadcastUpdates).forEach(k => delete pendingBroadcastUpdates[k]);
+      if (Object.keys(updates).length === 0) return;
+      setActiveLiveBuses(prev => ({ ...prev, ...updates }));
+    };
+
     try {
       ch = new BroadcastChannel('nagarst_bus_telemetry');
       ch.onmessage = (event) => {
@@ -193,6 +204,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                   return cd && (cd === bId || cd === bNum || cd === bPlate);
                 });
                 if (isDel) {
+                  delete pendingBroadcastUpdates[incoming.id];
                   setActiveLiveBuses((prev) => {
                     const next = { ...prev };
                     delete next[incoming.id];
@@ -222,13 +234,13 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
               isSameBusKey(b.busNumber, incoming.id) ||
               isSameBusKey(b.plateNumber, incoming.plateNumber)
             );
-            // Accept if it belongs to registered municipal fleet OR if it's an active simulator bus
-            if (!isKnown && !isDemo) return;
+            // Accept ONLY if it belongs to registered municipal fleet
+            if (!isKnown) return;
 
-            setActiveLiveBuses((prev) => ({
-              ...prev,
-              [incoming.id]: { ...incoming, isDemo, isLiveDriver: !isDemo }
-            }));
+            pendingBroadcastUpdates[incoming.id] = { ...incoming, isDemo, isLiveDriver: !isDemo };
+            if (!rafBroadcastId) {
+              rafBroadcastId = requestAnimationFrame(flushBroadcastUpdates);
+            }
           }
         } else if (payload?.type === 'simRunningSync' || payload?.type === 'fleetSync' || payload?.type === 'resetDemo') {
           restoreSimRunningState();
@@ -282,7 +294,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                 isSameBusKey(cb.busNumber, b.id) ||
                 isSameBusKey(cb.plateNumber, b.plateNumber)
               );
-              if (!isKnown && !isDemo) {
+              if (!isKnown) {
                 try { localStorage.removeItem(e.key); } catch (_) {}
                 return;
               }
@@ -370,22 +382,18 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
       const isBusDeleted = (busObj: any) => {
         if (!busObj) return false;
-        if (busObj.offline || busObj.isDeleted) return true;
+        if ((busObj as any).offline || (busObj as any).isDeleted) return true;
         try {
           const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
           const bId = norm(busObj.id);
           const bNum = norm(busObj.busNumber);
           const bPlate = norm(busObj.plateNumber);
-          if (bNum === '1515' || bNum === 'MH16BT1515' || bId === 'DEMOBUS1515' || bPlate === 'MH16BT1515') return false;
-          if (bNum === '1519' || bNum === 'MH16BT1519' || bId === 'DEMOBUS1519' || bPlate === 'MH16BT1519') return false;
 
           const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
           if (!deletedRaw) return false;
           const deletedList: string[] = JSON.parse(deletedRaw);
           return deletedList.some(d => {
             const cd = norm(d);
-            if (cd === '1515' || cd === 'DEMOBUS1515' || cd === 'MH16BT1515') return false;
-            if (cd === '1519' || cd === 'DEMOBUS1519' || cd === 'MH16BT1519') return false;
             return cd && (cd === bId || cd === bNum || cd === bPlate);
           });
         } catch (_) {
@@ -403,10 +411,21 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         scheduleFlush();
       };
 
+      const matchesFleet = (busObj: any) => {
+        if (!busObj || !buses || buses.length === 0) return false;
+        return buses.some(b => 
+          isSameBusKey(b.id, busObj.id) ||
+          isSameBusKey(b.busNumber, busObj.busNumber) ||
+          isSameBusKey(b.plateNumber, busObj.plateNumber) ||
+          isSameBusKey(b.id, busObj.busNumber) ||
+          isSameBusKey(b.busNumber, busObj.id)
+        );
+      };
+
       socket.on('initialDemoBuses', (demoFleet: Bus[]) => {
         if (Array.isArray(demoFleet) && demoFleet.length > 0) {
           demoFleet.forEach(b => {
-            if (b && b.id && !isBusDeleted(b)) {
+            if (b && b.id && matchesFleet(b) && !isBusDeleted(b)) {
               pendingUpdates[b.id] = { ...b, isDemo: true };
             }
           });
@@ -416,7 +435,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
       socket.on('demoLocationUpdate', (bus: Bus) => {
         if (!bus || !bus.id) return;
-        if (isBusDeleted(bus) || bus.offline || (bus as any).isDeleted) {
+        if (!matchesFleet(bus) || isBusDeleted(bus) || (bus as any).offline || (bus as any).isDeleted) {
           purgeFromActive(bus);
           return;
         }
@@ -426,14 +445,12 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
       socket.on('locationUpdate', (bus: Bus) => {
         if (!bus || !bus.id) return;
-        // Skip demo buses — they are already handled by demoLocationUpdate above.
-        // The server emits both events for demo buses; processing both doubles state churn.
-        const isDemo = Boolean(bus.isDemo || String(bus.id).startsWith('demo-') || (bus.routeName || '').includes('[DEMO]'));
-        if (isDemo) return;
-        if (isBusDeleted(bus)) {
+        if (!matchesFleet(bus) || isBusDeleted(bus) || (bus as any).offline || (bus as any).isDeleted) {
           purgeFromActive(bus);
           return;
         }
+        const isDemo = Boolean(bus.isDemo || String(bus.id).startsWith('demo-') || (bus.routeName || '').includes('[DEMO]'));
+        if (isDemo) return;
         pendingUpdates[bus.id] = { ...bus, isDemo: false, isLiveDriver: true } as any;
         scheduleFlush();
       });
@@ -448,10 +465,9 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     };
   }, []);
 
-  // Ensure simulator timer and running states are active on mount
+  // Restore simulator state on mount without starting competing timers
   useEffect(() => {
     restoreSimRunningState();
-    ensureTimerRunning();
     setSimState(getDemoSimulatorState());
   }, []);
 
@@ -465,7 +481,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     }
   }, [busIdsKey, routeIdsKey]);
 
-  // Combined active fleet strictly reflecting configured municipal fleet + running demo simulator buses
+  // Combined active fleet strictly reflecting configured municipal fleet
   const allFleetBuses = useMemo<Bus[]>(() => {
     const deletedRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
     const deletedIds: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
@@ -476,12 +492,8 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       const cId = norm(b.id);
       const cB = norm(b.busNumber);
       const cP = norm(b.plateNumber);
-      if (cB === '1515' || cB === 'MH16BT1515' || cId === 'DEMOBUS1515' || cP === 'MH16BT1515') return false;
-      if (cB === '1519' || cB === 'MH16BT1519' || cId === 'DEMOBUS1519' || cP === 'MH16BT1519') return false;
       return deletedIds.some((d) => {
         const cD = norm(d);
-        if (cD === '1515' || cD === 'DEMOBUS1515' || cD === 'MH16BT1515') return false;
-        if (cD === '1519' || cD === 'DEMOBUS1519' || cD === 'MH16BT1519') return false;
         return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
       });
     };
@@ -498,7 +510,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
     const byNumber = new Map<string, Bus>();
 
-    // 1. Authoritative registered fleet buses from Database / AppContext
+    // 1. Authoritative registered fleet buses from Database / AppContext ONLY
     if (buses && buses.length > 0) {
       const validConfigured = buses.filter(b => {
         if (!b || isDeleted(b)) return false;
@@ -506,17 +518,17 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       });
 
       validConfigured.forEach(cb => {
-        // 1a. Check if there is an active simulator runtime in simState
+        // Check if there is an active simulator runtime in simState
         const simRuntime = Object.values(simState?.buses || {}).find(r => 
           matchesBus(cb, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
         );
 
-        // 1b. Check if there is live telemetry in activeLiveBuses (from BroadcastChannel or driver GPS)
+        // Check if there is live telemetry in activeLiveBuses (from BroadcastChannel or driver GPS)
         const live = Object.values(activeLiveBuses).find(lb => matchesBus(cb, lb));
 
         const isSimRunning = Boolean(simRuntime?.isRunning);
         const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
-        const activeTelemetry = simTelemetry || live;
+        const activeTelemetry = live || simTelemetry;
 
         const targetRoute = allRoutes.find(
           r => r.id === (activeTelemetry?.routeId || cb.routeId) ||
@@ -547,59 +559,6 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         byNumber.set(key, merged);
       });
     }
-
-    // 2. Actively running simulator demo buses from simState (if not already merged)
-    if (simState && simState.buses) {
-      Object.values(simState.buses).forEach(runtime => {
-        if (!runtime.isRunning) return;
-        const bNum = runtime.def.busNumber;
-        const pNum = runtime.def.plateNumber;
-        if (isDeleted({ id: runtime.id, busNumber: bNum, plateNumber: pNum })) return;
-
-        const alreadyMerged = Array.from(byNumber.values()).some(b => 
-          matchesBus(b, { id: runtime.id, busNumber: bNum, plateNumber: pNum })
-        );
-        if (alreadyMerged) return;
-
-        const liveBus = runtime.currentBus || buildBusTelemetry(runtime);
-        if (liveBus && liveBus.lat && liveBus.lng) {
-          const key = norm(liveBus.busNumber) || norm(liveBus.id);
-          const targetRoute = allRoutes.find(
-            r => r.id === liveBus.routeId || r.routeNumber === liveBus.routeNumber || r.routeNumber === runtime.def.routeNumber
-          );
-
-          byNumber.set(key, {
-            ...liveBus,
-            routeId: targetRoute?.id || liveBus.routeId || runtime.def.routeId,
-            routeNumber: targetRoute?.routeNumber || runtime.def.routeNumber || liveBus.routeNumber,
-            routeName: targetRoute?.name || runtime.def.routeName || liveBus.routeName,
-            origin: targetRoute?.origin || runtime.def.origin || liveBus.origin,
-            destination: targetRoute?.destination || runtime.def.destination || liveBus.destination,
-            isDemo: true
-          });
-        }
-      });
-    }
-
-    // 3. Actively running demo / driver buses from live broadcast (if not already merged)
-    Object.values(activeLiveBuses).forEach(lb => {
-      if (!lb || !lb.lat || !lb.lng) return;
-      if (isDeleted(lb)) return;
-      const alreadyMerged = Array.from(byNumber.values()).some(b => matchesBus(b, lb));
-      if (alreadyMerged) return;
-
-      const key = norm(lb.busNumber) || norm(lb.id);
-      const targetRoute = allRoutes.find(
-        r => r.id === lb.routeId || r.routeNumber === lb.routeNumber
-      );
-      byNumber.set(key, {
-        ...lb,
-        routeId: targetRoute?.id || lb.routeId,
-        routeNumber: targetRoute?.routeNumber || lb.routeNumber,
-        routeName: targetRoute?.name || lb.routeName,
-        isDemo: Boolean(lb.isDemo)
-      });
-    });
 
     return Array.from(byNumber.values());
   }, [activeLiveBuses, buses, allRoutes, simState]);
@@ -679,48 +638,10 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       return matchedRoute;
     }
 
-    // 2. Direct simulation runtime route definition
-    const runtime = simState.buses[selectedBus.id] || Object.values(simState.buses).find(
-      r => r.def.busNumber.trim().toUpperCase() === selectedBus.busNumber.trim().toUpperCase()
-    );
-    const demoDef = runtime?.def || DEMO_BUS_DEFINITIONS.find((d: any) => d.id === selectedBus.id || d.busNumber === selectedBus.busNumber);
-    if (demoDef && demoDef.stops && demoDef.stops.length > 0) {
-      return {
-        id: demoDef.routeId,
-        routeNumber: demoDef.routeNumber,
-        name: demoDef.routeName,
-        nameMarathi: demoDef.routeName,
-        origin: demoDef.origin,
-        destination: demoDef.destination,
-        firstBus: '06:00 AM',
-        lastBus: '10:00 PM',
-        frequencyMinutes: 15,
-        baseFare: 10,
-        maxFare: 25,
-        totalStops: demoDef.stops.length,
-        durationMinutes: 30,
-        color: demoDef.color,
-        activeBusesCount: 1,
-        status: 'normal' as const,
-        stops: demoDef.stops.map((s: any, idx: number) => ({
-          stopId: s.id,
-          stopName: s.name,
-          stopNameMarathi: s.name,
-          sequence: idx + 1,
-          fareFromOrigin: idx * 5,
-          estimatedMinutesFromOrigin: idx * 5,
-          isMajorHub: idx === 0 || idx === demoDef.stops.length - 1,
-          lat: s.lat,
-          lng: s.lng,
-        })),
-        route_path: demoDef.waypoints,
-      };
-    }
-
     return null;
   }, [selectedBus, allRoutes, simState.buses]);
 
-  // Routes to display on map: shows active demo corridors and configured routes
+  // Routes to display on map: strictly shows configured routes from City Admin Route Corridors
   const routesToDisplay = useMemo(() => {
     if (!allRoutes || allRoutes.length === 0) return [];
     if (selectedBusRoute) return [selectedBusRoute];
@@ -728,7 +649,6 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     const activeRouteMap = new Map<string, RouteType>();
 
     allFleetBuses.forEach((bus) => {
-      // If the bus has no route assigned (or route is deleted), do NOT invent a route!
       if (!bus.routeId) return;
 
       // Check if configured route exists in allRoutes (Route Corridors tab)
@@ -737,48 +657,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       );
       if (!dbRoute) return;
 
-      // Find matching simulation runtime or definition (authoritative road corridor)
-      const runtime = simState.buses[bus.id] || Object.values(simState.buses).find(
-        (r) => r.def.busNumber.trim().toUpperCase() === bus.busNumber.trim().toUpperCase()
-      );
-      const demoDef = runtime?.def || DEMO_BUS_DEFINITIONS.find((d: any) => d.id === bus.id || d.busNumber === bus.busNumber);
-
-      const targetRouteId = dbRoute.id || demoDef?.routeId || bus.routeId || 'corridor';
-
-      if (demoDef && demoDef.stops && demoDef.stops.length > 0) {
-        activeRouteMap.set(targetRouteId, {
-          id: targetRouteId,
-          routeNumber: demoDef.routeNumber || dbRoute?.routeNumber || 'Route',
-          name: demoDef.routeName || dbRoute?.name || `${demoDef.origin} ➔ ${demoDef.destination}`,
-          nameMarathi: demoDef.routeName || dbRoute?.nameMarathi || dbRoute?.name || `${demoDef.origin} ➔ ${demoDef.destination}`,
-          origin: demoDef.origin || dbRoute?.origin || '',
-          destination: demoDef.destination || dbRoute?.destination || '',
-          firstBus: dbRoute?.firstBus || '06:00 AM',
-          lastBus: dbRoute?.lastBus || '10:00 PM',
-          frequencyMinutes: dbRoute?.frequencyMinutes || 15,
-          baseFare: dbRoute?.baseFare || 10,
-          maxFare: dbRoute?.maxFare || 25,
-          totalStops: demoDef.stops.length,
-          durationMinutes: dbRoute?.durationMinutes || 30,
-          color: demoDef.color || dbRoute?.color || '#7847CB',
-          activeBusesCount: 1,
-          status: 'normal' as const,
-          stops: demoDef.stops.map((s: any, idx: number) => ({
-            stopId: s.id,
-            stopName: s.name,
-            stopNameMarathi: s.name,
-            sequence: idx + 1,
-            fareFromOrigin: idx * 5,
-            estimatedMinutesFromOrigin: idx * 5,
-            isMajorHub: idx === 0 || idx === demoDef.stops.length - 1,
-            lat: s.lat,
-            lng: s.lng,
-          })),
-          route_path: demoDef.waypoints && demoDef.waypoints.length > 2 ? demoDef.waypoints : dbRoute?.route_path,
-        });
-      } else if (dbRoute) {
-        activeRouteMap.set(dbRoute.id, dbRoute);
-      }
+      activeRouteMap.set(dbRoute.id, dbRoute);
     });
 
     const activeList = Array.from(activeRouteMap.values());
@@ -786,7 +665,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       return activeList.filter((r) => r.id === filterRoute);
     }
     return activeList.length > 0 ? activeList : allRoutes;
-  }, [selectedBusRoute, allFleetBuses, allRoutes, filterRoute, simState.buses]);
+  }, [selectedBusRoute, allFleetBuses, allRoutes, filterRoute]);
 
   // Active commuter coordinate (Live GPS or selected manual location)
   const activeCommuterPos = useMemo(() => {

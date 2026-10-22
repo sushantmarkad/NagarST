@@ -105,8 +105,8 @@ export const Home: React.FC = () => {
               (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
               (b.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key
             );
-            // Accept if it belongs to registered municipal fleet OR if it's an active simulator bus
-            if (!isKnown && !isDemo) return;
+            // Accept ONLY if it belongs to registered municipal fleet
+            if (!isKnown) return;
 
             setActiveLiveBuses((prev) => ({
               ...prev,
@@ -149,7 +149,7 @@ export const Home: React.FC = () => {
                 (cb.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key ||
                 (cb.plateNumber || '').trim().toUpperCase().replace(/\s+/g, '') === key
               );
-              if (!isKnown && !isDemo) {
+              if (!isKnown) {
                 try { localStorage.removeItem(e.key); } catch (_) {}
                 return;
               }
@@ -177,10 +177,9 @@ export const Home: React.FC = () => {
     };
   }, [buses]);
 
-  // Ensure simulator timer and running states are active on mount
+  // Restore simulator state on mount without starting competing timers
   useEffect(() => {
     restoreSimRunningState();
-    ensureTimerRunning();
   }, []);
 
   // Display buses strictly reflecting configured municipal fleet + actively running demo simulator buses
@@ -238,7 +237,7 @@ export const Home: React.FC = () => {
 
         const isSimRunning = Boolean(simRuntime?.isRunning);
         const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
-        const activeTelemetry = simTelemetry || live;
+        const activeTelemetry = live || simTelemetry;
 
         const targetRoute = routes.find(
           r => r.id === (activeTelemetry?.routeId || cb.routeId) ||
@@ -269,59 +268,6 @@ export const Home: React.FC = () => {
         byNumber.set(key, merged);
       });
     }
-
-    // 2. Actively running simulator demo buses from simState (if not already merged)
-    if (simState && simState.buses) {
-      Object.values(simState.buses).forEach(runtime => {
-        if (!runtime.isRunning) return;
-        const bNum = runtime.def.busNumber;
-        const pNum = runtime.def.plateNumber;
-        if (isDeleted({ id: runtime.id, busNumber: bNum, plateNumber: pNum })) return;
-
-        const alreadyMerged = Array.from(byNumber.values()).some(b => 
-          matchesBus(b, { id: runtime.id, busNumber: bNum, plateNumber: pNum })
-        );
-        if (alreadyMerged) return;
-
-        const liveBus = runtime.currentBus || buildBusTelemetry(runtime);
-        if (liveBus && liveBus.lat && liveBus.lng) {
-          const key = norm(liveBus.busNumber) || norm(liveBus.id);
-          const targetRoute = routes.find(
-            r => r.id === liveBus.routeId || r.routeNumber === liveBus.routeNumber || r.routeNumber === runtime.def.routeNumber
-          );
-
-          byNumber.set(key, {
-            ...liveBus,
-            routeId: targetRoute?.id || liveBus.routeId || runtime.def.routeId,
-            routeNumber: targetRoute?.routeNumber || runtime.def.routeNumber || liveBus.routeNumber,
-            routeName: targetRoute?.name || runtime.def.routeName || liveBus.routeName,
-            origin: targetRoute?.origin || runtime.def.origin || liveBus.origin,
-            destination: targetRoute?.destination || runtime.def.destination || liveBus.destination,
-            isDemo: true
-          });
-        }
-      });
-    }
-
-    // 3. Actively running demo / driver buses from live broadcast (if not already merged)
-    Object.values(activeLiveBuses).forEach(lb => {
-      if (!lb || !lb.lat || !lb.lng) return;
-      if (isDeleted(lb)) return;
-      const alreadyMerged = Array.from(byNumber.values()).some(b => matchesBus(b, lb));
-      if (alreadyMerged) return;
-
-      const key = norm(lb.busNumber) || norm(lb.id);
-      const targetRoute = routes.find(
-        r => r.id === lb.routeId || r.routeNumber === lb.routeNumber
-      );
-      byNumber.set(key, {
-        ...lb,
-        routeId: targetRoute?.id || lb.routeId,
-        routeNumber: targetRoute?.routeNumber || lb.routeNumber,
-        routeName: targetRoute?.name || lb.routeName,
-        isDemo: Boolean(lb.isDemo)
-      });
-    });
 
     return Array.from(byNumber.values());
   }, [activeLiveBuses, buses, routes, simState]);

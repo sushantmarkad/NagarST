@@ -38,12 +38,70 @@ export const AdminLiveFleet: React.FC = () => {
 
   // Subscribe to live simulation telemetry
   const [simState, setSimState] = useState<DemoSimulatorState>(getDemoSimulatorState);
+  const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, BusType>>({});
 
   useEffect(() => {
     const unsub = subscribeToDemoState((newState) => {
       setSimState(newState);
     });
     return () => unsub();
+  }, []);
+
+  // Listen to BroadcastChannel & Socket.IO so fleet tracking reflects real-time moving buses concurrently
+  useEffect(() => {
+    let ch: BroadcastChannel | null = null;
+    let socket: any = null;
+
+    try {
+      ch = new BroadcastChannel('nagarst_bus_telemetry');
+      ch.onmessage = (event) => {
+        const payload = event.data;
+        if ((payload?.type === 'locationUpdate' || payload?.type === 'driver_location_update') && (payload?.data || payload?.bus)) {
+          const incoming = (payload.data || payload.bus) as BusType;
+          if (incoming && incoming.id) {
+            setActiveLiveBuses((prev) => ({
+              ...prev,
+              [incoming.id]: incoming
+            }));
+          }
+        } else if (payload?.type === 'busOffline' && payload?.busId) {
+          const offId = payload.busId;
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            delete next[offId];
+            return next;
+          });
+        }
+      };
+    } catch (_) {}
+
+    try {
+      socket = io(SOCKET_URL, { reconnection: true, transports: ['websocket', 'polling'] });
+      socket.on('demoLocationUpdate', (bus: BusType) => {
+        if (bus && bus.id) {
+          setActiveLiveBuses((prev) => ({ ...prev, [bus.id]: bus }));
+        }
+      });
+      socket.on('locationUpdate', (bus: BusType) => {
+        if (bus && bus.id) {
+          setActiveLiveBuses((prev) => ({ ...prev, [bus.id]: bus }));
+        }
+      });
+      socket.on('busOffline', (busId: string) => {
+        if (busId) {
+          setActiveLiveBuses((prev) => {
+            const next = { ...prev };
+            delete next[busId];
+            return next;
+          });
+        }
+      });
+    } catch (_) {}
+
+    return () => {
+      ch?.close();
+      if (socket) socket.disconnect();
+    };
   }, []);
 
   const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
@@ -68,49 +126,32 @@ export const AdminLiveFleet: React.FC = () => {
         matchesBus(b, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
       );
 
+      const live = Object.values(activeLiveBuses).find((lb) => matchesBus(b, lb));
+
       const isSimRunning = Boolean(simRuntime?.isRunning);
       const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
+      const activeTelemetry = live || simTelemetry;
 
       const merged: BusType = {
         ...b,
-        ...(simTelemetry || {}),
+        ...(activeTelemetry || {}),
         id: b.id,
         busNumber: b.busNumber,
         plateNumber: b.plateNumber,
-        isDemo: isSimRunning ? true : Boolean(b.isDemo),
-        lat: Number(simTelemetry?.lat ?? b.lat),
-        lng: Number(simTelemetry?.lng ?? b.lng),
-        speedKmh: simTelemetry ? (simTelemetry.speedKmh ?? 0) : b.speedKmh,
-        heading: simTelemetry ? (simTelemetry.heading ?? 0) : b.heading,
-        status: simTelemetry?.status || b.status || 'on_time'
+        isDemo: isSimRunning ? true : Boolean(activeTelemetry?.isDemo || b.isDemo),
+        lat: Number(activeTelemetry?.lat ?? b.lat),
+        lng: Number(activeTelemetry?.lng ?? b.lng),
+        speedKmh: activeTelemetry ? (activeTelemetry.speedKmh ?? 0) : b.speedKmh,
+        heading: activeTelemetry ? (activeTelemetry.heading ?? 0) : b.heading,
+        status: activeTelemetry?.status || b.status || 'on_time'
       };
 
       const key = norm(b.busNumber) || norm(b.id);
       byNumber.set(key, merged);
     });
 
-    // 2. Actively running simulator buses (if not already merged)
-    if (simState && simState.buses) {
-      Object.values(simState.buses).forEach((runtime) => {
-        if (!runtime.isRunning) return;
-        const alreadyMerged = Array.from(byNumber.values()).some((b) =>
-          matchesBus(b, { id: runtime.id, busNumber: runtime.def.busNumber, plateNumber: runtime.def.plateNumber })
-        );
-        if (alreadyMerged) return;
-
-        const liveBus = runtime.currentBus || buildBusTelemetry(runtime);
-        if (liveBus && liveBus.lat && liveBus.lng) {
-          const rKey = norm(liveBus.busNumber) || norm(liveBus.id);
-          byNumber.set(rKey, {
-            ...liveBus,
-            isDemo: true
-          });
-        }
-      });
-    }
-
     return Array.from(byNumber.values());
-  }, [buses, simState]);
+  }, [buses, simState, activeLiveBuses]);
 
   const allRoutes = routes;
   const liveCount = displayBuses.filter(b => !b.isDemo && !b.id?.startsWith('demo-')).length;

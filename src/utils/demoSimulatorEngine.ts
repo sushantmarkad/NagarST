@@ -2,10 +2,10 @@ import type { Bus, Route, RouteStop } from '../types';
 import { getDistance, getBearing, fetchOSRMRoute } from './routing';
 import { io, Socket } from 'socket.io-client';
 
-export const DEMO_BUS_ID = 'demo-bus-1515';
-export const DEMO_BUS_NUMBER = 'MH-16 BT-1515';
-export const DEMO_PLATE_NUMBER = 'MH-16 BT-1515';
-export const DEMO_TRIP_ID = 'demo-trip-1515';
+export const DEMO_BUS_ID = '';
+export const DEMO_BUS_NUMBER = '';
+export const DEMO_PLATE_NUMBER = '';
+export const DEMO_TRIP_ID = '';
 
 export interface DemoStop {
   id: string;
@@ -129,101 +129,17 @@ export function densifyPath(path: { lat: number; lng: number }[], targetPoints =
   return result;
 }
 
-// =========================================================================
-// AUTHORITATIVE ROUTE CORRIDORS FOR AHILYANAGAR
-// =========================================================================
-export const AUTHORITATIVE_R01_WAYPOINTS = [
-  { lat: 19.0910, lng: 74.7290 },
-  { lat: 19.0925, lng: 74.7315 },
-  { lat: 19.0940, lng: 74.7350 },
-  { lat: 19.0975, lng: 74.7420 },
-  { lat: 19.0900, lng: 74.7440 },
-  { lat: 19.0830, lng: 74.7460 },
-];
-export const AUTHORITATIVE_R01_STOPS: DemoStop[] = [
-  { id: 'stop-mw', name: 'माळीवाडा गल्ली', lat: 19.0910, lng: 74.7290 },
-  { id: 'stop-swk', name: 'Swastik Chowk', lat: 19.0940, lng: 74.7350 },
-  { id: 'stop-cbs', name: 'Ahilyanagar CBS', lat: 19.0975, lng: 74.7420 },
-  { id: 'stop-dairy', name: 'Dairy Chowk', lat: 19.0830, lng: 74.7460 },
-];
+// Authoritative routes are populated strictly by City Admin
+export const AUTHORITATIVE_R01_WAYPOINTS: { lat: number; lng: number }[] = [];
+export const AUTHORITATIVE_R01_STOPS: DemoStop[] = [];
+export const AUTHORITATIVE_R02_WAYPOINTS: { lat: number; lng: number }[] = [];
+export const AUTHORITATIVE_R02_STOPS: DemoStop[] = [];
 
-export const AUTHORITATIVE_R02_WAYPOINTS = [
-  { lat: 19.1025, lng: 74.7380 },
-  { lat: 19.1060, lng: 74.7385 },
-  { lat: 19.1090, lng: 74.7395 },
-  { lat: 19.1150, lng: 74.7430 },
-  { lat: 19.1235, lng: 74.7490 },
-  { lat: 19.1320, lng: 74.7550 },
-];
-export const AUTHORITATIVE_R02_STOPS: DemoStop[] = [
-  { id: 'stop-mg', name: 'Mahatma Gandhi Road', lat: 19.1025, lng: 74.7380 },
-  { id: 'stop-gandhi-chk', name: 'Gandhi Chowk', lat: 19.1090, lng: 74.7395 },
-  { id: 'stop-delhi-gate', name: 'Delhi Gate Transit', lat: 19.1150, lng: 74.7430 },
-  { id: 'stop-sambhaji', name: 'Chhatrapati Sambhaji Nagar', lat: 19.1320, lng: 74.7550 },
-];
+export const DEFAULT_DEMO_ROUTES: DemoRoutePreset[] = [];
+export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [];
 
-export const DEFAULT_DEMO_ROUTES: DemoRoutePreset[] = [
-  {
-    id: 'R-01',
-    routeNumber: 'R-01',
-    routeName: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
-    origin: 'माळीवाडा गल्ली',
-    destination: 'Dairy Chowk',
-    color: '#7847CB',
-    description: 'माळीवाडा गल्ली ➔ Dairy Chowk via Swastik & CBS',
-    stops: AUTHORITATIVE_R01_STOPS,
-    waypoints: densifyPath(AUTHORITATIVE_R01_WAYPOINTS, 120)
-  },
-  {
-    id: 'R-02',
-    routeNumber: 'R-02',
-    routeName: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
-    origin: 'Mahatma Gandhi Road',
-    destination: 'Chhatrapati Sambhaji Nagar',
-    color: '#d97706',
-    description: 'Mahatma Gandhi Road ➔ Chhatrapati Sambhaji Nagar via Delhi Gate',
-    stops: AUTHORITATIVE_R02_STOPS,
-    waypoints: densifyPath(AUTHORITATIVE_R02_WAYPOINTS, 120)
-  }
-];
-
-export let AVAILABLE_DEMO_ROUTES: DemoRoutePreset[] = [...DEFAULT_DEMO_ROUTES];
-
-// =========================================================================
-// MULTI-BUS DEFINITION REGISTRY
-// =========================================================================
-export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [
-  {
-    id: 'demo-bus-1515',
-    busNumber: 'MH-16 BT-1515',
-    plateNumber: 'MH-16 BT-1515',
-    tripId: 'demo-trip-1515',
-    routeId: 'R-01',
-    routeNumber: 'R-01',
-    routeName: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
-    origin: 'माळीवाडा गल्ली',
-    destination: 'Dairy Chowk',
-    color: '#7847CB',
-    stops: AUTHORITATIVE_R01_STOPS,
-    waypoints: densifyPath(AUTHORITATIVE_R01_WAYPOINTS, 120),
-    initialIndex: 0
-  },
-  {
-    id: 'demo-bus-1519',
-    busNumber: 'MH-16 BT-1519',
-    plateNumber: 'MH-16 BT-1519',
-    tripId: 'demo-trip-1519',
-    routeId: 'R-02',
-    routeNumber: 'R-02',
-    routeName: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
-    origin: 'Mahatma Gandhi Road',
-    destination: 'Chhatrapati Sambhaji Nagar',
-    color: '#d97706',
-    stops: AUTHORITATIVE_R02_STOPS,
-    waypoints: densifyPath(AUTHORITATIVE_R02_WAYPOINTS, 120),
-    initialIndex: 0
-  }
-];
+// MULTI-BUS DEFINITION REGISTRY — strictly populated from City Admin bus fleet
+export const DEMO_BUS_DEFINITIONS: DemoBusDefinition[] = [];
 
 export interface BusSimRuntime {
   id: string;
@@ -251,84 +167,11 @@ export interface DemoSimulatorState {
 // In-memory runtime instances for each bus
 const runtimeStore: Record<string, BusSimRuntime> = {};
 
-// Purge any previously deleted or orphaned demo buses from storage and runtime
+// Clean up stale or deleted demo buses from storage
 try {
-  const deletedIdsRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_deleted_demo_buses') : null;
-  let deletedIds: string[] = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
-  // Ensure default demo buses are NOT flagged as deleted
-  deletedIds = deletedIds.filter(id => {
-    const k = (id || '').trim().toUpperCase().replace(/[\s-_]/g, '');
-    return k !== '1515' && k !== 'DEMOBUS1515' && k !== 'MH16BT1515' &&
-           k !== '1519' && k !== 'DEMOBUS1519' && k !== 'MH16BT1519';
-  });
   if (typeof window !== 'undefined') {
-    localStorage.setItem('nagarst_deleted_demo_buses', JSON.stringify(deletedIds));
-  }
-
-  const isDeleted = (id?: string, bNum?: string, pNum?: string) => {
-    const norm = (s?: string) => (s || '').trim().toUpperCase().replace(/[\s-_]/g, '');
-    const cId = norm(id);
-    const cB = norm(bNum);
-    const cP = norm(pNum);
-    if (cB === '1515' || cB === 'MH16BT1515' || cId === 'DEMOBUS1515' || cP === 'MH16BT1515') return false;
-    if (cB === '1519' || cB === 'MH16BT1519' || cId === 'DEMOBUS1519' || cP === 'MH16BT1519') return false;
-    return deletedIds.some((d) => {
-      const cD = norm(d);
-      return (cId && cD === cId) || (cB && cD === cB) || (cP && cD === cP);
-    });
-  };
-
-  if (deletedIds.length > 0) {
-    for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
-      const d = DEMO_BUS_DEFINITIONS[i];
-      if (isDeleted(d.id, d.busNumber, d.plateNumber)) {
-        DEMO_BUS_DEFINITIONS.splice(i, 1);
-      }
-    }
-  }
-
-  // Restore any custom buses created by admin (filtering out any deleted ones!)
-  const customBusesRaw = typeof window !== 'undefined' ? localStorage.getItem('nagarst_custom_buses') : null;
-  if (customBusesRaw) {
-    const customBuses: any[] = JSON.parse(customBusesRaw);
-    if (customBuses.length > 0) {
-      customBuses.forEach(cb => {
-        const bNum = cb.busNumber || cb.bus_number;
-        const pNum = cb.plateNumber || cb.plate_number;
-        if (isDeleted(cb.id, bNum, pNum)) return;
-        const existingIdx = DEMO_BUS_DEFINITIONS.findIndex(d => d.id === cb.id || d.busNumber.trim().toUpperCase() === (bNum || '').trim().toUpperCase());
-        if (existingIdx !== -1) {
-          DEMO_BUS_DEFINITIONS[existingIdx] = { ...DEMO_BUS_DEFINITIONS[existingIdx], ...cb };
-        } else {
-          DEMO_BUS_DEFINITIONS.push({
-            id: cb.id,
-            busNumber: bNum,
-            plateNumber: pNum || bNum,
-            tripId: `trip-${cb.id}`,
-            routeId: cb.routeId || '',
-            routeNumber: cb.routeNumber || '',
-            routeName: cb.routeName || '',
-            origin: cb.origin || 'Origin',
-            destination: cb.destination || 'Destination',
-            color: cb.color || '#7847CB',
-            stops: cb.stops || [],
-            waypoints: cb.waypoints || [],
-            initialIndex: 0
-          });
-        }
-      });
-    }
-  }
-
-  // Deduplicate DEMO_BUS_DEFINITIONS by busNumber to strictly ensure NO duplicate buses exist
-  const seenNumbers = new Set<string>();
-  for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
-    const key = DEMO_BUS_DEFINITIONS[i].busNumber.trim().toUpperCase().replace(/\s+/g, '');
-    if (seenNumbers.has(key)) {
-      DEMO_BUS_DEFINITIONS.splice(i, 1);
-    } else {
-      seenNumbers.add(key);
-    }
+    localStorage.removeItem('nagarst_custom_buses');
+    localStorage.removeItem('nagarst_demo_bus');
   }
 } catch (_) {}
 
@@ -444,6 +287,37 @@ if (typeof window !== 'undefined') {
 
 let activeInterval: ReturnType<typeof setInterval> | null = null;
 let broadcastChannel: BroadcastChannel | null = null;
+
+export const TAB_SESSION_ID = typeof window !== 'undefined'
+  ? `tab_${Math.random().toString(36).substring(2, 9)}_${Date.now().toString(36)}`
+  : 'srv';
+
+let isSimulationLeader = false;
+
+export function getTabSessionId(): string {
+  return TAB_SESSION_ID;
+}
+
+export function isCurrentTabLeader(): boolean {
+  return isSimulationLeader;
+}
+
+export function claimSimulationLeadership() {
+  isSimulationLeader = true;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('nagarst_sim_leader_id', TAB_SESSION_ID);
+    } catch (_) {}
+  }
+}
+
+export function yieldSimulationLeadership() {
+  isSimulationLeader = false;
+  if (activeInterval) {
+    clearInterval(activeInterval);
+    activeInterval = null;
+  }
+}
 
 const listeners = new Set<(state: DemoSimulatorState) => void>();
 
@@ -710,6 +584,9 @@ export function getSimSocket(): Socket | null {
       // Synchronize backend simulation updates directly into local runtimeStore
       simSocket.on('demoLocationUpdate', (telemetry: any) => {
         if (!telemetry || !telemetry.id) return;
+        // The simulation leader tab drives coordinates autonomously. Skip socket echoes to prevent rubber-banding
+        if (isSimulationLeader) return;
+
         const r = runtimeStore[telemetry.id] || Object.values(runtimeStore).find(
           item => isSameBusKey(item.id, telemetry.id) ||
                   isSameBusKey(item.def.busNumber, telemetry.busNumber) ||
@@ -776,7 +653,11 @@ export function persistSimRunningState() {
 
     const ch = getBroadcastChannel();
     if (ch) {
-      ch.postMessage({ type: 'simRunningSync', runningMap });
+      ch.postMessage({
+        type: 'simRunningSync',
+        runningMap,
+        leaderTabId: isSimulationLeader ? TAB_SESSION_ID : (localStorage.getItem('nagarst_sim_leader_id') || '')
+      });
     }
   } catch (_) {}
 }
@@ -810,18 +691,25 @@ export function restoreSimRunningState() {
     });
 
     if (anyRunning) {
-      ensureTimerRunning();
+      if (isSimulationLeader) {
+        ensureTimerRunning();
+      }
       notifyListeners();
     }
   } catch (_) {}
 }
 
-// Cross-tab real-time sync for running simulation status
+// Cross-tab real-time sync for running simulation status with single-leader election
 if (typeof BroadcastChannel !== 'undefined') {
   try {
     const syncCh = new BroadcastChannel('nagarst_bus_telemetry');
     syncCh.addEventListener('message', (e) => {
       if (e.data?.type === 'simRunningSync' && e.data?.runningMap) {
+        // If another tab holds the leader ticket, yield leadership and stop local interval in this follower tab
+        if (e.data.leaderTabId && e.data.leaderTabId !== TAB_SESSION_ID) {
+          yieldSimulationLeadership();
+        }
+
         const runningMap = e.data.runningMap;
         let anyRunning = false;
         Object.values(runtimeStore).forEach(r => {
@@ -841,8 +729,23 @@ if (typeof BroadcastChannel !== 'undefined') {
           }
           r.currentBus = buildBusTelemetry(r);
         });
-        ensureTimerRunning();
+
+        if (isSimulationLeader) {
+          ensureTimerRunning();
+        }
         notifyListeners();
+      } else if (e.data?.type === 'locationUpdate' && e.data?.data && !isSimulationLeader) {
+        const bus = e.data.data;
+        const r = runtimeStore[bus.id] || Object.values(runtimeStore).find(
+          item => isSameBusKey(item.id, bus.id) ||
+                  isSameBusKey(item.def.busNumber, bus.busNumber) ||
+                  isSameBusKey(item.def.plateNumber, bus.plateNumber)
+        );
+        if (r) {
+          r.isRunning = true;
+          r.currentBus = { ...r.currentBus, ...bus };
+          notifyListeners();
+        }
       } else if (e.data?.type === 'resetDemo') {
         restoreSimRunningState();
       }
@@ -850,8 +753,11 @@ if (typeof BroadcastChannel !== 'undefined') {
   } catch (_) {}
 }
 
+let lastStorageSaveTime = 0;
+
 /**
- * Dispatches simulated telemetry to all map listeners (BroadcastChannel, LocalStorage, Socket, Firebase)
+ * Dispatches simulated telemetry to all map listeners (BroadcastChannel & Socket.IO)
+ * with throttled disk writes to prevent event-loop choking.
  */
 function broadcastBusLocation(bus: Bus) {
   const ch = getBroadcastChannel();
@@ -859,26 +765,31 @@ function broadcastBusLocation(bus: Bus) {
     ch.postMessage({ type: 'locationUpdate', data: bus });
   }
 
+  // Relay live coordinates to Socket.IO backend so non-BroadcastChannel clients (mobile / other browsers) stay in sync
   try {
-    localStorage.setItem('nagarst_live_bus_' + bus.id, JSON.stringify(bus));
-    // Save aggregate demo fleet with ALL demo buses (both running & standby)
-    const aggregate: Record<string, Bus> = {};
-    Object.values(runtimeStore).forEach(r => {
-      const b = r.currentBus || buildBusTelemetry(r);
-      if (b) aggregate[r.id] = b;
-    });
-    localStorage.setItem('nagarst_demo_buses', JSON.stringify(aggregate));
-    if (bus.id === DEMO_BUS_ID) {
-      localStorage.setItem('nagarst_demo_bus', JSON.stringify(bus));
-    }
-
-    if (ch) {
-      ch.postMessage({ type: 'fleetSync', buses: aggregate });
+    const s = getSimSocket();
+    if (s && s.connected) {
+      s.emit('updateLocation', bus);
     }
   } catch (_) {}
 
-  // When Socket.IO is connected, server simulation is the sole master ticker.
-  // We do NOT emit client updateLocation for demo buses to avoid racing conflicts.
+  // Throttle heavy localStorage writes to at most once every 2 seconds to keep 60 FPS animation fluid
+  const now = Date.now();
+  if (now - lastStorageSaveTime > 2000) {
+    lastStorageSaveTime = now;
+    try {
+      localStorage.setItem('nagarst_live_bus_' + bus.id, JSON.stringify(bus));
+      const aggregate: Record<string, Bus> = {};
+      Object.values(runtimeStore).forEach(r => {
+        const b = r.currentBus || buildBusTelemetry(r);
+        if (b) aggregate[r.id] = b;
+      });
+      localStorage.setItem('nagarst_demo_buses', JSON.stringify(aggregate));
+      if (bus.id === DEMO_BUS_ID) {
+        localStorage.setItem('nagarst_demo_bus', JSON.stringify(bus));
+      }
+    } catch (_) {}
+  }
 }
 
 function broadcastBusOffline(busId: string) {
@@ -965,8 +876,10 @@ export function tickDemoSimulation() {
 export function ensureTimerRunning() {
   const runningBuses = Object.values(runtimeStore).filter(r => r.isRunning);
   const anyRunning = runningBuses.length > 0;
-  console.log(`⏱️ ensureTimerRunning: anyRunning=${anyRunning}, runningCount=${runningBuses.length}, activeInterval=${!!activeInterval}`);
-  if (!anyRunning) {
+  
+  // Single-Leader Architecture: Only the active leader tab drives the simulation interval.
+  // Follower tabs (passenger map, monitoring dashboards) receive real-time updates via BroadcastChannel and Socket.IO.
+  if (!anyRunning || !isSimulationLeader) {
     if (activeInterval) {
       clearInterval(activeInterval);
       activeInterval = null;
@@ -974,22 +887,21 @@ export function ensureTimerRunning() {
     return;
   }
 
-  // Always run the local timer as the primary simulation engine.
-  // The CSS transition on markers handles smooth interpolation between ticks.
   const maxSpeed = Math.max(1, ...runningBuses.map(r => r.speedMultiplier));
   const ms = Math.max(80, Math.round(250 / maxSpeed));
 
   if (activeInterval) clearInterval(activeInterval);
   activeInterval = setInterval(tickDemoSimulation, ms);
-  console.log(`  ✅ Timer started at ${ms}ms intervals`);
 }
 
-// Keep simulation active when switching between tabs
+// Keep simulation active when switching between tabs (only if leader)
 if (typeof window !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       restoreSimRunningState();
-      ensureTimerRunning();
+      if (isSimulationLeader) {
+        ensureTimerRunning();
+      }
     }
   });
 }
@@ -1003,6 +915,8 @@ try {
  * Start a specific demo bus
  */
 export function startBus(busId: string, options?: { speedMultiplier?: number; delayMinutes?: number }) {
+  claimSimulationLeadership();
+
   const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
     r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
   );
@@ -1038,33 +952,34 @@ export function stopBus(busId: string) {
   runtime.currentBus = bus;
   broadcastBusLocation(bus);
 
-  ensureTimerRunning();
+  const anyRunning = Object.values(runtimeStore).some(r => r.isRunning);
+  if (!anyRunning) {
+    yieldSimulationLeadership();
+  } else {
+    ensureTimerRunning();
+  }
+
   persistSimRunningState();
   notifyListeners();
 }
 
 /**
- * Start all available demo buses simultaneously
+ * Start all available demo buses simultaneously (Leader tab becomes the master ticker)
  */
 export function startAllBuses(options?: { speedMultiplier?: number }) {
-  console.log('🚌 startAllBuses called. runtimeStore keys:', Object.keys(runtimeStore), 'count:', Object.keys(runtimeStore).length);
-  // 1. Sync fleet configuration to Socket.IO backend and trigger server simulation
-  syncDemoFleetToBackend();
-  try {
-    const s = getSimSocket();
-    if (s) {
-      s.emit('startDemo', { speedMultiplier: options?.speedMultiplier || 1 });
-    }
-  } catch (_) {}
+  claimSimulationLeadership();
+  console.log('🚌 startAllBuses (Leader mode activated). Count:', Object.keys(runtimeStore).length);
 
-  // 2. Run local simulation in parallel for instantaneous zero-latency local ticks
+  // 1. Sync fleet configuration to Socket.IO backend (for non-tab clients)
+  syncDemoFleetToBackend();
+
+  // 2. Run local simulation with smooth 120+ densified waypoints
   Object.keys(runtimeStore).forEach(busId => {
     const runtime = runtimeStore[busId];
     if (options?.speedMultiplier) runtime.speedMultiplier = options.speedMultiplier;
     runtime.isRunning = true;
     const bus = buildBusTelemetry(runtime);
     runtime.currentBus = bus;
-    console.log(`  Bus ${runtime.def.busNumber}: isRunning=${runtime.isRunning}, waypoints=${runtime.def.waypoints?.length || 0}, lat=${bus.lat}, lng=${bus.lng}`);
     broadcastBusLocation(bus);
   });
 
@@ -1077,6 +992,8 @@ export function startAllBuses(options?: { speedMultiplier?: number }) {
  * Reset all demo buses back to their starting terminal origins and restart movement immediately
  */
 export function resetAllBuses(options?: { speedMultiplier?: number }) {
+  claimSimulationLeadership();
+
   if (activeInterval) {
     clearInterval(activeInterval);
     activeInterval = null;
@@ -1084,12 +1001,6 @@ export function resetAllBuses(options?: { speedMultiplier?: number }) {
 
   // Sync to Socket.IO backend
   syncDemoFleetToBackend();
-  try {
-    const s = getSimSocket();
-    if (s) {
-      s.emit('resetDemo', { speedMultiplier: options?.speedMultiplier || 1 });
-    }
-  } catch (_) {}
 
   Object.values(runtimeStore).forEach(runtime => {
     // 1. Ensure waypoints are densified along the actual road corridor (minimum 120 points)
@@ -1134,6 +1045,8 @@ export function resetAllBuses(options?: { speedMultiplier?: number }) {
  * Reset a single demo bus to its starting point and run
  */
 export function resetBus(busId: string) {
+  claimSimulationLeadership();
+
   const runtime = runtimeStore[busId] || Object.values(runtimeStore).find(
     r => isSameBusKey(r.id, busId) || isSameBusKey(r.def.busNumber, busId) || isSameBusKey(r.def.plateNumber, busId)
   );
@@ -1163,6 +1076,8 @@ export function resetBus(busId: string) {
  * Stop all running demo buses
  */
 export function stopAllBuses() {
+  yieldSimulationLeadership();
+
   try {
     const s = getSimSocket();
     if (s) {
@@ -1824,15 +1739,47 @@ export function syncSimulatorFleetWithAdminConfig(buses: Bus[], routes: Route[])
     });
   };
 
-  // 3. Purge deleted buses from DEMO_BUS_DEFINITIONS and runtimeStore
+  const fleetMatches = (target: { id?: string; busNumber?: string; plateNumber?: string }) => {
+    if (!buses || buses.length === 0) return false;
+    return buses.some(b => 
+      isSameBusKey(b.id, target.id) ||
+      isSameBusKey(b.busNumber, target.busNumber) ||
+      isSameBusKey(b.plateNumber, target.plateNumber) ||
+      isSameBusKey(b.id, target.busNumber) ||
+      isSameBusKey(b.busNumber, target.id)
+    );
+  };
+
+  // 3. Purge any bus that is deleted or NOT in the active municipal fleet
   for (let i = DEMO_BUS_DEFINITIONS.length - 1; i >= 0; i--) {
     const d = DEMO_BUS_DEFINITIONS[i];
-    if (isDeleted(d.id, d.busNumber, d.plateNumber)) {
+    if (isDeleted(d.id, d.busNumber, d.plateNumber) || !fleetMatches(d)) {
       broadcastBusOffline(d.id);
       broadcastBusOffline(d.busNumber);
       delete runtimeStore[d.id];
       DEMO_BUS_DEFINITIONS.splice(i, 1);
     }
+  }
+
+  Object.keys(runtimeStore).forEach(k => {
+    const r = runtimeStore[k];
+    if (!fleetMatches({ id: k, busNumber: r?.def?.busNumber, plateNumber: r?.def?.plateNumber })) {
+      broadcastBusOffline(k);
+      delete runtimeStore[k];
+    }
+  });
+
+  if (!buses || buses.length === 0) {
+    DEMO_BUS_DEFINITIONS.length = 0;
+    Object.keys(runtimeStore).forEach(k => delete runtimeStore[k]);
+    if (activeInterval) {
+      clearInterval(activeInterval);
+      activeInterval = null;
+    }
+    try {
+      localStorage.removeItem('nagarst_sim_running_state');
+      localStorage.removeItem('nagarst_demo_buses');
+    } catch (_) {}
   }
 
   // 4. Synchronize configured fleet buses with assigned routes

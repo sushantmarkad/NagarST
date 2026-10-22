@@ -7,12 +7,12 @@
     "dev": "vite",
     "server": "node backend/server.js",
     "build": "tsc -b && vite build",
+    "deploy": "npm run build && firebase deploy --only hosting",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
-    "@supabase/supabase-js": "^2.112.3",
     "@tanstack/react-query": "^5.101.4",
     "clsx": "^2.1.1",
     "firebase": "^13.0.0",

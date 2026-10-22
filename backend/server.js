@@ -128,70 +128,15 @@ function densifyPath(path, targetPoints = 150) {
   return result;
 }
 
-const DEFAULT_DEMO_FLEET = [
-  {
-    id: 'demo-bus-1515',
-    busNumber: 'MH-16 BT-1515',
-    plateNumber: 'MH-16 BT-1515',
-    routeId: 'R-01',
-    routeNumber: 'R-01',
-    routeName: 'R-01: माळीवाडा गल्ली ↔ Dairy Chowk',
-    origin: 'माळीवाडा गल्ली',
-    destination: 'Dairy Chowk',
-    stops: [
-      { id: 'stop-mw', name: 'माळीवाडा गल्ली', lat: 19.0910, lng: 74.7290 },
-      { id: 'stop-swk', name: 'Swastik Chowk', lat: 19.0940, lng: 74.7350 },
-      { id: 'stop-cbs', name: 'Ahilyanagar CBS', lat: 19.0975, lng: 74.7420 },
-      { id: 'stop-dairy', name: 'Dairy Chowk', lat: 19.0830, lng: 74.7460 },
-    ],
-    waypoints: densifyPath([
-      { lat: 19.0910, lng: 74.7290 },
-      { lat: 19.0925, lng: 74.7315 },
-      { lat: 19.0940, lng: 74.7350 },
-      { lat: 19.0975, lng: 74.7420 },
-      { lat: 19.0900, lng: 74.7440 },
-      { lat: 19.0830, lng: 74.7460 },
-    ], 150),
-    currentIndex: 0,
-    direction: 1,
-    speedMultiplier: 1
-  },
-  {
-    id: 'demo-bus-1519',
-    busNumber: 'MH-16 BT-1519',
-    plateNumber: 'MH-16 BT-1519',
-    routeId: 'R-02',
-    routeNumber: 'R-02',
-    routeName: 'R-02: Mahatma Gandhi Road ↔ Chhatrapati Sambhaji Nagar',
-    origin: 'Mahatma Gandhi Road',
-    destination: 'Chhatrapati Sambhaji Nagar',
-    stops: [
-      { id: 'stop-mg', name: 'Mahatma Gandhi Road', lat: 19.1025, lng: 74.7380 },
-      { id: 'stop-gandhi-chk', name: 'Gandhi Chowk', lat: 19.1090, lng: 74.7395 },
-      { id: 'stop-delhi-gate', name: 'Delhi Gate Transit', lat: 19.1150, lng: 74.7430 },
-      { id: 'stop-sambhaji', name: 'Chhatrapati Sambhaji Nagar', lat: 19.1320, lng: 74.7550 },
-    ],
-    waypoints: densifyPath([
-      { lat: 19.1025, lng: 74.7380 },
-      { lat: 19.1060, lng: 74.7385 },
-      { lat: 19.1090, lng: 74.7395 },
-      { lat: 19.1150, lng: 74.7430 },
-      { lat: 19.1235, lng: 74.7490 },
-      { lat: 19.1320, lng: 74.7550 },
-    ], 150),
-    currentIndex: 0,
-    direction: 1,
-    speedMultiplier: 1
-  }
-];
+const DEFAULT_DEMO_FLEET = [];
 
 // =========================================================================
 // DEMO SIMULATOR ENGINE — Server-Side, Zero Firebase
 // Fleet config provided by Admin via Socket.IO 'configureDemo' event
 // =========================================================================
-let DEMO_FLEET_CONFIG = [...DEFAULT_DEMO_FLEET];
+let DEMO_FLEET_CONFIG = [];
 let demoInterval = null;
-const demoState = { isRunning: false, speedMultiplier: 1, delayMinutes: 0, activeBusCount: 2 };
+const demoState = { isRunning: false, speedMultiplier: 1, delayMinutes: 0, activeBusCount: 0 };
 
 function calcPathDistance(wpList, fromIdx, toIdx) {
   const start = Math.min(fromIdx, toIdx);
@@ -479,23 +424,21 @@ io.on('connection', (socket) => {
     io.emit('demoStatus', { ...demoState });
   });
 
-  // Real driver GPS (writes to Firebase only for non-demo buses)
+  // Real driver GPS & client simulation updates
   socket.on('updateLocation', (data) => {
     if (!data) return;
     const busId = data.busId || data.id;
     if (!busId) return;
     if (data.isDemo || String(busId).startsWith('demo-') || (data.routeName || '').includes('[DEMO]')) {
-      // If server simulator is running, server is the sole master ticker. Ignore client simulated locations to prevent rubber-banding
-      if (demoState.isRunning) return;
       const payload = { ...data, id: busId, busId, isDemo: true };
       demoBuses.set(busId, payload);
-      io.emit('demoLocationUpdate', payload);
-      io.emit('locationUpdate', payload);
+      socket.broadcast.emit('demoLocationUpdate', payload);
+      socket.broadcast.emit('locationUpdate', payload);
       return;
     }
     const livePayload = { ...data, id: busId, busId };
     activeLiveDrivers.set(busId, livePayload);
-    io.emit('locationUpdate', livePayload);
+    socket.broadcast.emit('locationUpdate', livePayload);
     syncRealDriverToFirebase(livePayload); // Firebase for real drivers only
   });
 
