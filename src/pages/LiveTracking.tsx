@@ -31,7 +31,14 @@ import {
   Zap,
   Thermometer,
   Ticket,
-  Share2
+  Share2,
+  CreditCard,
+  Smartphone,
+  QrCode,
+  ChevronLeft,
+  Plus,
+  Minus,
+  PartyPopper
 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -69,7 +76,7 @@ interface LiveTrackingProps {
 
 export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   const { t } = useLanguage();
-  const { buses, stops, routes, selectedBusId, setSelectedBusId, selectedStopId, setSelectedStopId } = useApp();
+  const { buses, stops, routes, selectedBusId, setSelectedBusId, selectedStopId, setSelectedStopId, addTicket, tickets } = useApp();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -110,6 +117,17 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   const [showListOnDesktop, setShowListOnDesktop] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<'all' | 'nearby'>('all');
   const [isNearbyDrawerOpen, setIsNearbyDrawerOpen] = useState(false);
+
+  // Digital QR Ticket Dashboard state (opened from bus popup)
+  const [showTicketDashboard, setShowTicketDashboard] = useState(false);
+  const [ticketStep, setTicketStep] = useState<'form' | 'payment' | 'success'>('form');
+  const [tktSource, setTktSource] = useState('');
+  const [tktDestination, setTktDestination] = useState('');
+  const [tktPassengerCount, setTktPassengerCount] = useState(1);
+  const [tktBusType, setTktBusType] = useState<'AC Express' | 'EV Metro Shuttle' | 'Standard City' | 'Mini Bus'>('EV Metro Shuttle');
+  const [tktPaymentMethod, setTktPaymentMethod] = useState<'upi' | 'card' | 'counter'>('upi');
+  const [tktIsProcessing, setTktIsProcessing] = useState(false);
+  const [tktIssuedTicket, setTktIssuedTicket] = useState<any>(null);
 
   // Commuter Location State (Live GPS or Manual Station Selection)
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -153,7 +171,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       const next: Record<string, Bus> = {};
       Object.entries(prev).forEach(([k, b]) => {
         // Retain ONLY if it's a known database bus from the registered municipal fleet
-        const isKnown = buses.some(cb => 
+        const isKnown = buses.some(cb =>
           isSameBusKey(cb.id, k) ||
           isSameBusKey(cb.busNumber, k) ||
           isSameBusKey(cb.plateNumber, k) ||
@@ -224,10 +242,10 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                   return;
                 }
               }
-            } catch (_) {}
+            } catch (_) { }
 
             const isDemo = Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
-            const isKnown = buses.some(b => 
+            const isKnown = buses.some(b =>
               isSameBusKey(b.id, incoming.id) ||
               isSameBusKey(b.busNumber, incoming.busNumber) ||
               isSameBusKey(b.id, incoming.busNumber) ||
@@ -268,7 +286,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           });
         }
       };
-    } catch (_) {}
+    } catch (_) { }
 
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'nagarst_demo_buses' && e.newValue) {
@@ -277,7 +295,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           if (fleet && typeof fleet === 'object') {
             setActiveLiveBuses((prev) => ({ ...prev, ...fleet }));
           }
-        } catch (_) {}
+        } catch (_) { }
       } else if (e.key === 'nagarst_sim_running_state') {
         restoreSimRunningState();
         setSimState(getDemoSimulatorState());
@@ -287,7 +305,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
             const b = JSON.parse(e.newValue);
             if (b && b.id) {
               const isDemo = Boolean(b.isDemo || b.id.startsWith('demo-'));
-              const isKnown = buses.some(cb => 
+              const isKnown = buses.some(cb =>
                 isSameBusKey(cb.id, b.id) ||
                 isSameBusKey(cb.busNumber, b.busNumber) ||
                 isSameBusKey(cb.id, b.busNumber) ||
@@ -295,7 +313,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                 isSameBusKey(cb.plateNumber, b.plateNumber)
               );
               if (!isKnown) {
-                try { localStorage.removeItem(e.key); } catch (_) {}
+                try { localStorage.removeItem(e.key); } catch (_) { }
                 return;
               }
               setActiveLiveBuses((prev) => ({
@@ -303,7 +321,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                 [b.id]: { ...b, isDemo, isLiveDriver: !isDemo }
               }));
             }
-          } catch (_) {}
+          } catch (_) { }
         } else {
           const id = e.key.replace('nagarst_live_bus_', '');
           setActiveLiveBuses((prev) => {
@@ -413,7 +431,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
       const matchesFleet = (busObj: any) => {
         if (!busObj || !buses || buses.length === 0) return false;
-        return buses.some(b => 
+        return buses.some(b =>
           isSameBusKey(b.id, busObj.id) ||
           isSameBusKey(b.busNumber, busObj.busNumber) ||
           isSameBusKey(b.plateNumber, busObj.plateNumber) ||
@@ -458,7 +476,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       socket.on('busOffline', (busId: string) => {
         purgeFromActive(busId);
       });
-    } catch (_) {}
+    } catch (_) { }
 
     return () => {
       if (socket) socket.disconnect();
@@ -519,7 +537,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
       validConfigured.forEach(cb => {
         // Check if there is an active simulator runtime in simState
-        const simRuntime = Object.values(simState?.buses || {}).find(r => 
+        const simRuntime = Object.values(simState?.buses || {}).find(r =>
           matchesBus(cb, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
         );
 
@@ -532,8 +550,8 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
         const targetRoute = allRoutes.find(
           r => r.id === (activeTelemetry?.routeId || cb.routeId) ||
-               r.routeNumber === (activeTelemetry?.routeNumber || cb.routeNumber) ||
-               r.routeNumber === cb.routeId
+            r.routeNumber === (activeTelemetry?.routeNumber || cb.routeNumber) ||
+            r.routeNumber === cb.routeId
         );
 
         const merged: Bus = {
@@ -566,7 +584,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   const selectedBus = useMemo(() => {
     if (!selectedBusId || allFleetBuses.length === 0) return null;
     const norm = selectedBusId.trim().toUpperCase().replace(/\s+/g, '');
-    return allFleetBuses.find((b) => 
+    return allFleetBuses.find((b) =>
       (b.id || '').trim().toUpperCase().replace(/\s+/g, '') === norm ||
       (b.busNumber || '').trim().toUpperCase().replace(/\s+/g, '') === norm
     ) || null;
@@ -622,16 +640,16 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           route_path: runtime.def.waypoints,
           stops: runtime.def.stops && runtime.def.stops.length > 0
             ? runtime.def.stops.map((s: any, idx: number) => ({
-                stopId: s.id,
-                stopName: s.name,
-                stopNameMarathi: s.name,
-                sequence: idx + 1,
-                fareFromOrigin: idx * 5,
-                estimatedMinutesFromOrigin: idx * 5,
-                isMajorHub: idx === 0 || idx === runtime.def.stops.length - 1,
-                lat: s.lat,
-                lng: s.lng,
-              }))
+              stopId: s.id,
+              stopName: s.name,
+              stopNameMarathi: s.name,
+              sequence: idx + 1,
+              fareFromOrigin: idx * 5,
+              estimatedMinutesFromOrigin: idx * 5,
+              isMajorHub: idx === 0 || idx === runtime.def.stops.length - 1,
+              lat: s.lat,
+              lng: s.lng,
+            }))
             : matchedRoute.stops
         };
       }
@@ -849,10 +867,10 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
   return (
     <div className="relative flex-1 w-full h-full overflow-hidden flex flex-col md:p-4 md:gap-3 bg-[#f8f9fc]">
-      
+
       {/* 1. EDGE-TO-EDGE FULL-SCREEN MAP CANVAS */}
       <div className="absolute inset-0 md:relative md:inset-auto md:flex-1 flex gap-3 w-full h-full md:rounded-2xl md:border md:border-slate-200/90 md:shadow-2xs overflow-hidden z-0">
-        
+
         {/* Leaflet Live Map Canvas */}
         <div className="flex-1 relative w-full h-full min-h-0">
           <LiveMap
@@ -893,28 +911,26 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         {/* Desktop Side Fleet & Nearby List */}
         {showListOnDesktop && (
           <aside className="hidden lg:flex w-84 bg-white border-l border-slate-200/90 flex-col shrink-0 overflow-hidden">
-            
+
             {/* Tab switch: All Vehicles vs Nearby to You */}
             <div className="p-2 border-b border-slate-100 bg-slate-50/50 flex gap-1">
               <button
                 type="button"
                 onClick={() => setSidebarTab('all')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${
-                  sidebarTab === 'all'
+                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${sidebarTab === 'all'
                     ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
                     : 'text-slate-500 hover:text-slate-700'
-                }`}
+                  }`}
               >
                 All Fleet ({filteredBuses.length})
               </button>
               <button
                 type="button"
                 onClick={() => setSidebarTab('nearby')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 ${
-                  sidebarTab === 'nearby'
+                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 ${sidebarTab === 'nearby'
                     ? 'bg-[#7847CB] text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-700'
-                }`}
+                  }`}
               >
                 <Radio className="w-3.5 h-3.5" />
                 Nearby to You ({nearbyBuses.length})
@@ -952,18 +968,16 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                     <div
                       key={bus.id}
                       onClick={() => setSelectedBusId(bus.id)}
-                      className={`p-3 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer ${isSelected
                           ? 'bg-purple-50/70 border-purple-300 ring-1 ring-purple-400 shadow-xs'
                           : 'bg-white hover:bg-slate-50 border-slate-200/80'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className={`px-2 py-0.5 text-[11px] font-black rounded-md ${
-                              isDemo ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
-                            }`}
+                            className={`px-2 py-0.5 text-[11px] font-black rounded-md ${isDemo ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
+                              }`}
                           >
                             {bus.busNumber}
                           </span>
@@ -1032,18 +1046,16 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                     <div
                       key={bus.id}
                       onClick={() => setSelectedBusId(bus.id)}
-                      className={`p-3 rounded-xl border transition-all cursor-pointer ${
-                        isSelected
+                      className={`p-3 rounded-xl border transition-all cursor-pointer ${isSelected
                           ? 'bg-purple-50/70 border-purple-300 shadow-xs'
                           : 'bg-white hover:bg-slate-50 border-slate-100'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className={`px-2 py-0.5 text-[11px] font-black rounded-md ${
-                              isDemo ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
-                            }`}
+                            className={`px-2 py-0.5 text-[11px] font-black rounded-md ${isDemo ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
+                              }`}
                           >
                             {bus.busNumber}
                           </span>
@@ -1097,8 +1109,8 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
               {trackingMode === 'simulator'
                 ? t('Passenger Fleet Simulator', 'प्रवासी सिम्युलेटर')
                 : trackingMode === 'live'
-                ? t('Live Municipal GPS Fleet', 'थेट बस ट्रॅकिंग')
-                : t('Live Bus Telemetry & Tracking', 'सर्व बसेस व सिम्युलेटर')}
+                  ? t('Live Municipal GPS Fleet', 'थेट बस ट्रॅकिंग')
+                  : t('Live Bus Telemetry & Tracking', 'सर्व बसेस व सिम्युलेटर')}
             </h2>
             <div className="flex items-center gap-2 mt-0.5">
               <span className={`w-2 h-2 rounded-full ${trackingMode === 'live' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500 animate-ping'}`} />
@@ -1114,32 +1126,29 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           <button
             type="button"
             onClick={() => handleSetTrackingMode('all')}
-            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
-              trackingMode === 'all'
+            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${trackingMode === 'all'
                 ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
                 : 'text-slate-500 hover:text-slate-700'
-            }`}
+              }`}
           >
             <span>All Fleet</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-black">
               {allFleetBuses.length}
             </span>
           </button>
-          
+
           <button
             type="button"
             onClick={() => handleSetTrackingMode('live')}
-            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
-              trackingMode === 'live'
+            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${trackingMode === 'live'
                 ? 'bg-emerald-600 text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <span className={`w-2 h-2 rounded-full ${trackingMode === 'live' ? 'bg-white' : 'bg-emerald-500'} animate-pulse`} />
             <span>Live GPS</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-              trackingMode === 'live' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
-            }`}>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${trackingMode === 'live' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+              }`}>
               {liveCount}
             </span>
           </button>
@@ -1147,17 +1156,15 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           <button
             type="button"
             onClick={() => handleSetTrackingMode('simulator')}
-            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
-              trackingMode === 'simulator'
+            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${trackingMode === 'simulator'
                 ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <Zap className={`w-3.5 h-3.5 ${trackingMode === 'simulator' ? 'text-slate-950 fill-current' : 'text-amber-500'}`} />
             <span>Simulator</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-              trackingMode === 'simulator' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-800'
-            }`}>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${trackingMode === 'simulator' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-800'
+              }`}>
               {simCount}
             </span>
           </button>
@@ -1182,20 +1189,18 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
         <button
           type="button"
           onClick={() => setIsLocationModalOpen(true)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-            isManualLocation
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${isManualLocation
               ? 'bg-amber-50/90 text-amber-900 border-amber-300 hover:bg-amber-100'
               : 'bg-blue-50/90 text-blue-900 border-blue-200 hover:bg-blue-100'
-          }`}
+            }`}
           title="Select your current passenger location (GPS or manual station)"
         >
           <Crosshair className="w-3.5 h-3.5 text-[#7847CB]" />
           <span className="truncate max-w-[120px] sm:max-w-[160px]">
             {userLocationLabel}
           </span>
-          <span className={`text-[9px] uppercase font-black px-1.5 py-0.5 rounded ${
-            isManualLocation ? 'bg-amber-200 text-amber-900' : 'bg-blue-200 text-blue-900'
-          }`}>
+          <span className={`text-[9px] uppercase font-black px-1.5 py-0.5 rounded ${isManualLocation ? 'bg-amber-200 text-amber-900' : 'bg-blue-200 text-blue-900'
+            }`}>
             {isManualLocation ? 'MANUAL' : 'GPS'}
           </span>
         </button>
@@ -1307,7 +1312,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       {isLocationModalOpen && (
         <div className="fixed inset-0 z-[700] flex items-center justify-center p-3 sm:p-4 bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[85vh] text-slate-900 animate-in zoom-in-95 duration-200">
-            
+
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
@@ -1334,7 +1339,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
             {/* Modal Body */}
             <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs">
-              
+
               {/* Option 1: Live Device GPS */}
               <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 flex items-center justify-between">
                 <div>
@@ -1367,11 +1372,10 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                       key={hub.id}
                       type="button"
                       onClick={() => handleSelectHub(hub)}
-                      className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
-                        userLocationLabel === hub.name
+                      className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${userLocationLabel === hub.name
                           ? 'bg-purple-50 border-purple-300 ring-1 ring-purple-400 shadow-2xs'
                           : 'bg-white hover:bg-slate-50 border-slate-200/80'
-                      }`}
+                        }`}
                     >
                       <div className="min-w-0 pr-1">
                         <span className="font-bold text-slate-900 block truncate text-xs">{hub.name}</span>
@@ -1437,16 +1441,15 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       {selectedBus && (
         <div className="fixed inset-0 z-[650] flex items-center justify-center p-3 sm:p-4 bg-slate-950/45 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[92vh] text-slate-900 animate-in zoom-in-95 duration-200">
-            
+
             {/* Top Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/90 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div
-                  className={`px-3 py-1.5 rounded-xl font-black text-sm text-white shadow-xs ${
-                    selectedBus.isDemo || selectedBus.id?.startsWith('demo-')
+                  className={`px-3 py-1.5 rounded-xl font-black text-sm text-white shadow-xs ${selectedBus.isDemo || selectedBus.id?.startsWith('demo-')
                       ? 'bg-amber-500 text-slate-950 shadow-amber-500/20'
                       : 'bg-[#7847CB] shadow-[#7847CB]/20'
-                  }`}
+                    }`}
                 >
                   {selectedBus.busNumber}
                 </div>
@@ -1483,7 +1486,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
             {/* Scrollable Body Content */}
             <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
-              
+
               {/* 1. CURRENT EXACT BUS LOCATION & REAL-TIME GPS FIX */}
               <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
                 <div className="flex items-center justify-between text-xs">
@@ -1622,13 +1625,12 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                 {/* Animated Capacity Bar */}
                 <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      (selectedBus.passengerCount || 25) > 34
+                    className={`h-full rounded-full transition-all duration-500 ${(selectedBus.passengerCount || 25) > 34
                         ? 'bg-rose-500'
                         : (selectedBus.passengerCount || 25) > 20
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500'
-                    }`}
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                      }`}
                     style={{
                       width: `${Math.min(100, Math.round(((selectedBus.passengerCount || 25) / (selectedBus.maxCapacity || 42)) * 100))}%`
                     }}
@@ -1693,15 +1695,14 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                       return (
                         <div
                           key={stop.stopId || idx}
-                          className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${
-                            isNext
+                          className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${isNext
                               ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold shadow-2xs'
                               : isUserStop
-                              ? 'bg-purple-50 border-purple-300 text-purple-950 font-bold shadow-2xs'
-                              : isPassed
-                              ? 'bg-white/60 border-slate-100 text-slate-400'
-                              : 'bg-white border-slate-200/70 text-slate-800'
-                          }`}
+                                ? 'bg-purple-50 border-purple-300 text-purple-950 font-bold shadow-2xs'
+                                : isPassed
+                                  ? 'bg-white/60 border-slate-100 text-slate-400'
+                                  : 'bg-white border-slate-200/70 text-slate-800'
+                            }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             {isPassed ? (
@@ -1784,8 +1785,18 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center gap-2 shrink-0">
               <Button
                 onClick={() => {
-                  setSelectedBusId(null);
-                  navigate('/app/tickets');
+                  // Pre-fill from selected bus route
+                  const busOrigin = selectedBus?.origin || selectedBusRoute?.origin || '';
+                  const busDest = selectedBus?.destination || selectedBusRoute?.destination || '';
+                  const busBusType = (selectedBus?.busType as any) || 'EV Metro Shuttle';
+                  setTktSource(busOrigin);
+                  setTktDestination(busDest);
+                  setTktBusType(['AC Express', 'EV Metro Shuttle', 'Standard City', 'Mini Bus'].includes(busBusType) ? busBusType : 'EV Metro Shuttle');
+                  setTktPassengerCount(1);
+                  setTktPaymentMethod('upi');
+                  setTicketStep('form');
+                  setTktIssuedTicket(null);
+                  setShowTicketDashboard(true);
                 }}
                 variant="primary"
                 size="md"
@@ -1806,6 +1817,468 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           </div>
         </div>
       )}
+
+      {/* =========================================================================
+          DIGITAL QR TICKET DASHBOARD MODAL
+          ========================================================================= */}
+      {showTicketDashboard && selectedBus && (() => {
+        const busOrigin = selectedBus?.origin || selectedBusRoute?.origin || 'Central Bus Stand (CBS)';
+        const busDest = selectedBus?.destination || selectedBusRoute?.destination || 'Savedi Bus Terminal';
+        const busType = tktBusType;
+        const baseRate = busType === 'AC Express' ? 20 : busType === 'EV Metro Shuttle' ? 15 : 10;
+        const baseFare = baseRate * tktPassengerCount;
+        const govTax = Math.round(baseFare * 0.1);
+        const totalFare = baseFare + govTax;
+
+        const handleTicketPurchase = () => {
+          setTktIsProcessing(true);
+          setTimeout(() => {
+            const ticket = addTicket({
+              sourceStop: tktSource || busOrigin,
+              destinationStop: tktDestination || busDest,
+              passengerCount: tktPassengerCount,
+              fare: totalFare,
+              fareBreakup: { baseFare, govTax, discount: 0, total: totalFare },
+              busType: tktBusType,
+            });
+            setTktIssuedTicket(ticket);
+            setTktIsProcessing(false);
+            setTicketStep('success');
+          }, 1200);
+        };
+
+        const routeStops = selectedBusRoute?.stops?.map((s: any) => s.stopName || s.name || s) || [];
+        const stopOptions = routeStops.length > 0
+          ? routeStops
+          : [busOrigin, busDest];
+
+        return (
+          <div className="fixed inset-0 z-[700] flex items-center justify-center p-3 sm:p-4 bg-slate-950/50 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200/80 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
+
+              {/* Header */}
+              <div className="shrink-0 p-4 sm:p-5 border-b border-slate-100 bg-white flex items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-[#7847CB] text-white flex items-center justify-center shadow-sm shadow-[#7847CB]/30 shrink-0">
+                    <QrCode className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="font-extrabold text-slate-900 text-sm leading-tight">Book Digital QR Ticket</h2>
+                    <p className="text-[11px] text-slate-500 font-mono truncate mt-0.5">
+                      Bus {selectedBus.busNumber} · {selectedBus.busType}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTicketDashboard(false)}
+                  className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Step indicator */}
+              <div className="shrink-0 px-5 py-3 border-b border-slate-100 flex items-center gap-1.5">
+                {(['form', 'payment', 'success'] as const).map((step, idx) => {
+                  const isComplete = (ticketStep === 'payment' && idx === 0) || ticketStep === 'success';
+                  const isActive = ticketStep === step;
+                  return (
+                    <React.Fragment key={step}>
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${isComplete ? 'bg-emerald-500 text-white' : isActive ? 'bg-[#7847CB] text-white' : 'bg-slate-100 text-slate-400'
+                          }`}>
+                          {isComplete ? '✓' : idx + 1}
+                        </div>
+                        <span className={`text-[10px] font-semibold hidden sm:block ${isActive ? 'text-[#7847CB]' : isComplete ? 'text-emerald-600' : 'text-slate-400'
+                          }`}>
+                          {step === 'form' ? 'Journey' : step === 'payment' ? 'Payment' : 'Ticket'}
+                        </span>
+                      </div>
+                      {idx < 2 && <div className={`flex-1 h-px ${isComplete || (ticketStep === 'success' && idx < 1) ? 'bg-emerald-300' : 'bg-slate-200'
+                        }`} />}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+
+              {/* Body */}
+              <div className="overflow-y-auto flex-1">
+
+                {/* STEP 1: Journey Details Form */}
+                {ticketStep === 'form' && (
+                  <div className="p-5 space-y-5">
+
+                    {/* Route Preview Banner */}
+                    <div className="p-3 rounded-2xl bg-[#f4effc] border border-[#d8c5f5] flex items-center gap-2 text-xs">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#7847CB] block">Route</span>
+                        <span className="font-extrabold text-slate-900 truncate block">{selectedBus.routeNumber ? `Route ${selectedBus.routeNumber}` : 'City Corridor'}</span>
+                      </div>
+                      <div className="w-5 h-5 rounded-full bg-[#7847CB] flex items-center justify-center shrink-0">
+                        <ArrowRight className="w-3 h-3 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0 text-right">
+                        <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#7847CB] block">Towards</span>
+                        <span className="font-extrabold text-slate-900 truncate block">{busDest}</span>
+                      </div>
+                    </div>
+
+                    {/* Boarding Stop */}
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1.5">Boarding Stop</label>
+                      <select
+                        value={tktSource}
+                        onChange={(e) => setTktSource(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#7847CB] focus:ring-2 focus:ring-[#7847CB]/20 transition-all"
+                      >
+                        <option value="">— Select boarding stop —</option>
+                        {stopOptions.map((s: string, i: number) => (
+                          <option key={i} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Destination Stop */}
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1.5">Destination Stop</label>
+                      <select
+                        value={tktDestination}
+                        onChange={(e) => setTktDestination(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#7847CB] focus:ring-2 focus:ring-[#7847CB]/20 transition-all"
+                      >
+                        <option value="">— Select destination —</option>
+                        {stopOptions.map((s: string, i: number) => (
+                          <option key={i} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Passengers */}
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1.5">Passengers</label>
+                      <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => setTktPassengerCount(Math.max(1, tktPassengerCount - 1))}
+                          className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors shadow-2xs"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <div className="text-center">
+                          <span className="text-2xl font-black text-slate-900 tabular-nums">{tktPassengerCount}</span>
+                          <span className="text-[10px] text-slate-400 font-medium block">{tktPassengerCount === 1 ? 'Passenger' : 'Passengers'}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTktPassengerCount(Math.min(6, tktPassengerCount + 1))}
+                          className="w-8 h-8 rounded-lg bg-[#7847CB] flex items-center justify-center text-white hover:bg-[#6336b3] transition-colors shadow-xs shadow-[#7847CB]/20"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bus Category */}
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1.5">Bus Category</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { val: 'EV Metro Shuttle', label: 'EV Metro Shuttle', price: '₹15/head' },
+                          { val: 'AC Express', label: 'AC Express', price: '₹20/head' },
+                          { val: 'Standard City', label: 'Standard City', price: '₹10/head' },
+                          { val: 'Mini Bus', label: 'Mini Bus', price: '₹10/head' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.val}
+                            type="button"
+                            onClick={() => setTktBusType(opt.val as any)}
+                            className={`px-3 py-2.5 rounded-xl border text-left transition-all ${tktBusType === opt.val
+                                ? 'bg-[#f4effc] border-[#7847CB] shadow-xs shadow-[#7847CB]/10'
+                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                              }`}
+                          >
+                            <span className={`text-xs font-bold block ${tktBusType === opt.val ? 'text-[#7847CB]' : 'text-slate-700'
+                              }`}>{opt.label}</span>
+                            <span className={`text-[10px] font-semibold ${tktBusType === opt.val ? 'text-purple-500' : 'text-slate-400'
+                              }`}>{opt.price}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Fare Summary */}
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Fare Breakdown</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded-full border border-emerald-100">Govt. Approved</span>
+                      </div>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Base Fare ({tktPassengerCount}×₹{baseRate})</span>
+                          <span className="font-semibold text-slate-800">₹{baseFare}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Municipal Cess (10%)</span>
+                          <span className="font-semibold text-slate-800">₹{govTax}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-slate-100">
+                          <span className="font-extrabold text-slate-900">Total Payable</span>
+                          <span className="font-black text-[#7847CB] text-sm tabular-nums">₹{totalFare}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setTicketStep('payment')}
+                      disabled={!tktSource || !tktDestination || tktSource === tktDestination}
+                      className="w-full h-10 bg-[#7847CB] hover:bg-[#6336b3] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-sm transition-all shadow-sm shadow-[#7847CB]/20 flex items-center justify-center gap-2"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Continue to Payment
+                    </button>
+                    {(!tktSource || !tktDestination || tktSource === tktDestination) && (
+                      <p className="text-center text-[11px] text-slate-400">Select different boarding and destination stops</p>
+                    )}
+                  </div>
+                )}
+
+                {/* STEP 2: Payment */}
+                {ticketStep === 'payment' && (
+                  <div className="p-5 space-y-5">
+
+                    {/* Journey Summary */}
+                    <div className="p-3.5 rounded-2xl bg-[#f4effc] border border-[#d8c5f5]">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#7847CB] mb-2">Journey Summary</p>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[9px] text-slate-400 uppercase font-bold block">From</span>
+                          <span className="font-extrabold text-slate-900 text-xs block truncate">{tktSource}</span>
+                        </div>
+                        <div className="w-7 h-7 rounded-full bg-[#7847CB]/10 flex items-center justify-center shrink-0">
+                          <ArrowRight className="w-3.5 h-3.5 text-[#7847CB]" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-right">
+                          <span className="text-[9px] text-slate-400 uppercase font-bold block">To</span>
+                          <span className="font-extrabold text-slate-900 text-xs block truncate">{tktDestination}</span>
+                        </div>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-[#d8c5f5] flex items-center justify-between text-xs">
+                        <span className="text-slate-500">{tktPassengerCount} pax · {tktBusType}</span>
+                        <span className="font-black text-[#7847CB] text-sm">₹{totalFare}</span>
+                      </div>
+                    </div>
+
+                    {/* Payment Method */}
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-2">Payment Method</label>
+                      <div className="space-y-2">
+                        {[
+                          { id: 'upi', label: 'UPI / QR Pay', sublabel: 'PhonePe, GPay, Paytm', icon: Smartphone },
+                          { id: 'card', label: 'Debit / Credit Card', sublabel: 'Visa, Mastercard, RuPay', icon: CreditCard },
+                          { id: 'counter', label: 'Pay Conductor (Cash)', sublabel: 'Pay on board to conductor', icon: ShieldCheck },
+                        ].map((m) => {
+                          const Icon = m.icon;
+                          const isSelected = tktPaymentMethod === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setTktPaymentMethod(m.id as any)}
+                              className={`w-full p-3 rounded-xl border flex items-center gap-3 text-left transition-all ${isSelected
+                                  ? 'bg-[#f4effc] border-[#7847CB] shadow-xs shadow-[#7847CB]/10'
+                                  : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                                }`}
+                            >
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${isSelected ? 'bg-[#7847CB] border-[#7847CB]' : 'bg-white border-slate-200'
+                                }`}>
+                                <Icon className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-slate-400'}`} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className={`text-xs font-bold block ${isSelected ? 'text-[#7847CB]' : 'text-slate-700'
+                                  }`}>{m.label}</span>
+                                <span className="text-[10px] text-slate-400 font-medium">{m.sublabel}</span>
+                              </div>
+                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-[#7847CB] bg-[#7847CB]' : 'border-slate-300'
+                                }`}>
+                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Pay Button */}
+                    <button
+                      type="button"
+                      onClick={handleTicketPurchase}
+                      disabled={tktIsProcessing}
+                      className="w-full h-11 bg-[#7847CB] hover:bg-[#6336b3] disabled:opacity-60 text-white font-semibold rounded-xl text-sm transition-all shadow-sm shadow-[#7847CB]/20 flex items-center justify-center gap-2"
+                    >
+                      {tktIsProcessing ? (
+                        <>
+                          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
+                            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                          </svg>
+                          Processing Payment...
+                        </>
+                      ) : (
+                        <>
+                          <QrCode className="w-4 h-4" />
+                          Pay ₹{totalFare} & Generate QR Ticket
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTicketStep('form')}
+                      className="w-full py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
+                    >
+                      ← Back to Journey Details
+                    </button>
+                  </div>
+                )}
+
+                {/* STEP 3: Success + QR */}
+                {ticketStep === 'success' && tktIssuedTicket && (
+                  <div className="p-5 space-y-4">
+
+                    {/* Success Banner */}
+                    <div className="text-center pt-2 pb-1">
+                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-50 border-4 border-emerald-100 mb-3">
+                        <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                      </div>
+                      <h3 className="font-extrabold text-slate-900 text-lg">Ticket Booked! 🎉</h3>
+                      <p className="text-xs text-slate-500 mt-1">Your digital QR ticket is ready. Show to the conductor.</p>
+                    </div>
+
+                    {/* Ticket Card */}
+                    <div className="rounded-2xl border-2 border-[#7847CB]/30 overflow-hidden shadow-lg">
+                      {/* Dark header */}
+                      <div className="bg-slate-900 p-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-1.5 rounded-lg bg-white/10">
+                            <Ticket className="w-4 h-4 text-emerald-400" />
+                          </div>
+                          <div>
+                            <span className="font-mono text-xs font-black tracking-wider text-slate-200 block">{tktIssuedTicket.ticketCode}</span>
+                            <span className="text-[10px] text-slate-400">{tktIssuedTicket.busType}</span>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-0.5 text-xs font-black rounded-full uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ACTIVE</span>
+                      </div>
+
+                      {/* Perforated divider */}
+                      <div className="relative h-4 bg-white flex items-center justify-between">
+                        <div className="w-4 h-4 rounded-full bg-slate-100 border-r border-slate-200 -ml-2" />
+                        <div className="w-full border-t-2 border-dashed border-slate-200 mx-1" />
+                        <div className="w-4 h-4 rounded-full bg-slate-100 border-l border-slate-200 -mr-2" />
+                      </div>
+
+                      {/* QR Code */}
+                      <div className="bg-white p-4 flex flex-col items-center">
+                        <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                          <svg className="w-40 h-40" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="5" y="5" width="26" height="26" rx="3" fill="#7847CB" />
+                            <rect x="9" y="9" width="18" height="18" fill="white" />
+                            <rect x="13" y="13" width="10" height="10" fill="#7847CB" />
+                            <rect x="69" y="5" width="26" height="26" rx="3" fill="#7847CB" />
+                            <rect x="73" y="9" width="18" height="18" fill="white" />
+                            <rect x="77" y="13" width="10" height="10" fill="#7847CB" />
+                            <rect x="5" y="69" width="26" height="26" rx="3" fill="#7847CB" />
+                            <rect x="9" y="73" width="18" height="18" fill="white" />
+                            <rect x="13" y="77" width="10" height="10" fill="#7847CB" />
+                            <rect x="36" y="8" width="6" height="6" fill="#7847CB" />
+                            <rect x="46" y="8" width="16" height="6" fill="#7847CB" />
+                            <rect x="36" y="18" width="12" height="6" fill="#7847CB" />
+                            <rect x="52" y="18" width="10" height="6" fill="#7847CB" />
+                            <rect x="36" y="28" width="6" height="6" fill="#7847CB" />
+                            <rect x="46" y="28" width="16" height="6" fill="#7847CB" />
+                            <rect x="8" y="36" width="6" height="12" fill="#7847CB" />
+                            <rect x="18" y="36" width="12" height="6" fill="#7847CB" />
+                            <rect x="36" y="38" width="26" height="26" rx="4" fill="#7847CB" />
+                            <path d="M49 46 L53 50 L61 42" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                            <rect x="68" y="36" width="12" height="6" fill="#7847CB" />
+                            <rect x="84" y="36" width="8" height="12" fill="#7847CB" />
+                            <rect x="36" y="68" width="14" height="6" fill="#7847CB" />
+                            <rect x="54" y="68" width="14" height="6" fill="#7847CB" />
+                            <rect x="72" y="68" width="20" height="6" fill="#7847CB" />
+                            <rect x="36" y="78" width="8" height="14" fill="#7847CB" />
+                            <rect x="48" y="78" width="18" height="6" fill="#7847CB" />
+                            <rect x="70" y="78" width="22" height="14" fill="#7847CB" />
+                          </svg>
+                        </div>
+                        <div className="mt-2 font-mono font-black text-xs text-slate-700 tracking-wider">{tktIssuedTicket.ticketCode}</div>
+                      </div>
+
+                      {/* Journey info */}
+                      <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center gap-2 text-xs">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[9px] text-slate-400 uppercase font-bold block">From</span>
+                          <span className="font-extrabold text-slate-900 truncate block">{tktIssuedTicket.sourceStop}</span>
+                        </div>
+                        <ArrowRight className="w-3.5 h-3.5 text-[#7847CB] shrink-0" />
+                        <div className="flex-1 min-w-0 text-right">
+                          <span className="text-[9px] text-slate-400 uppercase font-bold block">To</span>
+                          <span className="font-extrabold text-slate-900 truncate block">{tktIssuedTicket.destinationStop}</span>
+                        </div>
+                      </div>
+
+                      {/* Fare & validity */}
+                      <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-black text-slate-900 text-base">₹{tktIssuedTicket.fare}</span>
+                          <span className="text-slate-400 ml-1">({tktIssuedTicket.passengerCount} pax)</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block">Valid Until</span>
+                          <span className="font-bold text-slate-700">{tktIssuedTicket.validUntil}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Trust badge */}
+                    <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Digitally verified by NagarST Authority</span>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowTicketDashboard(false);
+                          setTicketStep('form');
+                        }}
+                        className="h-10 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 bg-white transition-colors shadow-2xs"
+                      >
+                        Done
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTicketStep('form');
+                          setTktIssuedTicket(null);
+                          setTktPassengerCount(1);
+                        }}
+                        className="h-10 rounded-xl bg-[#7847CB] hover:bg-[#6336b3] text-xs font-semibold text-white transition-colors shadow-sm shadow-[#7847CB]/20 flex items-center justify-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Buy Another
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Mobile Drawer for Nearby Buses list */}
       {isNearbyDrawerOpen && (
@@ -1839,9 +2312,8 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 text-xs font-black rounded-md ${
-                        bus.isDemo || bus.id?.startsWith('demo-') ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
-                      }`}>
+                      <span className={`px-2 py-0.5 text-xs font-black rounded-md ${bus.isDemo || bus.id?.startsWith('demo-') ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
+                        }`}>
                         {bus.busNumber}
                       </span>
                       {Boolean(bus.isDemo || bus.id?.startsWith('demo-')) ? (

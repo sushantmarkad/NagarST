@@ -55,82 +55,82 @@ export const App: React.FC = () => {
           <LanguageProvider>
             <AppProvider>
               <BrowserRouter>
-              <Routes>
-                {/* 1. PUBLIC LANDING / LOGIN / REGISTER ROUTES */}
-                <Route
-                  path="/"
-                  element={
-                    <PublicOnlyRoute>
-                      <LoginPage />
-                    </PublicOnlyRoute>
-                  }
-                />
-                <Route
-                  path="/login"
-                  element={
-                    <PublicOnlyRoute>
-                      <LoginPage />
-                    </PublicOnlyRoute>
-                  }
-                />
-                <Route
-                  path="/register"
-                  element={
-                    <PublicOnlyRoute>
-                      <LoginPage initialMode="register" />
-                    </PublicOnlyRoute>
-                  }
-                />
+                <Routes>
+                  {/* 1. PUBLIC LANDING / LOGIN / REGISTER ROUTES */}
+                  <Route
+                    path="/"
+                    element={
+                      <PublicOnlyRoute>
+                        <LoginPage />
+                      </PublicOnlyRoute>
+                    }
+                  />
+                  <Route
+                    path="/login"
+                    element={
+                      <PublicOnlyRoute>
+                        <LoginPage />
+                      </PublicOnlyRoute>
+                    }
+                  />
+                  <Route
+                    path="/register"
+                    element={
+                      <PublicOnlyRoute>
+                        <LoginPage initialMode="register" />
+                      </PublicOnlyRoute>
+                    }
+                  />
 
-                {/* 2. DRIVER DASHBOARD */}
-                <Route
-                  path="/driver/*"
-                  element={
-                    <ProtectedRoute allowedRoles={['DRIVER', 'ADMIN', 'OPERATIONS_MANAGER']}>
-                      <DriverDashboard />
-                    </ProtectedRoute>
-                  }
-                />
+                  {/* 2. DRIVER DASHBOARD */}
+                  <Route
+                    path="/driver/*"
+                    element={
+                      <ProtectedRoute allowedRoles={['DRIVER', 'ADMIN', 'OPERATIONS_MANAGER']}>
+                        <DriverDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                {/* 3. CONDUCTOR DASHBOARD */}
-                <Route
-                  path="/conductor/*"
-                  element={
-                    <ProtectedRoute allowedRoles={['CONDUCTOR', 'ADMIN', 'OPERATIONS_MANAGER', 'SUPER_ADMIN', 'CITY_ADMIN']}>
-                      <ConductorDashboard />
-                    </ProtectedRoute>
-                  }
-                />
+                  {/* 3. CONDUCTOR DASHBOARD */}
+                  <Route
+                    path="/conductor/*"
+                    element={
+                      <ProtectedRoute allowedRoles={['CONDUCTOR', 'ADMIN', 'OPERATIONS_MANAGER', 'SUPER_ADMIN', 'CITY_ADMIN']}>
+                        <ConductorDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                {/* 4. ADMIN & SPECIALIZED ROLE DASHBOARDS */}
-                <Route
-                  path="/super-admin"
-                  element={
-                    <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
-                      <SuperAdminDashboard />
-                    </ProtectedRoute>
-                  }
-                />
+                  {/* 4. ADMIN & SPECIALIZED ROLE DASHBOARDS */}
+                  <Route
+                    path="/super-admin"
+                    element={
+                      <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                        <SuperAdminDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                <Route
-                  path="/admin/dashboard"
-                  element={
-                    <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER', 'FINANCE_MANAGER', 'CONTROL_ROOM']}>
-                      <AdminDashboard defaultView="overview" />
-                    </ProtectedRoute>
-                  }
-                />
+                  <Route
+                    path="/admin/dashboard"
+                    element={
+                      <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER', 'FINANCE_MANAGER', 'CONTROL_ROOM']}>
+                        <AdminDashboard defaultView="overview" />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                <Route
-                  path="/admin/operations"
-                  element={
-                    <ProtectedRoute allowedRoles={['ADMIN', 'OPERATIONS_MANAGER', 'CONTROL_ROOM']}>
-                      <AdminDashboard defaultView="live_fleet" />
-                    </ProtectedRoute>
-                  }
-                />
+                  <Route
+                    path="/admin/operations"
+                    element={
+                      <ProtectedRoute allowedRoles={['ADMIN', 'OPERATIONS_MANAGER', 'CONTROL_ROOM']}>
+                        <AdminDashboard defaultView="live_fleet" />
+                      </ProtectedRoute>
+                    }
+                  />
 
-                {/* 
+                  {/* 
                 <Route
                   path="/admin/finance"
                   element={
@@ -150,53 +150,53 @@ export const App: React.FC = () => {
                 />
                 */}
 
-                {/* 5. PASSENGER APPLICATION (ROUTED UNDER /app/*) */}
-                <Route
-                  path="/app/*"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={[
-                        'PASSENGER',
-                        'SUPER_ADMIN',
-                        'CITY_ADMIN',
-                        'ADMIN',
-                        'OPERATIONS_MANAGER',
-                        'FINANCE_MANAGER',
-                        'CONTROL_ROOM',
-                        'DRIVER',
-                        'CONDUCTOR',
-                      ]}
-                    >
-                      <AppLayout>
-                        <Routes>
-                          <Route path="home" element={<Home />} />
-                          <Route path="plan" element={<PlanJourney />} />
-                          <Route path="live" element={<LiveTracking initialMode="live" />} />
-                          <Route path="simulator" element={<LiveTracking initialMode="simulator" />} />
-                          <Route path="stops" element={<BusStopDetails />} />
-                          <Route path="routes" element={<RouteDetails />} />
-                          <Route path="tickets" element={<Tickets />} />
-                          <Route path="passes" element={<BusPass />} />
-                          <Route path="favorites" element={<Favorites />} />
-                          <Route path="notifications" element={<Notifications />} />
-                          <Route path="profile" element={<Profile />} />
-                          <Route path="help" element={<HelpFeedback />} />
-                          <Route path="*" element={<Navigate to="home" replace />} />
-                        </Routes>
-                      </AppLayout>
-                    </ProtectedRoute>
-                  }
-                />
+                  {/* 5. PASSENGER APPLICATION (ROUTED UNDER /app/*) */}
+                  <Route
+                    path="/app/*"
+                    element={
+                      <ProtectedRoute
+                        allowedRoles={[
+                          'PASSENGER',
+                          'SUPER_ADMIN',
+                          'CITY_ADMIN',
+                          'ADMIN',
+                          'OPERATIONS_MANAGER',
+                          'FINANCE_MANAGER',
+                          'CONTROL_ROOM',
+                          'DRIVER',
+                          'CONDUCTOR',
+                        ]}
+                      >
+                        <AppLayout>
+                          <Routes>
+                            <Route path="home" element={<Home />} />
+                            <Route path="plan" element={<PlanJourney />} />
+                            <Route path="live" element={<LiveTracking initialMode="live" />} />
+                            <Route path="simulator" element={<LiveTracking initialMode="simulator" />} />
+                            <Route path="stops" element={<BusStopDetails />} />
+                            <Route path="routes" element={<RouteDetails />} />
+                            <Route path="tickets" element={<Tickets />} />
+                            <Route path="passes" element={<BusPass />} />
+                            <Route path="favorites" element={<Favorites />} />
+                            <Route path="notifications" element={<Notifications />} />
+                            <Route path="profile" element={<Profile />} />
+                            <Route path="help" element={<HelpFeedback />} />
+                            <Route path="*" element={<Navigate to="home" replace />} />
+                          </Routes>
+                        </AppLayout>
+                      </ProtectedRoute>
+                    }
+                  />
 
-                {/* FALLBACK ROUTE */}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </BrowserRouter>
-          </AppProvider>
-        </LanguageProvider>
-      </FeedbackProvider>
-    </AuthProvider>
-  </QueryClientProvider>
+                  {/* FALLBACK ROUTE */}
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </BrowserRouter>
+            </AppProvider>
+          </LanguageProvider>
+        </FeedbackProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 };
 

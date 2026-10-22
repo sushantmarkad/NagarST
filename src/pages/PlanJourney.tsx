@@ -54,11 +54,11 @@ export const PlanJourney: React.FC = () => {
 
     // Find routes where origin/dest or intermediate stops match
     const matching = routes.filter((r) => {
-      const matchOrigin = r.origin?.toLowerCase().includes(normalizedFrom) || 
+      const matchOrigin = r.origin?.toLowerCase().includes(normalizedFrom) ||
         normalizedFrom.includes(r.origin?.toLowerCase()) ||
         r.stops?.some(s => s.stopName?.toLowerCase().includes(normalizedFrom));
 
-      const matchDest = r.destination?.toLowerCase().includes(normalizedTo) || 
+      const matchDest = r.destination?.toLowerCase().includes(normalizedTo) ||
         normalizedTo.includes(r.destination?.toLowerCase()) ||
         r.stops?.some(s => s.stopName?.toLowerCase().includes(normalizedTo));
 
@@ -112,7 +112,7 @@ export const PlanJourney: React.FC = () => {
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-6xl mx-auto">
-      
+
       {/* 1. JOURNEY SEARCH HEADER CARD */}
       <div className="p-6 md:p-8 rounded-3xl bg-white border border-slate-200/90 shadow-2xs space-y-5">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
@@ -192,11 +192,10 @@ export const PlanJourney: React.FC = () => {
           <button
             type="button"
             onClick={() => setSortBy('fastest')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
-              sortBy === 'fastest'
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${sortBy === 'fastest'
                 ? 'bg-white text-[#7847CB] shadow-xs shadow-[#7847CB]/10'
                 : 'text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <Zap className="w-3.5 h-3.5 text-amber-500" />
             <span>{t('Fastest', 'सर्वात जलद')}</span>
@@ -204,11 +203,10 @@ export const PlanJourney: React.FC = () => {
           <button
             type="button"
             onClick={() => setSortBy('cheapest')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
-              sortBy === 'cheapest'
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${sortBy === 'cheapest'
                 ? 'bg-white text-[#7847CB] shadow-xs shadow-[#7847CB]/10'
                 : 'text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <Banknote className="w-3.5 h-3.5 text-emerald-600" />
             <span>{t('Cheapest', 'सर्वात स्वस्त')}</span>
@@ -216,11 +214,10 @@ export const PlanJourney: React.FC = () => {
           <button
             type="button"
             onClick={() => setSortBy('fewer_transfers')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
-              sortBy === 'fewer_transfers'
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${sortBy === 'fewer_transfers'
                 ? 'bg-white text-[#7847CB] shadow-xs shadow-[#7847CB]/10'
                 : 'text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" />
             <span>{t('Direct Bus', 'थेट बस')}</span>
@@ -251,9 +248,8 @@ export const PlanJourney: React.FC = () => {
           return (
             <div
               key={opt.id}
-              className={`rounded-3xl border bg-white shadow-2xs transition-all overflow-hidden ${
-                isExpanded ? 'border-[#7847CB]/40 ring-4 ring-[#7847CB]/5' : 'border-slate-200/90 hover:border-slate-300'
-              }`}
+              className={`rounded-3xl border bg-white shadow-2xs transition-all overflow-hidden ${isExpanded ? 'border-[#7847CB]/40 ring-4 ring-[#7847CB]/5' : 'border-slate-200/90 hover:border-slate-300'
+                }`}
             >
               {/* Card Summary Header */}
               <div

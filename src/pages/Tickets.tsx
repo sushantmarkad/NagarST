@@ -81,7 +81,7 @@ export const Tickets: React.FC = () => {
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-6xl mx-auto">
-      
+
       {/* 1. HEADER BANNER */}
       <div className="p-5 md:p-6 rounded-3xl bg-white border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -149,11 +149,10 @@ export const Tickets: React.FC = () => {
                     key={num}
                     type="button"
                     onClick={() => setPassengerCount(num)}
-                    className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all ${
-                      passengerCount === num
+                    className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all ${passengerCount === num
                         ? 'bg-[#7847CB] text-white border-[#7847CB] shadow-xs shadow-[#7847CB]/30'
                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     {num}
                   </button>
@@ -195,11 +194,10 @@ export const Tickets: React.FC = () => {
                     key={m.id}
                     type="button"
                     onClick={() => setPaymentMethod(m.id as any)}
-                    className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center gap-1.5 ${
-                      paymentMethod === m.id
+                    className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center gap-1.5 ${paymentMethod === m.id
                         ? 'bg-purple-50/80 border-[#7847CB] text-[#7847CB] font-bold shadow-xs'
                         : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     <Icon className="w-4 h-4" />
                     <span className="text-[11px]">{m.label}</span>
@@ -242,11 +240,10 @@ export const Tickets: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('active')}
-              className={`pb-3 text-xs md:text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
-                activeTab === 'active'
+              className={`pb-3 text-xs md:text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${activeTab === 'active'
                   ? 'border-[#7847CB] text-[#7847CB]'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               <span>{t('Active Tickets', 'सक्रिय तिकिटे')}</span>
               <span className="px-2 py-0.5 rounded-full bg-purple-100 text-[#7847CB] text-[10px] font-bold">
@@ -257,11 +254,10 @@ export const Tickets: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('history')}
-              className={`pb-3 text-xs md:text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
-                activeTab === 'history'
+              className={`pb-3 text-xs md:text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${activeTab === 'history'
                   ? 'border-[#7847CB] text-[#7847CB]'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               <span>{t('Travel History', 'मागील प्रवास')}</span>
               <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">

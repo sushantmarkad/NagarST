@@ -30,7 +30,7 @@ export const RouteDetails: React.FC = () => {
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-6xl mx-auto">
-      
+
       {/* 1. ROUTE SELECTOR TABS */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
         {routes.map((r) => (
@@ -38,11 +38,10 @@ export const RouteDetails: React.FC = () => {
             key={r.id}
             type="button"
             onClick={() => setSelectedRouteId(r.id)}
-            className={`px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-2 border ${
-              r.id === currentRoute.id
+            className={`px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-2 border ${r.id === currentRoute.id
                 ? 'bg-[#7847CB] text-white border-[#7847CB] shadow-sm shadow-[#7847CB]/25'
                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-            }`}
+              }`}
           >
             <span
               className="w-2 h-2 rounded-full"
