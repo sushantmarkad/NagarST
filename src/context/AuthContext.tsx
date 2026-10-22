@@ -7,6 +7,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../utils/firebaseClient';
+import { getFirebaseDrivers } from '../utils/firebaseService';
 import { type UserRole, ROLE_START_ROUTES } from '../data/mockAuth';
 
 export interface UserProfile {
@@ -179,12 +180,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     if (email === 'driver@ahilyanagar.gov.in' || role === 'DRIVER') {
+      let driverName = 'Senior Bus Operator';
+      let assignedBusId = '';
+      let driverId = 'driver-ahilyanagar';
+
+      try {
+        const drivers = await getFirebaseDrivers();
+        const found = drivers.find(d => d.email?.trim().toLowerCase() === email.trim().toLowerCase());
+        if (found) {
+          driverName = found.full_name || driverName;
+          assignedBusId = found.assigned_bus_id || '';
+          driverId = found.id;
+        }
+      } catch (_) {}
+
       const driverUser: UserProfile = {
-        id: 'driver-ahilyanagar',
-        name: 'Senior Bus Operator',
+        id: driverId,
+        name: driverName,
         email: email,
         role: 'DRIVER',
-        assignedBusId: ''
+        assignedBusId: assignedBusId
       };
       setUser(driverUser);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(driverUser));

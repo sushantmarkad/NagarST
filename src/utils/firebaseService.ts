@@ -76,6 +76,8 @@ export interface FirebaseBus {
 
 export interface FirebaseLiveLocation {
   bus_id: string;
+  bus_number?: string;
+  plate_number?: string;
   lat: number;
   lng: number;
   speed_kmh: number;

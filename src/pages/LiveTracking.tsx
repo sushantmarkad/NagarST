@@ -59,6 +59,7 @@ import {
   type DemoStop
 } from '../utils/demoSimulatorEngine';
 import { io } from 'socket.io-client';
+import { subscribeFirebaseLiveLocations } from '../utils/firebaseService';
 
 // Major Ahilyanagar transit landmarks and hubs for manual location selection
 const AHILYANAGAR_HUBS = [
@@ -346,6 +347,40 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     };
   }, [buses]);
 
+  // Direct Firebase Firestore real-time subscription for live driver GPS telemetry
+  // Ensures instant live sync across different browsers, mobile devices, and networks
+  useEffect(() => {
+    const unsub = subscribeFirebaseLiveLocations((locations) => {
+      if (!locations || locations.length === 0) return;
+      setActiveLiveBuses((prev) => {
+        const next = { ...prev };
+        locations.forEach((loc) => {
+          if (loc.bus_id && !loc.bus_id.startsWith('demo-') && !loc.bus_id.toLowerCase().includes('demo')) {
+            const key = loc.bus_id;
+            const existing = next[key] || {};
+            next[key] = {
+              ...existing,
+              id: loc.bus_id,
+              busNumber: loc.bus_number || existing.busNumber || 'Live Bus',
+              plateNumber: loc.bus_number || existing.plateNumber || 'MH-16',
+              lat: Number(loc.lat),
+              lng: Number(loc.lng),
+              speedKmh: loc.speed_kmh ?? existing.speedKmh ?? 0,
+              heading: loc.heading ?? existing.heading ?? 0,
+              routeId: loc.route_id || existing.routeId || '',
+              isDemo: false,
+              isLiveDriver: true,
+              lastUpdated: loc.updated_at || new Date().toISOString()
+            } as Bus;
+          }
+        });
+        return next;
+      });
+    });
+
+    return () => unsub();
+  }, []);
+
   // Direct Socket.IO connection for live demo & real driver telemetry (ZERO Firestore reads)
   // Uses batched state updates to prevent per-bus re-render storms (critical for smooth animation)
   useEffect(() => {
@@ -469,12 +504,18 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
       socket.on('locationUpdate', (bus: Bus) => {
         if (!bus || !bus.id) return;
-        if (!matchesFleet(bus) || isBusDeleted(bus) || (bus as any).offline || (bus as any).isDeleted) {
+        if (isBusDeleted(bus) || (bus as any).offline || (bus as any).isDeleted) {
           purgeFromActive(bus);
           return;
         }
         const isDemo = Boolean(bus.isDemo || String(bus.id).startsWith('demo-') || (bus.routeName || '').includes('[DEMO]'));
         if (isDemo) return;
+        pendingUpdates[bus.id] = { ...bus, isDemo: false, isLiveDriver: true } as any;
+        scheduleFlush();
+      });
+
+      socket.on('driverLocation', (bus: Bus) => {
+        if (!bus || !bus.id) return;
         pendingUpdates[bus.id] = { ...bus, isDemo: false, isLiveDriver: true } as any;
         scheduleFlush();
       });
@@ -542,9 +583,9 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       });
 
       validConfigured.forEach(cb => {
-        // Check if there is live telemetry in activeLiveBuses (from BroadcastChannel or driver GPS)
+        // Check if there is live telemetry in activeLiveBuses (from Firestore, BroadcastChannel, or driver GPS)
         const live = Object.values(activeLiveBuses).find(lb => matchesBus(cb, lb));
-        const isLiveDriver = Boolean(live && (live.isLiveDriver || !live.isDemo));
+        const isLiveDriver = Boolean((live && (live.isLiveDriver || !live.isDemo)) || cb.isLiveDriver);
 
         // When a real driver is broadcasting, bypass simulator so real GPS takes full precedence
         const simRuntime = !isLiveDriver ? Object.values(simState?.buses || {}).find(r =>
@@ -625,15 +666,16 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     }
   }, [selectedBusId, selectedBus, setSelectedBusId]);
 
-  const liveCount = useMemo(() => allFleetBuses.filter(b => !b.isDemo && !b.id.startsWith('demo-') && !(b.routeName || '').includes('[DEMO]')).length, [allFleetBuses]);
-  const simCount = useMemo(() => allFleetBuses.filter(b => b.isDemo || b.id.startsWith('demo-') || (b.routeName || '').includes('[DEMO]')).length, [allFleetBuses]);
+  const liveCount = useMemo(() => allFleetBuses.filter(b => b.isLiveDriver || (!b.isDemo && !b.id.startsWith('demo-') && !(b.routeName || '').includes('[DEMO]'))).length, [allFleetBuses]);
+  const simCount = useMemo(() => allFleetBuses.filter(b => !b.isLiveDriver && (b.isDemo || b.id.startsWith('demo-') || (b.routeName || '').includes('[DEMO]'))).length, [allFleetBuses]);
 
   // Filtered buses list based on active tracking mode (Live GPS vs Demo Simulator vs All)
   const filteredBuses = useMemo(() => {
     return allFleetBuses.filter((b) => {
-      const isDemo = Boolean(b.isDemo || b.id.startsWith('demo-') || (b.routeName || '').includes('[DEMO]'));
-      if (trackingMode === 'live' && isDemo) return false;
-      if (trackingMode === 'simulator' && !isDemo) return false;
+      const isLive = Boolean(b.isLiveDriver || (!b.isDemo && !b.id.startsWith('demo-') && !(b.routeName || '').includes('[DEMO]')));
+      const isDemo = !isLive;
+      if (trackingMode === 'live' && !isLive) return false;
+      if (trackingMode === 'simulator' && isLive) return false;
 
       const matchesRoute =
         filterRoute === 'all' ||

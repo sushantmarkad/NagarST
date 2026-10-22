@@ -7,8 +7,10 @@ import {
   getFirebaseBuses,
   getFirebaseRoutes,
   getFirebaseTrips,
-  saveFirebaseTrip
+  saveFirebaseTrip,
+  getFirebaseDrivers
 } from '../../utils/firebaseService';
+import { isSameBusKey } from '../../utils/demoSimulatorEngine';
 import { db } from '../../utils/firebaseClient';
 import { doc, deleteDoc } from 'firebase/firestore';
 import {
@@ -52,6 +54,7 @@ export const DriverDashboard: React.FC = () => {
   // Real data state
   const [driverSchedules, setDriverSchedules] = useState<any[]>([]);
   const [busDetails, setBusDetails] = useState<any>(null);
+  const [availableBuses, setAvailableBuses] = useState<any[]>([]);
   const [availableRoutes, setAvailableRoutes] = useState<any[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string>('');
   
@@ -106,16 +109,41 @@ export const DriverDashboard: React.FC = () => {
   // 1. Initial Data Fetching & Sync with AppContext / Firebase
   const fetchInitialData = useCallback(async () => {
     try {
-      const fbBuses = await getFirebaseBuses();
+      const [fbBuses, fbDrivers, fbRoutes] = await Promise.all([
+        getFirebaseBuses(),
+        getFirebaseDrivers(),
+        getFirebaseRoutes()
+      ]);
       const combinedBuses = (fbBuses && fbBuses.length > 0) ? fbBuses : appBuses;
+      const combinedRoutes = (fbRoutes && fbRoutes.length > 0) ? fbRoutes : appRoutes;
+
+      setAvailableBuses(combinedBuses);
+
+      // Match driver from Firestore driver_credentials by email or id
+      const userEmail = user?.email?.trim().toLowerCase();
+      const currentDriver = fbDrivers.find(d =>
+        (userEmail && d.email?.trim().toLowerCase() === userEmail) ||
+        (user?.id && d.id === user.id)
+      );
+
+      const targetBusId = currentDriver?.assigned_bus_id || user?.assignedBusId;
 
       if (combinedBuses && combinedBuses.length > 0) {
-        const myBus = combinedBuses.find((b: any) => 
-          b.id === user?.assignedBusId || 
-          b.bus_number === (user as any)?.assignedBusNumber || 
-          b.busNumber === (user as any)?.assignedBusNumber
-        ) || combinedBuses[0];
+        const myBus = (targetBusId && combinedBuses.find((b: any) => 
+          isSameBusKey(b.id, targetBusId) || 
+          isSameBusKey(b.bus_number, targetBusId) || 
+          isSameBusKey(b.busNumber, targetBusId) ||
+          isSameBusKey(b.plate_number, targetBusId) ||
+          isSameBusKey(b.plateNumber, targetBusId)
+        )) || combinedBuses[0];
+
         setBusDetails(myBus);
+
+        // Automatically assign corridor if bus is tied to a route
+        const rId = (myBus as any)?.route_id || (myBus as any)?.routeId;
+        if (rId) {
+          setSelectedRouteId(rId);
+        }
       } else {
         setBusDetails({
           id: 'bus-ah24',
@@ -128,6 +156,7 @@ export const DriverDashboard: React.FC = () => {
       }
     } catch (_) {
       if (appBuses && appBuses.length > 0) {
+        setAvailableBuses(appBuses);
         setBusDetails(appBuses[0]);
       } else {
         setBusDetails({
@@ -1078,6 +1107,53 @@ export const DriverDashboard: React.FC = () => {
                         <span className="block text-[11px] text-purple-700">Savedi Bus Depot</span>
                         <span className="text-[9px] text-slate-400 font-mono">19.1235, 74.7321</span>
                       </button>
+                    </div>
+                  </div>
+
+                  {/* Assigned Vehicle Card with Instant Switcher */}
+                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <BusIcon className="w-3.5 h-3.5 text-[#7847CB]" />
+                        Assigned Vehicle (Driver Duty)
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        {user?.name || 'Assigned Driver'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <div>
+                        <strong className="text-sm font-black text-slate-900 block font-mono">
+                          {busDetails?.bus_number || busDetails?.busNumber || 'AH-24'}
+                        </strong>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          {busDetails?.plate_number || busDetails?.plateNumber || 'MH-16'} • {busDetails?.type || 'Standard City'}
+                        </span>
+                      </div>
+
+                      {availableBuses.length > 1 && (
+                        <select
+                          value={busDetails?.id || ''}
+                          onChange={(e) => {
+                            const selected = availableBuses.find(b => b.id === e.target.value);
+                            if (selected) {
+                              setBusDetails(selected);
+                              if (selected.route_id || selected.routeId) {
+                                setSelectedRouteId(selected.route_id || selected.routeId);
+                              }
+                              toast.success(`Vehicle switched to Bus ${selected.bus_number || selected.busNumber}`, 'Vehicle Changed');
+                            }
+                          }}
+                          className="text-xs font-bold bg-white text-slate-700 border border-slate-300 rounded-lg px-2 py-1 shadow-2xs focus:ring-2 focus:ring-[#7847CB]/20 outline-none"
+                        >
+                          {availableBuses.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.bus_number || b.busNumber} ({b.plate_number || b.plateNumber || 'Bus'})
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
 
