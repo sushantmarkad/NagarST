@@ -195,6 +195,14 @@ export const AdminLiveFleet: React.FC = () => {
       const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
       const activeTelemetry = isLiveDriver ? live : (simTelemetry || live);
 
+      let conductorOccupancy: any = null;
+      try {
+        const rawOcc = localStorage.getItem(`nagarst_bus_occupancy_${b.id}`) ||
+                       localStorage.getItem(`nagarst_bus_occupancy_${norm(b.busNumber)}`) ||
+                       localStorage.getItem(`nagarst_bus_occupancy_${b.busNumber}`);
+        if (rawOcc) conductorOccupancy = JSON.parse(rawOcc);
+      } catch (_) {}
+
       const merged: BusType = {
         ...b,
         ...(activeTelemetry || {}),
@@ -207,7 +215,11 @@ export const AdminLiveFleet: React.FC = () => {
         lng: Number(activeTelemetry?.lng ?? b.lng),
         speedKmh: activeTelemetry ? (activeTelemetry.speedKmh ?? 0) : b.speedKmh,
         heading: activeTelemetry ? (activeTelemetry.heading ?? 0) : b.heading,
-        status: activeTelemetry?.status || b.status || 'on_time'
+        status: activeTelemetry?.status || b.status || 'on_time',
+        passengerCount: conductorOccupancy?.passengerCount ?? activeTelemetry?.passengerCount ?? b.passengerCount,
+        maxCapacity: conductorOccupancy?.maxCapacity ?? b.maxCapacity ?? 45,
+        availableSeats: conductorOccupancy?.availableSeats ?? b.availableSeats,
+        occupancy: conductorOccupancy?.occupancy ?? activeTelemetry?.occupancy ?? b.occupancy ?? 'low',
       };
 
       const key = norm(b.busNumber) || norm(b.id);

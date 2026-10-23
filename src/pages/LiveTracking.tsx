@@ -1730,44 +1730,60 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
               )}
 
               {/* 5. PASSENGER COUNT & OCCUPANCY DETAILS */}
-              <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-[#7847CB]" />
-                    Live Passenger Load & Seats
-                  </span>
-                  <OccupancyBadge level={selectedBus.occupancy} compact />
-                </div>
+              {(() => {
+                let liveOcc: any = null;
+                try {
+                  const raw = localStorage.getItem(`nagarst_bus_occupancy_${selectedBus.id}`) ||
+                              localStorage.getItem(`nagarst_bus_occupancy_${selectedBus.busNumber}`);
+                  if (raw) liveOcc = JSON.parse(raw);
+                } catch (_) {}
 
-                <div className="flex items-baseline justify-between">
-                  <div>
-                    <span className="text-2xl font-black text-slate-900 font-mono">
-                      {selectedBus.passengerCount || 25}
-                    </span>
-                    <span className="text-xs text-slate-400 font-medium ml-1">
-                      / {selectedBus.maxCapacity || 42} Passengers Onboard
-                    </span>
+                const effectiveCount = liveOcc?.passengerCount ?? (selectedBus.passengerCount !== undefined ? selectedBus.passengerCount : 25);
+                const effectiveCap = liveOcc?.maxCapacity ?? selectedBus.maxCapacity ?? 42;
+                const effectiveSeats = liveOcc?.availableSeats ?? (selectedBus.availableSeats !== undefined ? selectedBus.availableSeats : Math.max(0, effectiveCap - effectiveCount));
+                const effectiveOccupancy = liveOcc?.occupancy ?? selectedBus.occupancy ?? (effectiveCount > 34 ? 'high' : effectiveCount > 18 ? 'moderate' : 'low');
+
+                return (
+                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                        <Users className="w-4 h-4 text-[#7847CB]" />
+                        Live Passenger Load & Seats
+                      </span>
+                      <OccupancyBadge level={effectiveOccupancy} compact />
+                    </div>
+
+                    <div className="flex items-baseline justify-between">
+                      <div>
+                        <span className="text-2xl font-black text-slate-900 font-mono">
+                          {effectiveCount}
+                        </span>
+                        <span className="text-xs text-slate-400 font-medium ml-1">
+                          / {effectiveCap} Passengers Onboard
+                        </span>
+                      </div>
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        {effectiveSeats} Seats Free
+                      </span>
+                    </div>
+
+                    {/* Animated Capacity Bar */}
+                    <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${effectiveCount > 34
+                            ? 'bg-rose-500'
+                            : effectiveCount > 18
+                              ? 'bg-amber-500'
+                              : 'bg-emerald-500'
+                          }`}
+                        style={{
+                          width: `${Math.min(100, Math.round((effectiveCount / effectiveCap) * 100))}%`
+                        }}
+                      />
+                    </div>
                   </div>
-                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                    {selectedBus.availableSeats || 17} Seats Free
-                  </span>
-                </div>
-
-                {/* Animated Capacity Bar */}
-                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${(selectedBus.passengerCount || 25) > 34
-                        ? 'bg-rose-500'
-                        : (selectedBus.passengerCount || 25) > 20
-                          ? 'bg-amber-500'
-                          : 'bg-emerald-500'
-                      }`}
-                    style={{
-                      width: `${Math.min(100, Math.round(((selectedBus.passengerCount || 25) / (selectedBus.maxCapacity || 42)) * 100))}%`
-                    }}
-                  />
-                </div>
-              </div>
+                );
+              })()}
 
               {/* 6. REAL-TIME VEHICLE SPECS & AMENITIES GRID */}
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
