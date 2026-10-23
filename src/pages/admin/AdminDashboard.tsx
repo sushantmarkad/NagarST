@@ -3,6 +3,7 @@ import { AdminDashboardLayout, type AdminView } from './AdminDashboardLayout';
 import { AdminOverview } from './views/AdminOverview';
 import { AdminLiveFleet } from './views/AdminLiveFleet';
 import { AdminRouteMgmt } from './views/AdminRouteMgmt';
+import { AdminFareMatrix } from './views/AdminFareMatrix';
 import { AdminBuses } from './views/AdminBuses';
 import { AdminFleetStaffMgmt } from './views/AdminFleetStaffMgmt';
 import { AdminAnalytics } from './views/AdminAnalytics';
@@ -52,6 +53,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ defaultView = 'o
         return <AdminDemoSimulator />;
       case 'routes':
         return <AdminRouteMgmt />;
+      case 'fare_matrix':
+        return <AdminFareMatrix />;
       case 'buses':
         return <AdminBuses />;
       case 'drivers':

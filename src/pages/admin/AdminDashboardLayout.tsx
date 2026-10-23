@@ -17,7 +17,8 @@ import {
   Sparkles,
   Play,
   Trash2,
-  ShieldCheck
+  ShieldCheck,
+  IndianRupee
 } from 'lucide-react';
 
 export type AdminView =
@@ -25,6 +26,7 @@ export type AdminView =
   | 'live_fleet'
   | 'buses'
   | 'routes'
+  | 'fare_matrix'
   | 'schedules'
   | 'drivers'
   | 'conductors'
@@ -62,6 +64,7 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
     { view: 'demo_simulator', label: 'GPS Demo Simulator', icon: Play, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'] },
     { view: 'buses', label: 'Vehicle Fleet', icon: Bus, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
     { view: 'routes', label: 'Route Corridors', icon: Route, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
+    { view: 'fare_matrix', label: 'Stop Fares & Pricing', icon: IndianRupee, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
     { view: 'schedules', label: 'Timetables & Shifts', icon: Calendar, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'] },
     { view: 'drivers', label: 'Driver Crew', icon: Users, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
     { view: 'conductors', label: 'Conductor Staff', icon: UserCheck, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },

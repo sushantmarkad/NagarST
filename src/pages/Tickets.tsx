@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -6,6 +6,7 @@ import { useToast } from '../context/FeedbackContext';
 import { TicketCard } from '../components/cards/TicketCard';
 import { LocationSelector } from '../components/common/LocationSelector';
 import { formatCurrency } from '../utils/formatters';
+import { calculateStopToStopFare } from '../utils/fareEngine';
 import type { BusType } from '../types';
 import {
   Ticket as TicketIcon,
@@ -22,7 +23,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 
 export const Tickets: React.FC = () => {
   const { language, t } = useLanguage();
-  const { tickets, addTicket } = useApp();
+  const { tickets, addTicket, routes } = useApp();
   const toast = useToast();
   const [searchParams] = useSearchParams();
 
@@ -35,14 +36,31 @@ export const Tickets: React.FC = () => {
     searchParams.get('dest') || (language === 'mr' ? 'सावेडी बस टर्मिनस' : 'Savedi Bus Terminal')
   );
   const [passengerCount, setPassengerCount] = useState(1);
-  const [busType, setBusType] = useState<BusType>('AC Express');
+  const [busType, setBusType] = useState<BusType>('Standard City');
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'counter'>('upi');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const baseRatePerPassenger = busType === 'AC Express' ? 20 : busType === 'EV Metro Shuttle' ? 15 : 10;
-  const baseFare = baseRatePerPassenger * passengerCount;
-  const govTax = Math.round(baseFare * 0.1);
-  const totalFare = baseFare + govTax;
+  // Match corridor route
+  const matchingRoute = useMemo(() => {
+    if (!routes || routes.length === 0) return null;
+    return routes.find((r) => {
+      const stops = (r.stops || []).map((s: any) => (s.stopName || s.name || '').toLowerCase());
+      return stops.includes(source.toLowerCase()) && stops.includes(destination.toLowerCase());
+    }) || routes[0];
+  }, [routes, source, destination]);
+
+  // Compute stop-to-stop municipal fare
+  const fareCalc = useMemo(() => {
+    return calculateStopToStopFare({
+      route: matchingRoute,
+      sourceStop: source,
+      destinationStop: destination,
+      busType,
+      passengerCount,
+    });
+  }, [matchingRoute, source, destination, busType, passengerCount]);
+
+  const { baseFare, govTax, totalFare, ratePerPassenger, stopsTraveled } = fareCalc;
 
   const handlePurchase = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +79,8 @@ export const Tickets: React.FC = () => {
           total: totalFare,
         },
         busType,
+        routeNumber: matchingRoute?.routeNumber,
+        stopsCount: stopsTraveled,
       });
 
       setIsSubmitting(false);
@@ -211,7 +231,7 @@ export const Tickets: React.FC = () => {
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <span className="text-xs text-slate-500 block">
-                {passengerCount} {passengerCount === 1 ? 'Commuter' : 'Commuters'} • {busType}
+                {passengerCount} {passengerCount === 1 ? 'Commuter' : 'Commuters'} • {stopsTraveled} {stopsTraveled === 1 ? 'stop' : 'stops'} • {busType} (₹{ratePerPassenger}/pax)
               </span>
               <div className="flex items-baseline gap-2">
                 <span className="text-xl md:text-2xl font-black text-slate-900 tabular-nums">

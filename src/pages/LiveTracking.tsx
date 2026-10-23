@@ -44,6 +44,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import type { BusStop, Bus, Route as RouteType } from '../types';
 import { getDistance } from '../utils/routing';
+import { calculateStopToStopFare } from '../utils/fareEngine';
 import {
   DEMO_BUS_DEFINITIONS,
   AVAILABLE_DEMO_ROUTES,
@@ -1916,12 +1917,15 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
               <Button
                 onClick={() => {
                   // Pre-fill from selected bus route
-                  const busOrigin = selectedBus?.origin || selectedBusRoute?.origin || '';
-                  const busDest = selectedBus?.destination || selectedBusRoute?.destination || '';
-                  const busBusType = (selectedBus?.busType as any) || 'EV Metro Shuttle';
-                  setTktSource(busOrigin);
+                  const routeStops = (selectedBusRoute?.stops || []).map((s: any) => s.stopName || s.name || s);
+                  const busOrigin = selectedBus?.origin || selectedBusRoute?.origin || (routeStops.length > 0 ? routeStops[0] : 'Central Bus Stand (CBS)');
+                  const busDest = selectedBus?.destination || selectedBusRoute?.destination || (routeStops.length > 0 ? routeStops[routeStops.length - 1] : 'Savedi Bus Terminal');
+                  const busBusType = (selectedBus?.busType as any) || 'Standard City';
+
+                  const defaultSource = selectedBus?.currentStopName || (routeStops.length > 0 ? routeStops[0] : busOrigin);
+                  setTktSource(defaultSource);
                   setTktDestination(busDest);
-                  setTktBusType(['AC Express', 'EV Metro Shuttle', 'Standard City', 'Mini Bus'].includes(busBusType) ? busBusType : 'EV Metro Shuttle');
+                  setTktBusType(['AC Express', 'EV Metro Shuttle', 'Standard City', 'Mini Bus'].includes(busBusType) ? busBusType : 'Standard City');
                   setTktPassengerCount(1);
                   setTktPaymentMethod('upi');
                   setTicketStep('form');
@@ -1949,38 +1953,47 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       )}
 
       {/* =========================================================================
-          DIGITAL QR TICKET DASHBOARD MODAL
+          DIGITAL QR TICKET DASHBOARD MODAL (Stop-to-Stop Dynamic Municipal Pricing)
           ========================================================================= */}
       {showTicketDashboard && selectedBus && (() => {
         const busOrigin = selectedBus?.origin || selectedBusRoute?.origin || 'Central Bus Stand (CBS)';
         const busDest = selectedBus?.destination || selectedBusRoute?.destination || 'Savedi Bus Terminal';
-        const busType = tktBusType;
-        const baseRate = busType === 'AC Express' ? 20 : busType === 'EV Metro Shuttle' ? 15 : 10;
-        const baseFare = baseRate * tktPassengerCount;
-        const govTax = Math.round(baseFare * 0.1);
-        const totalFare = baseFare + govTax;
+        
+        const routeStops = (selectedBusRoute?.stops || []).map((s: any) => s.stopName || s.name || s);
+        const stopOptions = routeStops.length > 0 ? routeStops : [busOrigin, busDest];
+
+        const activeSource = tktSource || stopOptions[0] || busOrigin;
+        const activeDest = tktDestination || stopOptions[stopOptions.length - 1] || busDest;
+
+        const fareCalc = calculateStopToStopFare({
+          route: selectedBusRoute,
+          sourceStop: activeSource,
+          destinationStop: activeDest,
+          busType: tktBusType,
+          passengerCount: tktPassengerCount,
+        });
+
+        const { baseFare, govTax, totalFare, ratePerPassenger, stopsTraveled, isCustomOverride } = fareCalc;
 
         const handleTicketPurchase = () => {
           setTktIsProcessing(true);
           setTimeout(() => {
             const ticket = addTicket({
-              sourceStop: tktSource || busOrigin,
-              destinationStop: tktDestination || busDest,
+              sourceStop: activeSource,
+              destinationStop: activeDest,
               passengerCount: tktPassengerCount,
               fare: totalFare,
               fareBreakup: { baseFare, govTax, discount: 0, total: totalFare },
               busType: tktBusType,
+              routeNumber: selectedBus?.routeNumber || selectedBusRoute?.routeNumber,
+              busNumber: selectedBus?.busNumber,
+              stopsCount: stopsTraveled,
             });
             setTktIssuedTicket(ticket);
             setTktIsProcessing(false);
             setTicketStep('success');
-          }, 1200);
+          }, 800);
         };
-
-        const routeStops = selectedBusRoute?.stops?.map((s: any) => s.stopName || s.name || s) || [];
-        const stopOptions = routeStops.length > 0
-          ? routeStops
-          : [busOrigin, busDest];
 
         return (
           <div className="fixed inset-0 z-[700] flex items-center justify-center p-3 sm:p-4 bg-slate-950/50 backdrop-blur-sm animate-in fade-in duration-150">
@@ -2141,21 +2154,26 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                     {/* Fare Summary */}
                     <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Fare Breakdown</span>
-                        <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded-full border border-emerald-100">Govt. Approved</span>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Stop-to-Stop Distance Tariff</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded-full border border-emerald-100 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>{isCustomOverride ? 'Special Pair Rate' : 'Govt. Approved'}</span>
+                        </span>
                       </div>
                       <div className="space-y-1.5 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Base Fare ({tktPassengerCount}×₹{baseRate})</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500">
+                            Stop Fare ({stopsTraveled} {stopsTraveled === 1 ? 'stop' : 'stops'} · {tktPassengerCount} × ₹{ratePerPassenger})
+                          </span>
                           <span className="font-semibold text-slate-800">₹{baseFare}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Municipal Cess (10%)</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500">Municipal Transit Cess (5%)</span>
                           <span className="font-semibold text-slate-800">₹{govTax}</span>
                         </div>
-                        <div className="flex justify-between pt-2 border-t border-slate-100">
+                        <div className="flex justify-between pt-2 border-t border-slate-100 items-center">
                           <span className="font-extrabold text-slate-900">Total Payable</span>
-                          <span className="font-black text-[#7847CB] text-sm tabular-nums">₹{totalFare}</span>
+                          <span className="font-black text-[#7847CB] text-base tabular-nums">₹{totalFare}</span>
                         </div>
                       </div>
                     </div>
@@ -2196,7 +2214,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                         </div>
                       </div>
                       <div className="mt-2 pt-2 border-t border-[#d8c5f5] flex items-center justify-between text-xs">
-                        <span className="text-slate-500">{tktPassengerCount} pax · {tktBusType}</span>
+                        <span className="text-slate-500">{tktPassengerCount} pax · {stopsTraveled} {stopsTraveled === 1 ? 'stop' : 'stops'} · {tktBusType}</span>
                         <span className="font-black text-[#7847CB] text-sm">₹{totalFare}</span>
                       </div>
                     </div>
@@ -2385,22 +2403,22 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                         onClick={() => {
                           setShowTicketDashboard(false);
                           setTicketStep('form');
+                          navigate('/app/tickets');
                         }}
-                        className="h-10 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 bg-white transition-colors shadow-2xs"
+                        className="h-10 rounded-xl bg-[#7847CB] hover:bg-[#6336b3] text-xs font-bold text-white transition-colors shadow-sm shadow-[#7847CB]/20 flex items-center justify-center gap-1.5"
                       >
-                        Done
+                        <Ticket className="w-4 h-4" />
+                        <span>View in My Tickets</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => {
+                          setShowTicketDashboard(false);
                           setTicketStep('form');
-                          setTktIssuedTicket(null);
-                          setTktPassengerCount(1);
                         }}
-                        className="h-10 rounded-xl bg-[#7847CB] hover:bg-[#6336b3] text-xs font-semibold text-white transition-colors shadow-sm shadow-[#7847CB]/20 flex items-center justify-center gap-1.5"
+                        className="h-10 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 bg-white transition-colors shadow-2xs"
                       >
-                        <Plus className="w-3.5 h-3.5" />
-                        Buy Another
+                        Close & Track Bus
                       </button>
                     </div>
                   </div>

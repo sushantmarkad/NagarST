@@ -124,6 +124,9 @@ export interface Ticket {
   status: 'active' | 'used' | 'expired';
   qrData: string;
   busType: BusType;
+  routeNumber?: string;
+  busNumber?: string;
+  stopsCount?: number;
 }
 
 export interface BusPass {

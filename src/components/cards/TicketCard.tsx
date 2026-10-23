@@ -29,8 +29,28 @@ export const TicketCard: React.FC<TicketCardProps> = ({ ticket }) => {
               <TicketIcon className="w-4 h-4" />
             </div>
             <div>
-              <span className="font-mono text-xs font-bold tracking-wider text-slate-200 block">{ticket.ticketCode}</span>
-              <span className="text-[10px] text-slate-400 font-medium">{ticket.busType}</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-mono text-xs font-bold tracking-wider text-slate-200 block">{ticket.ticketCode}</span>
+                {ticket.routeNumber && (
+                  <span className="px-1.5 py-0.2 bg-purple-500/30 text-purple-200 text-[9px] font-black rounded border border-purple-400/40">
+                    Route {ticket.routeNumber}
+                  </span>
+                )}
+                {ticket.busNumber && (
+                  <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 text-[9px] font-bold rounded">
+                    Bus {ticket.busNumber}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-[10px] text-slate-400 font-medium mt-0.5">
+                <span>{ticket.busType}</span>
+                {ticket.stopsCount !== undefined && (
+                  <>
+                    <span>•</span>
+                    <span className="text-emerald-400 font-semibold">{ticket.stopsCount} {ticket.stopsCount === 1 ? 'stop' : 'stops'}</span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
