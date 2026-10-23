@@ -22,6 +22,8 @@ import {
   CircleDot,
   MapPin,
   ChevronUp,
+  ChevronDown,
+  Sliders,
   Calendar,
   Gauge,
   Wifi,
@@ -75,7 +77,22 @@ export const DriverDashboard: React.FC = () => {
   const [gpsStatus, setGpsStatus] = useState<'searching' | 'active' | 'simulated' | 'fallback'>('searching');
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [isSocketConnected, setIsSocketConnected] = useState<boolean>(false);
-  const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(true);
+  const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768;
+    }
+    return false;
+  });
+
+  const toggleBottomSheet = useCallback((open?: boolean) => {
+    setIsBottomSheetOpen(prev => {
+      const next = typeof open === 'boolean' ? open : !prev;
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 250);
+      return next;
+    });
+  }, []);
 
   // Indoor presentation / Demo drive simulation toggle
   const [isSimulatingDrive, setIsSimulatingDrive] = useState<boolean>(false);
@@ -798,56 +815,57 @@ export const DriverDashboard: React.FC = () => {
       <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden bg-slate-100">
         
         {/* OPERATIONAL STATUS BAR (High glanceability for vehicle cab) */}
-        <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 text-xs border-b border-slate-800 shrink-0 z-20">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 font-bold">
+        <div className="bg-slate-900 text-white px-3 py-2 sm:px-4 sm:py-2.5 flex items-center justify-between gap-2 text-xs border-b border-slate-800 shrink-0 z-20">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="flex items-center gap-1.5 font-bold shrink-0">
               <BusIcon className="w-4 h-4 text-purple-400" />
               <span>{busDetails ? `${busDetails.bus_number || busDetails.busNumber}` : 'AH-24'}</span>
             </div>
-            <span className="text-slate-600">•</span>
-            <div className="flex items-center gap-1.5 text-slate-300">
+            <span className="text-slate-600 shrink-0">•</span>
+            <div className="flex items-center gap-1 text-slate-300 shrink-0">
               <Gauge className="w-3.5 h-3.5 text-emerald-400" />
               <span className="font-mono font-bold text-sm text-emerald-400">{currentSpeedKmh}</span>
               <span className="text-[10px] text-slate-400">km/h</span>
             </div>
-            <span className="text-slate-600">•</span>
-            <div className="flex items-center gap-1.5 text-slate-300">
-              <span className={`w-2.5 h-2.5 rounded-full ${
+            <span className="text-slate-600 hidden xs:inline shrink-0">•</span>
+            <div className="hidden xs:flex items-center gap-1.5 text-slate-300 truncate">
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                 isLiveBroadcasting 
                   ? (gpsStatus === 'simulated' ? 'bg-amber-400 animate-bounce' : 'bg-emerald-400 animate-pulse') 
                   : 'bg-slate-500'
               }`} />
-              <span className="font-semibold text-[11px]">
+              <span className="font-semibold text-[11px] truncate">
                 {isLiveBroadcasting 
-                  ? (gpsStatus === 'simulated' ? 'Demo Drive Active' : `Live GPS (${gpsAccuracy ? `±${Math.round(gpsAccuracy)}m` : 'Detecting...'})`)
-                  : 'GPS Broadcasting Off'}
+                  ? (gpsStatus === 'simulated' ? 'Demo Drive' : `Live GPS (${gpsAccuracy ? `±${Math.round(gpsAccuracy)}m` : 'Active'})`)
+                  : 'GPS Off'}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 md:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {/* MASTER ONE-CLICK LIVE LOCATION BROADCAST TOGGLE */}
             <button
               type="button"
               onClick={() => handleToggleLiveBroadcasting(!isLiveBroadcasting)}
-              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all active:scale-95 ${
+              className={`px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl font-bold text-[11px] sm:text-xs flex items-center gap-1.5 shadow-sm transition-all active:scale-95 ${
                 isLiveBroadcasting
                   ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
                   : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
               }`}
             >
-              <RadioTower className={`w-3.5 h-3.5 ${isLiveBroadcasting ? 'animate-pulse' : ''}`} />
-              <span>{isLiveBroadcasting ? 'GPS BROADCASTING: ON' : 'BROADCAST GPS: OFF'}</span>
+              <RadioTower className={`w-3.5 h-3.5 shrink-0 ${isLiveBroadcasting ? 'animate-pulse' : ''}`} />
+              <span className="hidden sm:inline">{isLiveBroadcasting ? 'GPS BROADCASTING: ON' : 'BROADCAST GPS: OFF'}</span>
+              <span className="sm:hidden">{isLiveBroadcasting ? 'GPS ON' : 'GPS OFF'}</span>
             </button>
 
             {/* HIGH-VISIBILITY PROTECTED SOS ACTION */}
             <button
               type="button"
               onClick={handleTriggerSOS}
-              className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] flex items-center gap-1 shadow-sm sos-beacon transition-transform active:scale-95"
+              className="px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] sm:text-[11px] flex items-center gap-1 shadow-sm sos-beacon transition-transform active:scale-95 shrink-0"
             >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>SOS DISPATCH</span>
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>SOS</span>
             </button>
           </div>
         </div>
@@ -855,8 +873,8 @@ export const DriverDashboard: React.FC = () => {
         {/* UNIFIED PASSENGER & CITY ADMIN SPLIT LAYOUT */}
         <div className="flex-1 flex flex-col md:flex-row h-full relative overflow-hidden">
           
-          {/* PRIMARY WORKSPACE: LIVE INTERACTIVE MAP (Exact same layout as Passenger and City Admin) */}
-          <div className="flex-1 h-[50vh] md:h-full w-full relative order-1 md:order-1">
+          {/* PRIMARY WORKSPACE: LIVE INTERACTIVE MAP (Full-screen canvas on mobile, flexible split on desktop) */}
+          <div className="w-full h-full absolute inset-0 md:relative md:inset-auto md:flex-1 min-h-0 order-1">
             <LiveMap
               buses={driverBusObject ? [driverBusObject] : []}
               stops={mapStops}
@@ -868,46 +886,82 @@ export const DriverDashboard: React.FC = () => {
               userLocation={driverPos}
             />
 
-            {/* Floating Live Status Overlay on Map */}
-            <div className="absolute top-4 left-4 z-[500] flex flex-wrap gap-2 pointer-events-auto">
-              <Badge variant={isLiveBroadcasting ? 'success' : 'neutral'} size="md" dot>
-                {isLiveBroadcasting ? 'BROADCASTING LIVE TO PASSENGERS & ADMIN' : 'LOCATION BROADCASTING PAUSED'}
+            {/* Floating Live Status Overlay on Map (Streamlined for mobile glanceability) */}
+            <div className="absolute top-2.5 left-2.5 sm:top-4 sm:left-4 z-[400] flex flex-col sm:flex-row items-start sm:items-center gap-1.5 sm:gap-2 pointer-events-auto max-w-[calc(100%-80px)]">
+              <Badge variant={isLiveBroadcasting ? 'success' : 'neutral'} size="sm" dot className="shadow-md">
+                <span className="sm:hidden">{isLiveBroadcasting ? 'LIVE GPS ACTIVE' : 'GPS PAUSED'}</span>
+                <span className="hidden sm:inline">{isLiveBroadcasting ? 'BROADCASTING LIVE TO PASSENGERS & ADMIN' : 'LOCATION BROADCASTING PAUSED'}</span>
               </Badge>
               {mapRoute ? (
-                <div className="bg-white/95 backdrop-blur-md shadow-md px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs font-bold text-slate-800 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: mapRoute.color || '#7847CB' }} />
-                  <span>Route {mapRoute.routeNumber}: {mapRoute.origin} ➔ {mapRoute.destination}</span>
+                <div className="bg-white/95 backdrop-blur-md shadow-md px-2.5 py-1 rounded-xl border border-slate-200/90 text-[11px] sm:text-xs font-bold text-slate-800 flex items-center gap-1.5 truncate max-w-full">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: mapRoute.color || '#7847CB' }} />
+                  <span className="truncate">Route {mapRoute.routeNumber}: {mapRoute.origin} ➔ {mapRoute.destination}</span>
                 </div>
               ) : (
-                <div className="bg-white/95 backdrop-blur-md shadow-md px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs font-bold text-slate-800 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                  <span>Free City Duty (No Route Filter)</span>
+                <div className="bg-white/95 backdrop-blur-md shadow-md px-2.5 py-1 rounded-xl border border-slate-200/90 text-[11px] sm:text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span>Free City Duty</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* CONTROL COCKPIT SIDE PANEL (Responsive: docked side panel on desktop, sliding drawer on mobile) */}
-          <div className={`w-full md:w-[380px] lg:w-[410px] bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-out z-30 order-2 ${
-            isBottomSheetOpen ? 'translate-y-0' : 'translate-y-[calc(100%-48px)] md:translate-y-0'
-          } absolute md:relative bottom-0 md:bottom-auto md:right-0 md:ml-auto h-auto max-h-[60vh] md:max-h-full md:h-full rounded-t-3xl md:rounded-none border-l border-slate-200/90`}>
-            
-            {/* Mobile Drag Handle */}
+          {/* MOBILE BACKDROP OVERLAY WHEN DRAWER IS EXPANDED */}
+          {isBottomSheetOpen && (
             <div 
-              className="w-full h-9 flex items-center justify-center cursor-pointer md:hidden active:bg-slate-50 shrink-0"
-              onClick={() => setIsBottomSheetOpen(!isBottomSheetOpen)}
+              className="md:hidden fixed inset-0 bg-slate-950/40 backdrop-blur-2xs z-25 transition-opacity"
+              onClick={() => toggleBottomSheet(false)}
+              aria-label="Tap to close drawer and see full map"
+            />
+          )}
+
+          {/* CONTROL COCKPIT SIDE PANEL (Responsive: docked side panel on desktop, sliding bottom drawer on mobile) */}
+          <div className={`w-full md:w-[380px] lg:w-[410px] bg-white shadow-2xl flex flex-col transition-all duration-300 ease-out z-30 order-2 absolute md:relative bottom-0 md:bottom-auto md:right-0 md:ml-auto ${
+            isBottomSheetOpen 
+              ? 'translate-y-0 h-[78vh] md:h-full max-h-[78vh] md:max-h-full rounded-t-3xl md:rounded-none' 
+              : 'translate-y-0 h-14 md:h-full md:max-h-full rounded-t-2xl md:rounded-none'
+          } border-t md:border-t-0 md:border-l border-slate-200/90`}>
+            
+            {/* Mobile Header / Quick HUD bar */}
+            <div 
+              className="w-full h-14 px-3.5 flex items-center justify-between cursor-pointer md:hidden active:bg-slate-50 shrink-0 border-b border-slate-100 select-none relative"
+              onClick={() => toggleBottomSheet()}
             >
-              <div className="w-12 h-1.5 bg-slate-300 rounded-full" />
-              <ChevronUp className={`absolute right-4 text-slate-400 transition-transform ${isBottomSheetOpen ? 'rotate-180' : ''}`} />
+              {/* Subtle drag indicator */}
+              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-1 bg-slate-300 rounded-full" />
+
+              <div className="flex items-center gap-2.5 min-w-0 mt-1">
+                <div className="w-8 h-8 rounded-xl bg-purple-100 text-[#7847CB] flex items-center justify-center font-bold text-xs shrink-0">
+                  <Sliders className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-900 truncate">
+                      {isBottomSheetOpen ? 'Driver Cockpit' : `${busDetails?.bus_number || 'Bus'} Controls`}
+                    </span>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${isLiveBroadcasting ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                  </div>
+                  <span className="text-[10px] text-slate-500 block truncate">
+                    {isBottomSheetOpen ? 'Tap to view full map' : `${currentSpeedKmh} km/h • Tap to open routes & GPS`}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0 mt-1">
+                <span className="px-2.5 py-1 rounded-xl bg-purple-50 text-[#7847CB] text-[11px] font-bold flex items-center gap-1 border border-purple-200">
+                  <span>{isBottomSheetOpen ? 'View Map' : 'Controls'}</span>
+                  <ChevronUp className={`w-3.5 h-3.5 transition-transform duration-200 ${isBottomSheetOpen ? 'rotate-180' : ''}`} />
+                </span>
+              </div>
             </div>
 
             {/* Cockpit Sub-Header & Navigation Tabs */}
-            <div className="p-3 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/70">
-              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+            <div className={`p-2.5 sm:p-3 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/70 ${!isBottomSheetOpen ? 'hidden md:flex' : 'flex'}`}>
+              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs overflow-x-auto max-w-full">
                 <button
                   type="button"
                   onClick={() => setActiveTab('cockpit')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shrink-0 ${
                     activeTab === 'cockpit' ? 'bg-[#7847CB] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -916,16 +970,16 @@ export const DriverDashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActiveTab('route')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shrink-0 ${
                     activeTab === 'route' ? 'bg-[#7847CB] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Route ({mapRoute ? `Route ${mapRoute.routeNumber}` : 'Optional'})
+                  Route ({mapRoute ? `R${mapRoute.routeNumber}` : 'Optional'})
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('schedule')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shrink-0 ${
                     activeTab === 'schedule' ? 'bg-[#7847CB] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -933,18 +987,29 @@ export const DriverDashboard: React.FC = () => {
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => acquireRealGPS()}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-[#7847CB] hover:bg-white border border-transparent hover:border-slate-200 transition-colors"
-                title="Refresh Real Device GPS"
-              >
-                <LocateFixed className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => acquireRealGPS()}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-[#7847CB] hover:bg-white border border-transparent hover:border-slate-200 transition-colors"
+                  title="Refresh Real Device GPS"
+                >
+                  <LocateFixed className="w-4 h-4" />
+                </button>
+                {/* On mobile, an explicit close button in the tab bar */}
+                <button
+                  type="button"
+                  onClick={() => toggleBottomSheet(false)}
+                  className="md:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-white border border-transparent hover:border-slate-200 transition-colors"
+                  title="Collapse and View Map"
+                >
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            {/* TAB CONTENT */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* TAB CONTENT (Hidden on mobile when drawer is collapsed) */}
+            <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${!isBottomSheetOpen ? 'hidden md:block' : 'block'}`}>
 
               {/* TAB 1: DEDICATED LIVE LOCATION BROADCASTER */}
               {activeTab === 'cockpit' && (

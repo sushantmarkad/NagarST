@@ -809,7 +809,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       />
 
       {/* Floating Action Controls (Thumb-friendly on mobile, top-right on desktop) */}
-      <div className="absolute bottom-4 md:bottom-auto md:top-4 right-3 md:right-4 z-[400] flex flex-col gap-2">
+      <div className="absolute bottom-[72px] sm:bottom-4 md:bottom-auto md:top-4 right-3 md:right-4 z-[400] flex flex-col gap-2">
         {/* GPS "Locate Me" Button */}
         {showUserLocation && (
           <button 
