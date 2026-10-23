@@ -345,7 +345,9 @@ export interface FirebaseConductor {
   id: string;
   full_name: string;
   email: string;
+  password?: string;
   phone?: string;
+  assigned_bus_id?: string;
   role?: string;
   status?: string;
   created_at?: string;

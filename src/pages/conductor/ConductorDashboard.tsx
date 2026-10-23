@@ -54,8 +54,14 @@ export const ConductorDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'pos' | 'scan' | 'manifest' | 'shift'>('pos');
 
   // Selected Bus and Route Duty
-  const [selectedBusId, setSelectedBusId] = useState<string>('bus-ah24');
+  const [selectedBusId, setSelectedBusId] = useState<string>(() => user?.assignedBusId || 'bus-ah24');
   const [selectedRouteId, setSelectedRouteId] = useState<string>('');
+
+  useEffect(() => {
+    if (user?.assignedBusId) {
+      setSelectedBusId(user.assignedBusId);
+    }
+  }, [user?.assignedBusId]);
 
   // Find active bus object or fallback
   const activeBus = useMemo(() => {

@@ -7,7 +7,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../utils/firebaseClient';
-import { getFirebaseDrivers } from '../utils/firebaseService';
+import { getFirebaseDrivers, getFirebaseConductors, saveFirebaseConductor } from '../utils/firebaseService';
 import { type UserRole, ROLE_START_ROUTES } from '../data/mockAuth';
 
 export interface UserProfile {
@@ -23,7 +23,7 @@ interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   login: (role?: UserRole, credentials?: { email: string; password?: string }) => Promise<UserProfile>;
-  register: (name: string, email: string, password?: string, requestStaff?: boolean, requestedRole?: 'CITY_ADMIN' | 'DRIVER' | 'PASSENGER') => Promise<UserProfile>;
+  register: (name: string, email: string, password?: string, requestStaff?: boolean, requestedRole?: 'CITY_ADMIN' | 'DRIVER' | 'CONDUCTOR' | 'PASSENGER', assignedBusId?: string) => Promise<UserProfile>;
   logout: () => void;
   switchRole: (role: UserRole) => void;
   getRoleStartRoute: (role?: UserRole) => string;
@@ -206,7 +206,63 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return driverUser;
     }
 
-    // 2. Firebase Authentication
+    // 3. Conductor Authentication (via role tab or conductor credentials)
+    if (email === 'conductor@ahilyanagar.gov.in' || role === 'CONDUCTOR') {
+      let conductorName = 'Duty Bus Conductor';
+      let assignedBusId = '';
+      let conductorId = 'conductor-ahilyanagar';
+
+      try {
+        const conductors = await getFirebaseConductors();
+        const found = conductors.find(c => c.email?.trim().toLowerCase() === email.trim().toLowerCase());
+        if (found) {
+          if (found.password && credentials.password && found.password !== credentials.password) {
+            throw new Error('Invalid Conductor password. Please check your credentials.');
+          }
+          conductorName = found.full_name || conductorName;
+          assignedBusId = found.assigned_bus_id || '';
+          conductorId = found.id;
+        }
+      } catch (err: any) {
+        if (err.message?.includes('Invalid Conductor password')) throw err;
+      }
+
+      const conductorUser: UserProfile = {
+        id: conductorId,
+        name: conductorName,
+        email: email,
+        role: 'CONDUCTOR',
+        assignedBusId: assignedBusId
+      };
+      setUser(conductorUser);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(conductorUser));
+      return conductorUser;
+    }
+
+    // Auto-detect if entered email belongs to a registered conductor
+    try {
+      const conductors = await getFirebaseConductors();
+      const foundConductor = conductors.find(c => c.email?.trim().toLowerCase() === email.trim().toLowerCase());
+      if (foundConductor) {
+        if (foundConductor.password && credentials.password && foundConductor.password !== credentials.password) {
+          throw new Error('Invalid Conductor password. Please check your credentials.');
+        }
+        const conductorUser: UserProfile = {
+          id: foundConductor.id,
+          name: foundConductor.full_name || 'Bus Conductor',
+          email: foundConductor.email,
+          role: 'CONDUCTOR',
+          assignedBusId: foundConductor.assigned_bus_id || ''
+        };
+        setUser(conductorUser);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(conductorUser));
+        return conductorUser;
+      }
+    } catch (err: any) {
+      if (err.message?.includes('Invalid Conductor password')) throw err;
+    }
+
+    // 4. Firebase Authentication
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const fbUser = userCredential.user;
@@ -266,10 +322,55 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     email: string,
     password?: string,
     requestStaff?: boolean,
-    requestedRole: 'CITY_ADMIN' | 'DRIVER' | 'PASSENGER' = 'CITY_ADMIN'
+    requestedRole: 'CITY_ADMIN' | 'DRIVER' | 'CONDUCTOR' | 'PASSENGER' = 'PASSENGER',
+    assignedBusId?: string
   ): Promise<UserProfile> => {
     const pwd = password || 'password123';
     const cleanEmail = email.trim();
+
+    // Direct Conductor Account Creation
+    if (requestedRole === 'CONDUCTOR') {
+      const conductorId = `conductor-${Date.now()}`;
+      try {
+        await saveFirebaseConductor({
+          id: conductorId,
+          full_name: name,
+          email: cleanEmail,
+          password: pwd,
+          assigned_bus_id: assignedBusId || '',
+          role: 'CONDUCTOR',
+          status: 'Active'
+        });
+      } catch (e) {
+        console.warn('Conductor save fallback:', e);
+      }
+
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, cleanEmail, pwd);
+        if (cred?.user?.uid) {
+          await setDoc(doc(db, 'users', cred.user.uid), {
+            id: cred.user.uid,
+            full_name: name,
+            email: cleanEmail,
+            role: 'CONDUCTOR',
+            assigned_bus_id: assignedBusId || '',
+            created_at: new Date().toISOString()
+          }, { merge: true });
+        }
+      } catch (_) {}
+
+      const conductorUser: UserProfile = {
+        id: conductorId,
+        name,
+        email: cleanEmail,
+        role: 'CONDUCTOR',
+        assignedBusId: assignedBusId || ''
+      };
+
+      setUser(conductorUser);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(conductorUser));
+      return conductorUser;
+    }
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, pwd);

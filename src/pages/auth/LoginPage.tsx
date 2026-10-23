@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { type UserRole, ROLE_START_ROUTES } from '../../data/mockAuth';
 import {
   Bus,
@@ -33,6 +34,7 @@ interface LoginPageProps {
 
 export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) => {
   const { user, isAuthenticated, login, register, switchRole, getRoleStartRoute } = useAuth();
+  const { buses } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -49,8 +51,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
-  // Registration and admin request states (Only passengers register directly; admins submit request)
-  const [registerType, setRegisterType] = useState<'PASSENGER' | 'ADMIN_REQUEST'>('PASSENGER');
+  // Registration and admin request states (Passengers & Conductors direct; Admins request)
+  const [registerType, setRegisterType] = useState<'PASSENGER' | 'CONDUCTOR' | 'ADMIN_REQUEST'>('PASSENGER');
+  const [conductorBusId, setConductorBusId] = useState<string>('bus-ah24');
   const [requestSubmitted, setRequestSubmitted] = useState(false);
 
   const [isScrolled, setIsScrolled] = useState(false);
@@ -87,6 +90,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
           // Submit request for City Admin approval
           await register(name, emailOrPhone, password, true, 'CITY_ADMIN');
           setRequestSubmitted(true);
+        } else if (registerType === 'CONDUCTOR') {
+          // Direct account creation for Conductor with assigned bus
+          const loggedUser = await register(name, emailOrPhone, password, false, 'CONDUCTOR', conductorBusId);
+          const targetRoute = from || ROLE_START_ROUTES[loggedUser.role] || '/conductor/dashboard';
+          navigate(targetRoute, { replace: true });
         } else {
           // Direct account creation for Passengers only
           const loggedUser = await register(name, emailOrPhone, password, false, 'PASSENGER');
@@ -112,6 +120,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
   const openPassengerRegister = () => {
     setMode('register');
     setRegisterType('PASSENGER');
+    setRequestSubmitted(false);
+    setErrorMsg('');
+    setAuthModalOpen(true);
+  };
+
+  const openConductorRegister = () => {
+    setMode('register');
+    setRegisterType('CONDUCTOR');
     setRequestSubmitted(false);
     setErrorMsg('');
     setAuthModalOpen(true);
@@ -853,6 +869,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                       ? 'Sign In'
                       : registerType === 'PASSENGER'
                       ? 'Create Commuter Account'
+                      : registerType === 'CONDUCTOR'
+                      ? 'Create Conductor Account'
                       : 'Request Admin Access'}
                   </h3>
                   <p className="text-xs text-neutral-500 mt-1">
@@ -860,6 +878,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                       ? 'Sign in to access your transit tools and live services.'
                       : registerType === 'PASSENGER'
                       ? 'Instant free account for NagarST passengers.'
+                      : registerType === 'CONDUCTOR'
+                      ? 'Provision conductor account with assigned vehicle for live ticketing.'
                       : 'Send request. After approval, you will be notified on your email.'}
                   </p>
                 </div>
@@ -868,7 +888,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                 {mode === 'login' && (
                   <div className="space-y-2">
                     <div className="flex bg-[#F8F8FA] p-1 rounded-xl border border-neutral-200">
-                      {(['PASSENGER', 'DRIVER', 'ADMIN'] as const).map((r) => (
+                      {(['PASSENGER', 'DRIVER', 'CONDUCTOR', 'ADMIN'] as const).map((r) => (
                         <button
                           key={r}
                           type="button"
@@ -886,15 +906,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                     <p className="text-[11px] text-neutral-500 text-center px-1">
                       {selectedDemoRole === 'PASSENGER' && 'Commuter account — live bus tracking, passes & trip planning.'}
                       {selectedDemoRole === 'DRIVER' && 'Driver portal — sign in with credentials assigned by the administrator.'}
+                      {selectedDemoRole === 'CONDUCTOR' && 'Conductor portal — QR ticket scanner, cash fare ticketing & live occupancy.'}
                       {selectedDemoRole === 'ADMIN' && 'Administrator portal — fleet management & municipal dispatch.'}
                     </p>
                   </div>
                 )}
 
-                {/* REGISTER: Passenger vs Admin Request Switch */}
+                {/* REGISTER: Passenger vs Conductor vs Admin Request Switch */}
                 {mode === 'register' && (
                   <div className="space-y-2.5">
-                    <div className="flex bg-[#F8F8FA] p-1 rounded-2xl border border-neutral-200">
+                    <div className="flex bg-[#F8F8FA] p-1 rounded-2xl border border-neutral-200 gap-1">
                       <button
                         type="button"
                         onClick={() => setRegisterType('PASSENGER')}
@@ -905,7 +926,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                         }`}
                       >
                         <User className="w-3.5 h-3.5 text-[#7847CB]" />
-                        <span>Passenger (Instant)</span>
+                        <span>Passenger</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRegisterType('CONDUCTOR')}
+                        className={`flex-1 py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
+                          registerType === 'CONDUCTOR'
+                            ? 'bg-[#7847CB] text-white shadow-xs'
+                            : 'text-neutral-500 hover:text-neutral-800'
+                        }`}
+                      >
+                        <Ticket className="w-3.5 h-3.5" />
+                        <span>Conductor</span>
                       </button>
                       <button
                         type="button"
@@ -917,22 +950,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                         }`}
                       >
                         <Shield className="w-3.5 h-3.5" />
-                        <span>Request Admin Access</span>
+                        <span>Admin</span>
                       </button>
                     </div>
 
-                    {registerType === 'PASSENGER' ? (
+                    {registerType === 'PASSENGER' && (
                       <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-800">
                         <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span>Instant registration — start planning journeys and tracking buses right away.</span>
                       </div>
-                    ) : (
+                    )}
+                    {registerType === 'CONDUCTOR' && (
+                      <div className="p-3 bg-purple-50/80 border border-purple-200/80 rounded-xl flex items-center gap-2 text-xs text-purple-900">
+                        <CheckCircle className="w-4 h-4 text-[#7847CB] shrink-0" />
+                        <span>Municipal conductor account — creates credentials and connects directly to assigned bus.</span>
+                      </div>
+                    )}
+                    {registerType === 'ADMIN_REQUEST' && (
                       <div className="p-3 bg-purple-50/80 border border-purple-200/80 rounded-xl flex items-start gap-2.5 text-xs text-purple-900">
                         <Shield className="w-4 h-4 text-[#7847CB] shrink-0 mt-0.5" />
                         <div>
                           <span className="font-bold block">Approval Required</span>
                           <span className="text-[11px] text-purple-800/90 leading-snug block mt-0.5">
-                            Direct registration is for passengers. Send request below; once approved, you will be notified on your email to sign in.
+                            Direct registration is for passengers and fleet staff. Send request below; once approved, you will be notified on your email to sign in.
                           </span>
                         </div>
                       </div>
@@ -943,11 +983,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                 <form onSubmit={handleSignIn} className="space-y-3.5 text-xs mt-2">
                   {mode === 'register' && (
                     <div>
-                      <label className="block text-neutral-700 font-bold mb-1">Full Name</label>
+                      <label className="block text-neutral-700 font-bold mb-1">
+                        {registerType === 'CONDUCTOR' ? 'Conductor Full Name' : 'Full Name'}
+                      </label>
                       <input
                         type="text"
                         required
-                        placeholder="Enter your full name"
+                        placeholder={registerType === 'CONDUCTOR' ? 'e.g. Anand Shinde' : 'Enter your full name'}
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB] transition"
@@ -957,12 +999,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
 
                   <div>
                     <label className="block text-neutral-700 font-bold mb-1">
-                      {mode === 'register' && registerType === 'ADMIN_REQUEST' ? 'Official Email or Phone' : 'Email or Phone'}
+                      {mode === 'register' && registerType === 'ADMIN_REQUEST'
+                        ? 'Official Email or Phone'
+                        : registerType === 'CONDUCTOR'
+                        ? 'Email (Login ID)'
+                        : 'Email or Phone'}
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder={mode === 'register' && registerType === 'ADMIN_REQUEST' ? 'Enter official email or phone' : 'Enter email or phone'}
+                      placeholder={
+                        mode === 'register' && registerType === 'ADMIN_REQUEST'
+                          ? 'Enter official email or phone'
+                          : registerType === 'CONDUCTOR'
+                          ? 'conductor@nagarbus.gov.in'
+                          : 'Enter email or phone'
+                      }
                       value={emailOrPhone}
                       onChange={(e) => setEmailOrPhone(e.target.value)}
                       className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB] transition"
@@ -985,6 +1037,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                       className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB] transition"
                     />
                   </div>
+
+                  {mode === 'register' && registerType === 'CONDUCTOR' && (
+                    <div>
+                      <label className="block text-neutral-700 font-bold mb-1">Assigned Fleet Vehicle</label>
+                      <select
+                        required
+                        value={conductorBusId}
+                        onChange={(e) => setConductorBusId(e.target.value)}
+                        className="w-full px-3.5 py-3 bg-[#F8F8FA] border border-neutral-300 rounded-xl text-sm font-medium focus:outline-none focus:border-[#7847CB] transition"
+                      >
+                        <option value="" disabled>Select vehicle to assign</option>
+                        {(buses && buses.length > 0 ? buses : [
+                          { id: 'bus-ah24', busNumber: 'AH-24', plateNumber: 'MH-16-CV-2024' },
+                          { id: 'bus-ah25', busNumber: 'AH-25', plateNumber: 'MH-16-CV-2025' },
+                          { id: 'bus-ah26', busNumber: 'AH-26', plateNumber: 'MH-16-CV-2026' }
+                        ]).map((b: any) => (
+                          <option key={b.id} value={b.id}>
+                            {b.busNumber || b.bus_number || b.id} ({b.plateNumber || b.registration_number || 'Nagar ST'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {errorMsg && (
                     <div className="p-3 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold border border-rose-100 flex items-start gap-2">
@@ -1017,6 +1092,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                       <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     ) : mode === 'login' ? (
                       `Sign In as ${selectedDemoRole.charAt(0) + selectedDemoRole.slice(1).toLowerCase()}`
+                    ) : registerType === 'CONDUCTOR' ? (
+                      'Create Conductor Account'
                     ) : registerType === 'ADMIN_REQUEST' ? (
                       'Send Request'
                     ) : (
@@ -1037,6 +1114,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                         >
                           Register as Passenger
                         </button>
+                        {' · '}
+                        <button
+                          type="button"
+                          onClick={openConductorRegister}
+                          className="text-[#7847CB] font-bold hover:underline"
+                        >
+                          Conductor Sign Up
+                        </button>
                       </p>
                       <p className="text-[11px] text-neutral-400">
                         Municipal transit official?{' '}
@@ -1054,7 +1139,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ initialMode = 'login' }) =
                       Already have an account?{' '}
                       <button
                         type="button"
-                        onClick={() => openLogin('PASSENGER')}
+                        onClick={() => openLogin('CONDUCTOR')}
                         className="text-[#7847CB] font-bold hover:underline"
                       >
                         Sign in

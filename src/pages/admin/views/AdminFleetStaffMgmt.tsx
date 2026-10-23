@@ -46,6 +46,13 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
   const [currentEditDriverId, setCurrentEditDriverId] = useState<string | null>(null);
   const [isSubmittingDriver, setIsSubmittingDriver] = useState(false);
 
+  // Conductor state
+  const [isAddConductorOpen, setIsAddConductorOpen] = useState(false);
+  const [conductorForm, setConductorForm] = useState({ fullName: '', email: '', password: '', phone: '', busId: '' });
+  const [isEditConductorMode, setIsEditConductorMode] = useState(false);
+  const [currentEditConductorId, setCurrentEditConductorId] = useState<string | null>(null);
+  const [isSubmittingConductor, setIsSubmittingConductor] = useState(false);
+
   // Trip/Schedule State
   const [realTrips, setRealTrips] = useState<any[]>([]);
   const [availableRoutes, setAvailableRoutes] = useState<any[]>([]);
@@ -54,13 +61,13 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
   const [newTrip, setNewTrip] = useState({ routeId: '', busId: '', driverId: '' });
   const [isSubmittingTrip, setIsSubmittingTrip] = useState(false);
 
-
   useEffect(() => {
     if (viewType === 'drivers') {
       fetchDrivers();
     }
     if (viewType === 'conductors') {
       fetchConductors();
+      fetchBusesForDropdown();
     }
     if (viewType === 'schedules' || viewType === 'drivers') {
       fetchBusesForDropdown();
@@ -188,6 +195,72 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
     }
   };
 
+  const openAddConductorModal = () => {
+    setIsEditConductorMode(false);
+    setCurrentEditConductorId(null);
+    setConductorForm({ fullName: '', email: '', password: '', phone: '', busId: '' });
+    setIsAddConductorOpen(true);
+  };
+
+  const openEditConductorModal = (conductor: any) => {
+    setIsEditConductorMode(true);
+    setCurrentEditConductorId(conductor.id);
+    setConductorForm({
+      fullName: conductor.full_name || conductor.name || '',
+      email: conductor.email || '',
+      password: conductor.password || '',
+      phone: conductor.phone || '',
+      busId: conductor.assigned_bus_id || ''
+    });
+    setIsAddConductorOpen(true);
+  };
+
+  const handleSaveConductor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingConductor(true);
+    const conductorId = isEditConductorMode && currentEditConductorId ? currentEditConductorId : `conductor-${Date.now()}`;
+    try {
+      await saveFirebaseConductor({
+        id: conductorId,
+        full_name: conductorForm.fullName,
+        email: conductorForm.email,
+        password: conductorForm.password,
+        phone: conductorForm.phone,
+        assigned_bus_id: conductorForm.busId,
+        role: 'CONDUCTOR',
+        status: 'Active'
+      });
+
+      toast.success(isEditConductorMode ? 'Conductor Updated' : 'Conductor Created', 'Conductor account saved to Firestore.');
+      setIsAddConductorOpen(false);
+      fetchConductors();
+    } catch (err: any) {
+      toast.error('Conductor Save Failed', err.message || 'Unable to save conductor account');
+    } finally {
+      setIsSubmittingConductor(false);
+    }
+  };
+
+  const handleDeleteConductor = async (id: string, name: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Conductor Account',
+      message: `Are you sure you want to permanently delete conductor "${name}"? Their login access will be revoked immediately.`,
+      confirmText: 'Delete Conductor',
+      cancelText: 'Keep Conductor',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await deleteFirebaseConductor(id);
+      setRealConductors(prev => prev.filter(c => c.id !== id));
+      toast.success('Conductor Deleted', `Conductor "${name}" was removed from the roster.`);
+      fetchConductors();
+    } catch (err: any) {
+      toast.error('Deletion Failed', err.message || 'Could not delete conductor record.');
+    }
+  };
+
   const handleDeleteTrip = async (id: string) => {
     const confirmed = await confirm({
       title: 'Cancel Trip Schedule',
@@ -250,6 +323,11 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
           {viewType === 'drivers' && (
             <Button onClick={openAddDriverModal} variant="primary" size="sm" icon={<Plus className="w-4 h-4" />}>
               Add Driver
+            </Button>
+          )}
+          {viewType === 'conductors' && (
+            <Button onClick={openAddConductorModal} variant="primary" size="sm" icon={<Plus className="w-4 h-4" />}>
+              Add Conductor
             </Button>
           )}
           {viewType === 'schedules' && (
@@ -322,6 +400,85 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
             </Button>
             <Button type="submit" variant="primary" size="sm" loading={isSubmittingDriver}>
               {isEditDriverMode ? 'Save Changes' : 'Create Driver'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Conductor Add/Edit Modal */}
+      <Modal
+        isOpen={isAddConductorOpen}
+        onClose={() => setIsAddConductorOpen(false)}
+        title={isEditConductorMode ? 'Edit Conductor Profile & Bus Assignment' : 'Add New Municipal Conductor'}
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleSaveConductor} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+            <input
+              required
+              type="text"
+              value={conductorForm.fullName}
+              onChange={e => setConductorForm({...conductorForm, fullName: e.target.value})}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7847CB]"
+              placeholder="e.g. Anand Shinde"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Email (Conductor Login ID)</label>
+            <input
+              required
+              type="email"
+              value={conductorForm.email}
+              onChange={e => setConductorForm({...conductorForm, email: e.target.value})}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7847CB]"
+              placeholder="conductor@nagarbus.gov.in"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
+            <input
+              required={!isEditConductorMode}
+              type="password"
+              value={conductorForm.password}
+              onChange={e => setConductorForm({...conductorForm, password: e.target.value})}
+              placeholder={isEditConductorMode ? 'Leave blank to preserve current' : 'Min 6 characters'}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7847CB]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number</label>
+            <input
+              type="tel"
+              value={conductorForm.phone}
+              onChange={e => setConductorForm({...conductorForm, phone: e.target.value})}
+              placeholder="+91 98765 43210"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7847CB]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Vehicle</label>
+            <select
+              required
+              value={conductorForm.busId}
+              onChange={e => setConductorForm({...conductorForm, busId: e.target.value})}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none bg-white focus:ring-2 focus:ring-[#7847CB]"
+            >
+              <option value="" disabled>Select vehicle to assign</option>
+              {availableBuses.map(b => (
+                <option key={b.id} value={b.id}>
+                  {b.bus_number}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddConductorOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" loading={isSubmittingConductor}>
+              {isEditConductorMode ? 'Save Changes' : 'Create Conductor'}
             </Button>
           </div>
         </form>
@@ -458,21 +615,41 @@ export const AdminFleetStaffMgmt: React.FC<AdminFleetStaffMgmtProps> = ({ viewTy
                 {viewType === 'conductors' && realConductors.map((s) => (
                   <tr key={s.id} className="hover:bg-slate-50">
                     <td className="p-3.5 font-mono text-slate-500">{s.id?.substring(0, 8)}</td>
-                    <td className="p-3.5 font-bold text-slate-900">{s.full_name || s.name || s.email || 'Conductor'}</td>
-                    <td className="p-3.5 text-slate-600">Bus Conductor</td>
-                    <td className="p-3.5 font-semibold text-slate-800">{s.assigned_bus_id || 'Depot Assigned'}</td>
                     <td className="p-3.5">
-                      <Badge variant="success">Active</Badge>
+                      <span className="font-bold text-slate-900 block">{s.full_name || s.name || s.email || 'Conductor'}</span>
+                      <span className="text-[11px] text-slate-400 font-mono">{s.email}</span>
                     </td>
-                    <td className="p-3.5 text-right text-slate-400 text-xs">
-                      Managed by Depot
+                    <td className="p-3.5 text-slate-600">Bus Conductor</td>
+                    <td className="p-3.5 font-semibold text-slate-800">
+                      {availableBuses.find(b => b.id === s.assigned_bus_id)?.bus_number || s.assigned_bus_id || 'Depot Pool'}
+                    </td>
+                    <td className="p-3.5">
+                      <Badge variant="success">Active Duty</Badge>
+                    </td>
+                    <td className="p-3.5 text-right space-x-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditConductorModal(s)}
+                        title="Edit Conductor"
+                        className="p-1.5 h-8 w-8 text-slate-600 hover:text-slate-900"
+                        icon={<Edit2 className="w-3.5 h-3.5" />}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteConductor(s.id, s.full_name || s.name || 'Conductor')}
+                        title="Delete Conductor"
+                        className="p-1.5 h-8 w-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                        icon={<Trash2 className="w-3.5 h-3.5" />}
+                      />
                     </td>
                   </tr>
                 ))}
                 {viewType === 'conductors' && realConductors.length === 0 && (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-slate-500 text-xs">
-                      No conductor accounts found in the database. Conductors can register or be provisioned by admin.
+                      No conductor accounts found in database. Click "Add Conductor" above to provision an account.
                     </td>
                   </tr>
                 )}
