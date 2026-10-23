@@ -64,7 +64,7 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
     { view: 'demo_simulator', label: 'GPS Demo Simulator', icon: Play, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'] },
     { view: 'buses', label: 'Vehicle Fleet', icon: Bus, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
     { view: 'routes', label: 'Route Corridors', icon: Route, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
-    { view: 'fare_matrix', label: 'Stop Fares & Pricing', icon: IndianRupee, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
+    { view: 'fare_matrix', label: 'Stop Fares & Pricing', icon: IndianRupee, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER', 'FINANCE_MANAGER', 'CONTROL_ROOM'] },
     { view: 'schedules', label: 'Timetables & Shifts', icon: Calendar, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'] },
     { view: 'drivers', label: 'Driver Crew', icon: Users, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
     { view: 'conductors', label: 'Conductor Staff', icon: UserCheck, allowedRoles: ['SUPER_ADMIN', 'CITY_ADMIN', 'ADMIN'] },
@@ -77,7 +77,8 @@ export const AdminDashboardLayout: React.FC<AdminLayoutProps> = ({ currentView, 
 
   const filteredNav = allNavItems.filter((item) => {
     if (!item.allowedRoles) return true;
-    return user?.role && item.allowedRoles.includes(user.role);
+    if (!user?.role) return true;
+    return item.allowedRoles.includes(user.role);
   });
 
   const navItems: NavItem[] = filteredNav.map(item => ({

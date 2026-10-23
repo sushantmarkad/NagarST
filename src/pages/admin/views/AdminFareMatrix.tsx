@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { useToast } from '../../../context/FeedbackContext';
+import { getFirebaseRoutes } from '../../../utils/firebaseService';
 import {
   IndianRupee,
   Route as RouteIcon,
@@ -17,7 +18,8 @@ import {
   Plus,
   Trash2,
   Info,
-  CheckCircle2
+  CheckCircle2,
+  RefreshCw
 } from 'lucide-react';
 import {
   getFareRuleForRoute,
@@ -30,65 +32,176 @@ import {
 import { formatCurrency } from '../../../utils/formatters';
 import type { Route, BusType } from '../../../types';
 
-const getStopName = (s: any): string => (s ? s.stopName || s.name || '' : '');
+const getStopName = (s: any): string => {
+  if (!s) return '';
+  if (typeof s === 'string') return s;
+  return s.stopName || s.name || s.stopNameMarathi || '';
+};
+
+export const DEFAULT_MUNICIPAL_ROUTES: Route[] = [
+  {
+    id: 'route-cbs-savedi',
+    routeNumber: '1',
+    name: 'CBS ↔ Savedi Bus Terminal',
+    nameMarathi: 'मध्यवर्ती बस स्थानक ↔ सावेडी बस टर्मिनस',
+    origin: 'Central Bus Stand (CBS)',
+    destination: 'Savedi Bus Terminal',
+    firstBus: '06:00 AM',
+    lastBus: '10:00 PM',
+    frequencyMinutes: 15,
+    baseFare: 10,
+    maxFare: 30,
+    totalStops: 5,
+    durationMinutes: 25,
+    activeBusesCount: 2,
+    color: '#7847CB',
+    status: 'normal',
+    stops: [
+      { stopId: 'stop-cbs', stopName: 'Central Bus Stand (CBS)', stopNameMarathi: 'मध्यवर्ती बस स्थानक', sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, lat: 19.0975, lng: 74.7420, isMajorHub: true },
+      { stopId: 'stop-delhi-gate', stopName: 'Delhi Gate', stopNameMarathi: 'दिल्ली गेट', sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 6, lat: 19.1020, lng: 74.7480 },
+      { stopId: 'stop-swastik', stopName: 'Swastik Chowk', stopNameMarathi: 'स्वस्तिक चौक', sequence: 3, fareFromOrigin: 13, estimatedMinutesFromOrigin: 12, lat: 19.1080, lng: 74.7410 },
+      { stopId: 'stop-premdan', stopName: 'Premdan Chowk', stopNameMarathi: 'प्रेमदान चौक', sequence: 4, fareFromOrigin: 16, estimatedMinutesFromOrigin: 18, lat: 19.1150, lng: 74.7380 },
+      { stopId: 'stop-savedi', stopName: 'Savedi Bus Terminal', stopNameMarathi: 'सावेडी बस टर्मिनस', sequence: 5, fareFromOrigin: 20, estimatedMinutesFromOrigin: 25, lat: 19.1220, lng: 74.7350, isMajorHub: true },
+    ]
+  },
+  {
+    id: 'route-cbs-midc',
+    routeNumber: '2',
+    name: 'CBS ↔ MIDC Nagapur',
+    nameMarathi: 'मध्यवर्ती बस स्थानक ↔ एमआयडीसी नागापूर',
+    origin: 'Central Bus Stand (CBS)',
+    destination: 'MIDC Nagapur Phase 1',
+    firstBus: '06:15 AM',
+    lastBus: '09:45 PM',
+    frequencyMinutes: 20,
+    baseFare: 10,
+    maxFare: 35,
+    totalStops: 5,
+    durationMinutes: 30,
+    activeBusesCount: 1,
+    color: '#0D9488',
+    status: 'normal',
+    stops: [
+      { stopId: 'stop-cbs', stopName: 'Central Bus Stand (CBS)', stopNameMarathi: 'मध्यवर्ती बस स्थानक', sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, lat: 19.0975, lng: 74.7420, isMajorHub: true },
+      { stopId: 'stop-market-yard', stopName: 'Market Yard', stopNameMarathi: 'मार्केट यार्ड', sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 7, lat: 19.1100, lng: 74.7310 },
+      { stopId: 'stop-kotla', stopName: 'Kotla Stand', stopNameMarathi: 'कोटला स्टँड', sequence: 3, fareFromOrigin: 13, estimatedMinutesFromOrigin: 14, lat: 19.1250, lng: 74.7260 },
+      { stopId: 'stop-nagapur', stopName: 'Nagapur Phata', stopNameMarathi: 'नागापूर फाटा', sequence: 4, fareFromOrigin: 18, estimatedMinutesFromOrigin: 22, lat: 19.1420, lng: 74.7210 },
+      { stopId: 'stop-midc', stopName: 'MIDC Nagapur Phase 1', stopNameMarathi: 'एमआयडीसी नागापूर टप्पा १', sequence: 5, fareFromOrigin: 25, estimatedMinutesFromOrigin: 30, lat: 19.1550, lng: 74.7180, isMajorHub: true },
+    ]
+  },
+  {
+    id: 'route-railway-kedgaon',
+    routeNumber: '3',
+    name: 'Railway Station ↔ Kedgaon Devi',
+    nameMarathi: 'रेल्वे स्टेशन ↔ केडगाव देवी',
+    origin: 'Central Railway Station',
+    destination: 'Kedgaon Devi Mandir',
+    firstBus: '06:30 AM',
+    lastBus: '09:30 PM',
+    frequencyMinutes: 20,
+    baseFare: 10,
+    maxFare: 25,
+    totalStops: 4,
+    durationMinutes: 22,
+    activeBusesCount: 1,
+    color: '#E11D48',
+    status: 'normal',
+    stops: [
+      { stopId: 'stop-railway', stopName: 'Central Railway Station', stopNameMarathi: 'मध्यवर्ती रेल्वे स्टेशन', sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, lat: 19.0810, lng: 74.7380, isMajorHub: true },
+      { stopId: 'stop-cbs', stopName: 'Central Bus Stand (CBS)', stopNameMarathi: 'मध्यवर्ती बस स्थानक', sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 8, lat: 19.0975, lng: 74.7420, isMajorHub: true },
+      { stopId: 'stop-maliwada', stopName: 'Maliwada Ves', stopNameMarathi: 'माळीवाडा वेस', sequence: 3, fareFromOrigin: 12, estimatedMinutesFromOrigin: 14, lat: 19.0910, lng: 74.7350 },
+      { stopId: 'stop-kedgaon', stopName: 'Kedgaon Devi Mandir', stopNameMarathi: 'केडगाव देवी मंदिर', sequence: 4, fareFromOrigin: 18, estimatedMinutesFromOrigin: 22, lat: 19.0720, lng: 74.7200, isMajorHub: true },
+    ]
+  }
+];
 
 export const AdminFareMatrix: React.FC = () => {
-  const { routes } = useApp();
+  const { routes: contextRoutes } = useApp();
   const toast = useToast();
 
-  const [selectedRouteId, setSelectedRouteId] = useState<string>('');
-  const [currentRule, setCurrentRule] = useState<StopFareRule | null>(null);
+  const [dbRoutes, setDbRoutes] = useState<Route[]>(() => {
+    if (contextRoutes && contextRoutes.length > 0) return contextRoutes;
+    try {
+      const saved = localStorage.getItem('nagarst_configured_routes');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+    return DEFAULT_MUNICIPAL_ROUTES;
+  });
+
+  // Keep routes synced with context or Firebase
+  useEffect(() => {
+    if (contextRoutes && contextRoutes.length > 0) {
+      setDbRoutes(contextRoutes);
+    } else {
+      getFirebaseRoutes().then((fb) => {
+        if (fb && fb.length > 0) {
+          setDbRoutes(fb as unknown as Route[]);
+        }
+      }).catch(() => {});
+    }
+  }, [contextRoutes]);
+
+  const effectiveRoutes = useMemo(() => {
+    return dbRoutes && dbRoutes.length > 0 ? dbRoutes : DEFAULT_MUNICIPAL_ROUTES;
+  }, [dbRoutes]);
+
+  const [selectedRouteId, setSelectedRouteId] = useState<string>(() => {
+    return (effectiveRoutes[0] && effectiveRoutes[0].id) || DEFAULT_MUNICIPAL_ROUTES[0].id;
+  });
+
+  // Selected route object is ALWAYS guaranteed to be non-null
+  const activeRoute = useMemo(() => {
+    return effectiveRoutes.find((r) => r.id === selectedRouteId) || effectiveRoutes[0];
+  }, [effectiveRoutes, selectedRouteId]);
+
+  const [currentRule, setCurrentRule] = useState<StopFareRule>(() => {
+    return getFareRuleForRoute(effectiveRoutes[0]?.id || DEFAULT_MUNICIPAL_ROUTES[0].id);
+  });
+
   const [hasChanges, setHasChanges] = useState<boolean>(false);
 
+  // Safe stops list for active route
+  const routeStops = useMemo(() => {
+    if (activeRoute?.stops && activeRoute.stops.length > 0) {
+      return activeRoute.stops;
+    }
+    const origin = activeRoute?.origin || 'Central Bus Stand (CBS)';
+    const dest = activeRoute?.destination || 'Savedi Bus Terminal';
+    return [
+      { stopId: 'stop-orig', stopName: origin, stopNameMarathi: origin, sequence: 1, fareFromOrigin: 0, estimatedMinutesFromOrigin: 0, lat: 19.0975, lng: 74.7420, isMajorHub: true },
+      { stopId: 'stop-dest', stopName: dest, stopNameMarathi: dest, sequence: 2, fareFromOrigin: 10, estimatedMinutesFromOrigin: 20, lat: 19.1220, lng: 74.7350, isMajorHub: true },
+    ];
+  }, [activeRoute]);
+
   // Test Calculator State
-  const [testSource, setTestSource] = useState<string>('');
-  const [testDest, setTestDest] = useState<string>('');
+  const [testSource, setTestSource] = useState<string>(() => getStopName(routeStops[0]));
+  const [testDest, setTestDest] = useState<string>(() => getStopName(routeStops[routeStops.length - 1] || routeStops[0]));
   const [testBusType, setTestBusType] = useState<BusType>('Standard City');
   const [testCustomPrice, setTestCustomPrice] = useState<string>('');
 
-  // Selected route object
-  const activeRoute = useMemo(() => {
-    if (!routes || routes.length === 0) return null;
-    return routes.find((r) => r.id === selectedRouteId) || routes[0];
-  }, [routes, selectedRouteId]);
-
-  // Set default route on load
-  useEffect(() => {
-    if (routes && routes.length > 0 && !selectedRouteId) {
-      setSelectedRouteId(routes[0].id);
-    }
-  }, [routes, selectedRouteId]);
-
-  // Load fare rule whenever activeRoute changes
+  // Update calculator endpoints when route changes
   useEffect(() => {
     if (activeRoute) {
       const rule = getFareRuleForRoute(activeRoute.id);
       setCurrentRule(rule);
       setHasChanges(false);
 
-      const stops = activeRoute.stops || [];
-      if (stops.length >= 2) {
-        setTestSource(getStopName(stops[0]));
-        setTestDest(getStopName(stops[stops.length - 1]));
+      if (routeStops.length >= 2) {
+        setTestSource(getStopName(routeStops[0]));
+        setTestDest(getStopName(routeStops[routeStops.length - 1]));
+      } else if (routeStops.length === 1) {
+        setTestSource(getStopName(routeStops[0]));
+        setTestDest(getStopName(routeStops[0]));
       }
     }
-  }, [activeRoute?.id]);
-
-  if (!activeRoute || !currentRule) {
-    return (
-      <div className="p-8 text-center text-slate-500">
-        <RouteIcon className="w-12 h-12 mx-auto text-slate-300 animate-pulse mb-3" />
-        <p className="font-bold">Loading route corridors and fare rules...</p>
-      </div>
-    );
-  }
-
-  const routeStops = activeRoute.stops || [];
+  }, [activeRoute?.id, routeStops]);
 
   // Update a field in the current rule
   const handleUpdateField = (field: keyof StopFareRule, value: any) => {
     setCurrentRule((prev) => {
-      if (!prev) return null;
       return { ...prev, [field]: value };
     });
     setHasChanges(true);
@@ -97,7 +210,6 @@ export const AdminFareMatrix: React.FC = () => {
   // Update multiplier
   const handleUpdateMultiplier = (category: keyof StopFareRule['busTypeMultipliers'], val: number) => {
     setCurrentRule((prev) => {
-      if (!prev) return null;
       return {
         ...prev,
         busTypeMultipliers: {
@@ -112,7 +224,6 @@ export const AdminFareMatrix: React.FC = () => {
   // Update a specific stop's stage fare from origin
   const handleUpdateStageFare = (stopName: string, fare: number) => {
     setCurrentRule((prev) => {
-      if (!prev) return null;
       const updated = { ...(prev.stageFaresFromOrigin || {}) };
       updated[stopName] = Math.max(0, fare);
       return {
@@ -125,7 +236,7 @@ export const AdminFareMatrix: React.FC = () => {
 
   // Recalculate all stage fares automatically based on formula
   const handleAutoGenerateStages = () => {
-    if (!currentRule || routeStops.length === 0) return;
+    if (routeStops.length === 0) return;
     const stages: Record<string, number> = {};
     routeStops.forEach((stop, idx) => {
       const name = getStopName(stop);
@@ -139,14 +250,14 @@ export const AdminFareMatrix: React.FC = () => {
       }
     });
 
-    setCurrentRule((prev) => (prev ? { ...prev, stageFaresFromOrigin: stages } : null));
+    setCurrentRule((prev) => ({ ...prev, stageFaresFromOrigin: stages }));
     setHasChanges(true);
     toast.success('Generated sequential stage fares from pricing formula!', 'Stages Auto-Calculated');
   };
 
   // Save changes
   const handleSave = () => {
-    if (!activeRoute || !currentRule) return;
+    if (!activeRoute) return;
     saveFareRuleForRoute(activeRoute.id, currentRule);
     setHasChanges(false);
     toast.success(
@@ -178,7 +289,6 @@ export const AdminFareMatrix: React.FC = () => {
 
     const key = makePairKey(testSource, testDest);
     setCurrentRule((prev) => {
-      if (!prev) return null;
       const overrides = { ...(prev.customPairFares || {}) };
       overrides[key] = priceNum;
       return {
@@ -195,7 +305,6 @@ export const AdminFareMatrix: React.FC = () => {
   // Remove custom pair override
   const handleRemovePairOverride = (key: string) => {
     setCurrentRule((prev) => {
-      if (!prev) return null;
       const overrides = { ...(prev.customPairFares || {}) };
       delete overrides[key];
       return {
@@ -274,13 +383,13 @@ export const AdminFareMatrix: React.FC = () => {
         <div className="flex items-center justify-between">
           <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
             <RouteIcon className="w-4 h-4 text-[#7847CB]" />
-            Select Route Corridor ({routes.length})
+            Select Route Corridor ({effectiveRoutes.length})
           </span>
           <span className="text-[11px] text-slate-400 font-medium">Click a corridor to configure stop-level pricing</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {routes.map((r) => {
+          {effectiveRoutes.map((r) => {
             const isSelected = r.id === activeRoute.id;
             const stopsCount = r.stops?.length || 0;
             const rule = getFareRuleForRoute(r.id);

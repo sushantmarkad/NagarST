@@ -16,7 +16,8 @@ import {
   TrendingUp,
   ShieldCheck,
   Zap,
-  Trash2
+  Trash2,
+  IndianRupee
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -289,6 +290,18 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
               >
                 <span>Add / Configure Transit Route</span>
                 <ArrowUpRight className="w-4 h-4 text-slate-400" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('fare_matrix')}
+                className="w-full p-3 rounded-2xl bg-purple-50/70 hover:bg-purple-100/70 flex items-center justify-between text-left text-xs font-bold text-[#7847CB] transition-colors border border-purple-200/80"
+              >
+                <span className="flex items-center gap-2">
+                  <IndianRupee className="w-4 h-4 text-[#7847CB]" />
+                  Configure Stop Fares & Pricing
+                </span>
+                <ArrowUpRight className="w-4 h-4 text-purple-400" />
               </button>
 
               <button
