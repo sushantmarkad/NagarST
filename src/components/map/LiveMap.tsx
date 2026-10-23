@@ -688,12 +688,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
     buses.forEach((bus) => {
       const isSelected = selectedBusId === bus.id;
-      const isDemo = Boolean(bus.isDemo || bus.id?.startsWith('demo-'));
+      const isLive = Boolean(bus.isLiveDriver);
+      const isDemo = !isLive;
       const key = `bus-${bus.id}`;
 
       // Build a cache key from properties that actually change the icon appearance
       // This avoids destroying/recreating the DOM element on every position tick
-      const iconStateKey = `${bus.busNumber}|${isSelected}|${bus.status}|${isDemo}|${bus.speedKmh > 2 ? 1 : 0}`;
+      const iconStateKey = `${bus.busNumber}|${isSelected}|${bus.status}|${isLive ? 'live' : 'demo'}|${bus.speedKmh > 2 ? 1 : 0}`;
       const prevIconState = busIconStateRef.current[key];
       const needsIconUpdate = prevIconState !== iconStateKey;
 
@@ -708,10 +709,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       const tooltipHtml = `
         <div style="text-align: center; font-family: system-ui, sans-serif; padding: 2px;">
           <div style="display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
-            <span style="background: ${isDemo ? '#F59E0B' : '#10B981'}; color: #fff; font-size: 9px; font-weight: 800; padding: 1px 4px; border-radius: 4px;">
-              ${isDemo ? 'DEMO' : 'LIVE'}
+            <span style="background: ${isLive ? '#10B981' : '#F59E0B'}; color: #fff; font-size: 9px; font-weight: 800; padding: 1px 4px; border-radius: 4px;">
+              ${isLive ? 'LIVE' : 'DEMO'}
             </span>
-            <b style="color: ${isDemo ? '#d97706' : '#7847CB'}; font-size: 12px;">${bus.busNumber}</b>
+            <b style="color: ${isLive ? '#7847CB' : '#d97706'}; font-size: 12px;">${bus.busNumber}</b>
           </div>
           <div style="font-size: 11px; font-weight: 700; color: #0f172a; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
             ${destinationText}

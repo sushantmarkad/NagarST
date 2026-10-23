@@ -242,7 +242,12 @@ export const Home: React.FC = () => {
 
       validConfigured.forEach(cb => {
         const live = Object.values(activeLiveBuses).find(lb => matchesBus(cb, lb));
-        const isLiveDriver = Boolean(live && (live.isLiveDriver || !live.isDemo));
+        const isLiveFresh = Boolean(
+          live &&
+          live.isLiveDriver === true &&
+          (!live.lastUpdated || (Date.now() - new Date(live.lastUpdated).getTime()) < 60000)
+        );
+        const isLiveDriver = isLiveFresh;
 
         const simRuntime = !isLiveDriver ? Object.values(simState?.buses || {}).find(r => 
           matchesBus(cb, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
@@ -250,7 +255,7 @@ export const Home: React.FC = () => {
 
         const isSimRunning = Boolean(simRuntime?.isRunning);
         const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
-        const activeTelemetry = isLiveDriver ? live : (live || simTelemetry);
+        const activeTelemetry = isLiveDriver ? live : (simTelemetry || live);
 
         const targetRoute = routes.find(
           r => r.id === (activeTelemetry?.routeId || cb.routeId) ||
@@ -269,7 +274,7 @@ export const Home: React.FC = () => {
           routeName: targetRoute?.name || `${cb.origin || ''} ➔ ${cb.destination || ''}`,
           origin: targetRoute?.origin || cb.origin || '',
           destination: targetRoute?.destination || cb.destination || '',
-          isDemo: isLiveDriver ? false : (isSimRunning ? true : Boolean(activeTelemetry?.isDemo)),
+          isDemo: !isLiveDriver,
           isLiveDriver: isLiveDriver,
           lat: Number(activeTelemetry?.lat ?? cb.lat),
           lng: Number(activeTelemetry?.lng ?? cb.lng),
@@ -612,14 +617,14 @@ export const Home: React.FC = () => {
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-700">
                           {bus.plateNumber}
                         </span>
-                        {bus.isDemo ? (
-                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
-                            DEMO
-                          </span>
-                        ) : (
+                        {bus.isLiveDriver ? (
                           <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             LIVE GPS
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                            DEMO
                           </span>
                         )}
                         {bus.speedKmh > 0 ? (

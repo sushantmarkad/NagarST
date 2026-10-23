@@ -426,7 +426,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (index !== -1) {
           const newBuses = [...prevBuses];
-          const isLiveDriver = Boolean(updatedBus.isLiveDriver || (updatedBus as any).driverName);
+          const isLiveDriver = Boolean(updatedBus.isLiveDriver);
           newBuses[index] = {
             ...newBuses[index],
             ...updatedBus,
@@ -438,42 +438,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             speedKmh: updatedBus.speedKmh ?? newBuses[index].speedKmh,
             heading: updatedBus.heading ?? newBuses[index].heading,
             status: updatedBus.status || newBuses[index].status,
-            isDemo: isLiveDriver ? false : Boolean(updatedBus.isDemo ?? newBuses[index].isDemo),
-            isLiveDriver: isLiveDriver || Boolean(newBuses[index].isLiveDriver),
+            isDemo: !isLiveDriver,
+            isLiveDriver: isLiveDriver,
             lastUpdated: new Date().toISOString()
           };
           return newBuses;
-        } else if (updatedBus && (updatedBus.id || updatedBus.busNumber) && updatedBus.lat && updatedBus.lng) {
-          const isLive = Boolean(updatedBus.isLiveDriver || !updatedBus.isDemo);
-          const fullBus: Bus = {
-            id: updatedBus.id || `bus-${Date.now()}`,
-            busNumber: updatedBus.busNumber || 'AH-BUS',
-            plateNumber: updatedBus.plateNumber || 'MH-16',
-            routeId: updatedBus.routeId || '',
-            routeNumber: updatedBus.routeNumber || 'Route',
-            routeName: updatedBus.routeName || 'In Transit',
-            origin: updatedBus.origin || 'Depot',
-            destination: updatedBus.destination || 'Depot',
-            currentStopId: 'stop1',
-            currentStopName: updatedBus.currentStopName || 'Origin',
-            nextStopId: 'stop2',
-            nextStopName: updatedBus.nextStopName || 'Approaching Stop',
-            etaToNextMinutes: updatedBus.etaToNextMinutes || 3,
-            speedKmh: updatedBus.speedKmh || 0,
-            occupancy: updatedBus.occupancy || 'moderate',
-            status: updatedBus.status || 'on_time',
-            lat: Number(updatedBus.lat),
-            lng: Number(updatedBus.lng),
-            heading: updatedBus.heading || 0,
-            driverName: updatedBus.driverName || 'Driver',
-            conductorName: 'Conductor',
-            busType: updatedBus.busType || 'Standard City',
-            lastUpdated: new Date().toISOString(),
-            isDemo: !isLive,
-            isLiveDriver: isLive
-          };
-          return [...prevBuses, fullBus];
         }
+        // Do NOT add fictitious dummy buses (like AH-BUS or AH-24) to the registered fleet
         return prevBuses;
       });
     };

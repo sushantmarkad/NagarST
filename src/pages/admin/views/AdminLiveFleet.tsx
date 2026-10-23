@@ -180,7 +180,12 @@ export const AdminLiveFleet: React.FC = () => {
     // 1. Configured fleet buses from DB / AppContext
     buses.forEach((b) => {
       const live = Object.values(activeLiveBuses).find((lb) => matchesBus(b, lb));
-      const isLiveDriver = Boolean(live && (live.isLiveDriver || !live.isDemo));
+      const isLiveFresh = Boolean(
+        live &&
+        live.isLiveDriver === true &&
+        (!live.lastUpdated || (Date.now() - new Date(live.lastUpdated).getTime()) < 60000)
+      );
+      const isLiveDriver = isLiveFresh;
 
       const simRuntime = !isLiveDriver ? Object.values(simState?.buses || {}).find((r) =>
         matchesBus(b, { id: r.id, busNumber: r.def.busNumber, plateNumber: r.def.plateNumber })
@@ -188,7 +193,7 @@ export const AdminLiveFleet: React.FC = () => {
 
       const isSimRunning = Boolean(simRuntime?.isRunning);
       const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
-      const activeTelemetry = isLiveDriver ? live : (live || simTelemetry);
+      const activeTelemetry = isLiveDriver ? live : (simTelemetry || live);
 
       const merged: BusType = {
         ...b,
@@ -196,7 +201,7 @@ export const AdminLiveFleet: React.FC = () => {
         id: b.id,
         busNumber: b.busNumber,
         plateNumber: b.plateNumber,
-        isDemo: isLiveDriver ? false : (isSimRunning ? true : Boolean(activeTelemetry?.isDemo || b.isDemo)),
+        isDemo: !isLiveDriver,
         isLiveDriver: isLiveDriver,
         lat: Number(activeTelemetry?.lat ?? b.lat),
         lng: Number(activeTelemetry?.lng ?? b.lng),
@@ -233,11 +238,11 @@ export const AdminLiveFleet: React.FC = () => {
   }, [buses, simState, activeLiveBuses, routes]);
 
   const allRoutes = routes;
-  const liveCount = displayBuses.filter(b => !b.isDemo && !b.id?.startsWith('demo-')).length;
-  const demoCount = displayBuses.filter(b => b.isDemo || b.id?.startsWith('demo-')).length;
+  const liveCount = displayBuses.filter(b => b.isLiveDriver === true).length;
+  const demoCount = displayBuses.filter(b => !b.isLiveDriver).length;
 
   const activeLiveDriver = React.useMemo(() => {
-    return displayBuses.find(b => !b.isDemo && !b.id?.startsWith('demo-') && (b.isLiveDriver || b.speedKmh > 0 || (b.lat && b.lng)));
+    return displayBuses.find(b => b.isLiveDriver === true);
   }, [displayBuses]);
 
   const handleSendDispatch = async () => {
@@ -370,9 +375,9 @@ export const AdminLiveFleet: React.FC = () => {
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className={`px-2.5 py-1.5 min-w-[42px] rounded-xl flex items-center justify-center font-black text-xs shadow-xs shrink-0 whitespace-nowrap ${
-                    selectedBus.isDemo || selectedBus.id?.startsWith('demo-')
-                      ? 'bg-amber-500 text-slate-950 shadow-amber-500/20'
-                      : 'bg-[#7847CB] text-white shadow-[#7847CB]/30'
+                    selectedBus.isLiveDriver
+                      ? 'bg-[#7847CB] text-white shadow-[#7847CB]/30'
+                      : 'bg-amber-500 text-slate-950 shadow-amber-500/20'
                   }`}>
                     {selectedBus.busNumber}
                   </div>
@@ -381,13 +386,13 @@ export const AdminLiveFleet: React.FC = () => {
                       <h3 className="text-sm font-bold text-slate-900 leading-tight">
                         Bus {selectedBus.busNumber}
                       </h3>
-                      {Boolean(selectedBus.isDemo || selectedBus.id?.startsWith('demo-')) ? (
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
-                          DEMO
-                        </span>
-                      ) : (
+                      {selectedBus.isLiveDriver ? (
                         <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
                           LIVE
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                          DEMO
                         </span>
                       )}
                     </div>

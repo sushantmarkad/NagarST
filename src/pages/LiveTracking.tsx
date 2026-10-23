@@ -145,16 +145,16 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   const [activeLiveBuses, setActiveLiveBuses] = useState<Record<string, Bus>>(() => {
     if (typeof window === 'undefined') return {};
     try {
-      // Only load real live GPS driver buses, NOT demo buses.
-      // Demo bus positions come exclusively from simState to prevent position conflicts.
       const result: Record<string, Bus> = {};
+      const now = Date.now();
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && k.startsWith('nagarst_live_bus_')) {
           const val = localStorage.getItem(k);
           if (val) {
             const b = JSON.parse(val);
-            if (b && b.id && !b.isDemo && !String(b.id).startsWith('demo-')) {
+            const isFresh = b && b.lastUpdated && (now - new Date(b.lastUpdated).getTime()) < 60000;
+            if (b && b.id && b.isLiveDriver === true && isFresh) {
               result[b.id] = b;
             }
           }
@@ -170,14 +170,10 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   useEffect(() => {
     setActiveLiveBuses((prev) => {
       const next: Record<string, Bus> = {};
+      const now = Date.now();
       Object.entries(prev).forEach(([k, b]) => {
-        // ALWAYS retain real live drivers transmitting GPS
-        if (b.isLiveDriver || !b.isDemo) {
-          next[k] = b;
-          return;
-        }
-        // For virtual simulator fleet, retain if known database bus
-        const isKnown = buses.some(cb =>
+        const isFresh = !b.lastUpdated || (now - new Date(b.lastUpdated).getTime()) < 60000;
+        const isKnown = buses.length === 0 || buses.some(cb =>
           isSameBusKey(cb.id, k) ||
           isSameBusKey(cb.busNumber, k) ||
           isSameBusKey(cb.plateNumber, k) ||
@@ -185,7 +181,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           isSameBusKey(cb.busNumber, b.busNumber) ||
           isSameBusKey(cb.plateNumber, b.plateNumber)
         );
-        if (isKnown) {
+        if (b.isLiveDriver === true && isFresh && isKnown) {
           next[k] = b;
         }
       });
@@ -250,8 +246,8 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
               }
             } catch (_) { }
 
-            const isLiveDriver = Boolean(incoming.isLiveDriver || !incoming.isDemo || payload?.type === 'driver_location_update');
-            const isDemo = !isLiveDriver && Boolean(incoming.isDemo || incoming.id.startsWith('demo-'));
+            const isLiveDriver = Boolean(payload?.type === 'driver_location_update' || incoming.isLiveDriver === true);
+            const isDemo = !isLiveDriver;
             const isKnown = buses.length === 0 || buses.some(b =>
               isSameBusKey(b.id, incoming.id) ||
               isSameBusKey(b.busNumber, incoming.busNumber) ||
@@ -259,8 +255,8 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
               isSameBusKey(b.busNumber, incoming.id) ||
               isSameBusKey(b.plateNumber, incoming.plateNumber)
             );
-            // Accept if it belongs to registered municipal fleet OR is an active live driver
-            if (!isKnown && !isLiveDriver) return;
+            // Accept ONLY if it belongs to registered municipal fleet
+            if (!isKnown && buses.length > 0) return;
 
             pendingBroadcastUpdates[incoming.id] = { ...incoming, isDemo, isLiveDriver };
             if (!rafBroadcastId) {
@@ -354,8 +350,23 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       if (!locations || locations.length === 0) return;
       setActiveLiveBuses((prev) => {
         const next = { ...prev };
+        const now = Date.now();
         locations.forEach((loc) => {
           if (loc.bus_id && !loc.bus_id.startsWith('demo-') && !loc.bus_id.toLowerCase().includes('demo')) {
+            const matchesRegistered = buses.length === 0 || buses.some(b =>
+              isSameBusKey(b.id, loc.bus_id) ||
+              isSameBusKey(b.busNumber, loc.bus_number) ||
+              isSameBusKey(b.plateNumber, loc.bus_number)
+            );
+            if (!matchesRegistered && buses.length > 0) return;
+
+            const updatedTime = loc.updated_at ? new Date(loc.updated_at).getTime() : 0;
+            const isFresh = updatedTime > 0 && (now - updatedTime) < 60000;
+            if (!isFresh) {
+              delete next[loc.bus_id];
+              return;
+            }
+
             const key = loc.bus_id;
             const existing = next[key] || {};
             next[key] = {
@@ -379,7 +390,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     });
 
     return () => unsub();
-  }, []);
+  }, [buses]);
 
   // Direct Socket.IO connection for live demo & real driver telemetry (ZERO Firestore reads)
   // Uses batched state updates to prevent per-bus re-render storms (critical for smooth animation)
@@ -508,14 +519,15 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           purgeFromActive(bus);
           return;
         }
-        const isDemo = Boolean(bus.isDemo || String(bus.id).startsWith('demo-') || (bus.routeName || '').includes('[DEMO]'));
-        if (isDemo) return;
-        pendingUpdates[bus.id] = { ...bus, isDemo: false, isLiveDriver: true } as any;
+        if (!matchesFleet(bus)) return;
+        const isLiveDriver = Boolean(bus.isLiveDriver === true);
+        const isDemo = !isLiveDriver;
+        pendingUpdates[bus.id] = { ...bus, isDemo, isLiveDriver } as any;
         scheduleFlush();
       });
 
       socket.on('driverLocation', (bus: Bus) => {
-        if (!bus || !bus.id) return;
+        if (!bus || !bus.id || !matchesFleet(bus)) return;
         pendingUpdates[bus.id] = { ...bus, isDemo: false, isLiveDriver: true } as any;
         scheduleFlush();
       });
@@ -583,9 +595,14 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
       });
 
       validConfigured.forEach(cb => {
-        // Check if there is live telemetry in activeLiveBuses (from Firestore, BroadcastChannel, or driver GPS)
+        // Find if this registered bus has active live telemetry from an actual driver
         const live = Object.values(activeLiveBuses).find(lb => matchesBus(cb, lb));
-        const isLiveDriver = Boolean((live && (live.isLiveDriver || !live.isDemo)) || cb.isLiveDriver);
+        const isLiveFresh = Boolean(
+          live &&
+          live.isLiveDriver === true &&
+          (!live.lastUpdated || (Date.now() - new Date(live.lastUpdated).getTime()) < 60000)
+        );
+        const isLiveDriver = isLiveFresh;
 
         // When a real driver is broadcasting, bypass simulator so real GPS takes full precedence
         const simRuntime = !isLiveDriver ? Object.values(simState?.buses || {}).find(r =>
@@ -594,7 +611,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
         const isSimRunning = Boolean(simRuntime?.isRunning);
         const simTelemetry = isSimRunning ? (simRuntime?.currentBus || buildBusTelemetry(simRuntime!)) : null;
-        const activeTelemetry = isLiveDriver ? live : (live || simTelemetry);
+        const activeTelemetry = isLiveDriver ? live : (simTelemetry || live);
 
         const targetRoute = allRoutes.find(
           r => r.id === (activeTelemetry?.routeId || cb.routeId) ||
@@ -613,7 +630,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
           routeName: targetRoute?.name || `${cb.origin || ''} ➔ ${cb.destination || ''}`,
           origin: targetRoute?.origin || cb.origin || '',
           destination: targetRoute?.destination || cb.destination || '',
-          isDemo: isLiveDriver ? false : (isSimRunning ? true : Boolean(activeTelemetry?.isDemo)),
+          isDemo: !isLiveDriver,
           isLiveDriver: isLiveDriver,
           lat: Number(activeTelemetry?.lat ?? cb.lat),
           lng: Number(activeTelemetry?.lng ?? cb.lng),
@@ -630,6 +647,11 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     // 2. Also ensure any actively broadcasting live drivers are always included on the live map
     Object.values(activeLiveBuses).forEach(lb => {
       if (!lb || !lb.lat || !lb.lng) return;
+      if (!lb.isLiveDriver) return;
+      const isFresh = !lb.lastUpdated || (Date.now() - new Date(lb.lastUpdated).getTime()) < 60000;
+      if (!isFresh) return;
+      if (buses && buses.length > 0 && !buses.some(b => matchesBus(b, lb))) return;
+
       const key = norm(lb.busNumber) || norm(lb.id);
       if (key && !byNumber.has(key)) {
         const targetRoute = allRoutes.find(
@@ -666,14 +688,13 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
     }
   }, [selectedBusId, selectedBus, setSelectedBusId]);
 
-  const liveCount = useMemo(() => allFleetBuses.filter(b => b.isLiveDriver || (!b.isDemo && !b.id.startsWith('demo-') && !(b.routeName || '').includes('[DEMO]'))).length, [allFleetBuses]);
-  const simCount = useMemo(() => allFleetBuses.filter(b => !b.isLiveDriver && (b.isDemo || b.id.startsWith('demo-') || (b.routeName || '').includes('[DEMO]'))).length, [allFleetBuses]);
+  const liveCount = useMemo(() => allFleetBuses.filter(b => b.isLiveDriver === true).length, [allFleetBuses]);
+  const simCount = useMemo(() => allFleetBuses.filter(b => !b.isLiveDriver).length, [allFleetBuses]);
 
   // Filtered buses list based on active tracking mode (Live GPS vs Demo Simulator vs All)
   const filteredBuses = useMemo(() => {
     return allFleetBuses.filter((b) => {
-      const isLive = Boolean(b.isLiveDriver || (!b.isDemo && !b.id.startsWith('demo-') && !(b.routeName || '').includes('[DEMO]')));
-      const isDemo = !isLive;
+      const isLive = Boolean(b.isLiveDriver);
       if (trackingMode === 'live' && !isLive) return false;
       if (trackingMode === 'simulator' && isLive) return false;
 
@@ -695,7 +716,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
   }, [allFleetBuses, filterRoute, searchQuery, trackingMode, selectedBusId]);
 
   const activeLiveDriverBus = useMemo(() => {
-    return allFleetBuses.find(b => !b.isDemo && !b.id.startsWith('demo-') && (b.isLiveDriver || b.speedKmh > 0 || (b.lat && b.lng)));
+    return allFleetBuses.find(b => b.isLiveDriver === true);
   }, [allFleetBuses]);
 
   // Resolves complete route stops and details for the selected bus
@@ -1070,7 +1091,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
 
                 {nearbyBuses.map((bus) => {
                   const isSelected = bus.id === selectedBusId;
-                  const isDemo = Boolean(bus.isDemo || bus.id?.startsWith('demo-'));
+                  const isLive = Boolean(bus.isLiveDriver);
 
                   return (
                     <div
@@ -1084,19 +1105,19 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className={`px-2 py-0.5 text-[11px] font-black rounded-md ${isDemo ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
+                            className={`px-2 py-0.5 text-[11px] font-black rounded-md ${isLive ? 'bg-[#7847CB] text-white' : 'bg-amber-500 text-slate-950'
                               }`}
                           >
                             {bus.busNumber}
                           </span>
-                          {isDemo ? (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
-                              DEMO
-                            </span>
-                          ) : (
+                          {isLive ? (
                             <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               LIVE GPS
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
+                              DEMO
                             </span>
                           )}
                           <span className="text-xs font-bold text-slate-900 truncate">
@@ -1148,7 +1169,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
               <div className="flex-1 overflow-y-auto p-2 space-y-2">
                 {filteredBuses.map((bus) => {
                   const isSelected = bus.id === selectedBusId;
-                  const isDemo = Boolean(bus.isDemo || bus.id?.startsWith('demo-'));
+                  const isLive = Boolean(bus.isLiveDriver);
 
                   return (
                     <div
@@ -1162,19 +1183,19 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className={`px-2 py-0.5 text-[11px] font-black rounded-md ${isDemo ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
+                            className={`px-2 py-0.5 text-[11px] font-black rounded-md ${isLive ? 'bg-[#7847CB] text-white' : 'bg-amber-500 text-slate-950'
                               }`}
                           >
                             {bus.busNumber}
                           </span>
-                          {isDemo ? (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase tracking-wider shrink-0">
-                              DEMO
-                            </span>
-                          ) : (
+                          {isLive ? (
                             <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase tracking-wider shrink-0 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               LIVE GPS
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase tracking-wider shrink-0">
+                              DEMO
                             </span>
                           )}
                           <span className="text-xs font-bold text-slate-900 truncate">
@@ -1554,9 +1575,9 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
             <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/90 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div
-                  className={`px-3 py-1.5 rounded-xl font-black text-sm text-white shadow-xs ${selectedBus.isDemo || selectedBus.id?.startsWith('demo-')
-                      ? 'bg-amber-500 text-slate-950 shadow-amber-500/20'
-                      : 'bg-[#7847CB] shadow-[#7847CB]/20'
+                  className={`px-3 py-1.5 rounded-xl font-black text-sm text-white shadow-xs ${selectedBus.isLiveDriver
+                      ? 'bg-[#7847CB] shadow-[#7847CB]/20'
+                      : 'bg-amber-500 text-slate-950 shadow-amber-500/20'
                     }`}
                 >
                   {selectedBus.busNumber}
@@ -1566,13 +1587,14 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                     <h3 className="font-extrabold text-sm sm:text-base text-slate-900">
                       Bus {selectedBus.busNumber}
                     </h3>
-                    {Boolean(selectedBus.isDemo || selectedBus.id?.startsWith('demo-')) ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300">
-                        DEMO SIMULATOR
+                    {selectedBus.isLiveDriver ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        LIVE GPS
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        LIVE GPS
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                        DEMO SIMULATOR
                       </span>
                     )}
                   </div>
@@ -2421,18 +2443,18 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ initialMode }) => {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 text-xs font-black rounded-md ${bus.isDemo || bus.id?.startsWith('demo-') ? 'bg-amber-500 text-slate-950' : 'bg-[#7847CB] text-white'
+                      <span className={`px-2 py-0.5 text-xs font-black rounded-md ${bus.isLiveDriver ? 'bg-[#7847CB] text-white' : 'bg-amber-500 text-slate-950'
                         }`}>
                         {bus.busNumber}
                       </span>
-                      {Boolean(bus.isDemo || bus.id?.startsWith('demo-')) ? (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
-                          DEMO
-                        </span>
-                      ) : (
+                      {bus.isLiveDriver ? (
                         <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                           LIVE GPS
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
+                          DEMO
                         </span>
                       )}
                       <span className="font-bold text-xs text-slate-900">{bus.routeName}</span>

@@ -60,7 +60,7 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
     }
   };
 
-  const activeLiveCount = (liveBuses as any[]).filter((b: any) => !b.isDemo && !b.id?.startsWith('demo-') && !b.routeName?.includes('[DEMO]') && (b.isLive || b.status === 'in-service' || b.status === 'on-time' || b.status === 'on_time')).length;
+  const activeLiveCount = (liveBuses as any[]).filter((b: any) => b.isLiveDriver === true).length;
 
   const navigateTo = (view: any) => {
     if (onNavigateView) {
@@ -228,7 +228,7 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
 
           <div className="space-y-2.5">
             {(liveBuses as any[])
-              .filter((bus: any) => !bus.isDemo && !bus.id?.startsWith('demo-') && !bus.routeName?.includes('[DEMO]'))
+              .filter((bus: any) => bus.isLiveDriver === true)
               .slice(0, 5)
               .map((bus: any) => (
                 <div
@@ -263,7 +263,7 @@ export const AdminOverview: React.FC<OverviewProps> = ({ onNavigateView }) => {
                 </div>
               ))}
 
-            {(liveBuses as any[]).filter((bus: any) => !bus.isDemo && !bus.id?.startsWith('demo-') && !bus.routeName?.includes('[DEMO]')).length === 0 && (
+            {(liveBuses as any[]).filter((bus: any) => bus.isLiveDriver === true).length === 0 && (
               <div className="text-center py-8 px-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200">
                 <Bus className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                 <p className="text-sm font-bold text-slate-700">No Active Vehicles on Roads</p>
